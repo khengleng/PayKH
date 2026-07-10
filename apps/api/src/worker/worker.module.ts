@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { loadConfig } from '../config/configuration';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
+import { EmailModule } from '../email/email.module';
 import { AuditModule } from '../audit/audit.module';
 import { ProviderModule } from '../providers/provider.module';
 import { QueueModule } from '../queue/queue.module';
@@ -10,6 +11,7 @@ import { RedisModule } from '../redis/redis.module';
 import { RateLimitModule } from '../ratelimit/rate-limit.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { BillingModule } from '../billing/billing.module';
 import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
 import { MaintenanceProcessor } from './maintenance.processor';
 import { WorkerScheduler } from './worker-scheduler';
@@ -26,6 +28,7 @@ import { WorkerScheduler } from './worker-scheduler';
     ConfigModule.forRoot({ isGlobal: true, load: [loadConfig] }),
     PrismaModule,
     CommonModule,
+    EmailModule,
     AuditModule,
     ProviderModule,
     QueueModule,
@@ -33,6 +36,7 @@ import { WorkerScheduler } from './worker-scheduler';
     RateLimitModule,
     WebhooksModule,
     PaymentsModule,
+    BillingModule,
   ],
   providers: [WebhookDeliveryProcessor, MaintenanceProcessor, WorkerScheduler],
 })

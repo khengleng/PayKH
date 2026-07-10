@@ -86,12 +86,13 @@ model User {
 }
 
 model Organization {
-  id        String    @id
-  name      String
-  status    OrgStatus @default(ACTIVE)
-  planId    String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id         String    @id
+  name       String
+  status     OrgStatus @default(ACTIVE)
+  planId     String?
+  graceUntil DateTime? // dunning grace window before suspension
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   plan          Plan?                @relation(fields: [planId], references: [id])
   members       OrganizationMember[]
@@ -388,12 +389,13 @@ model Subscription {
 }
 
 model UsageRecord {
-  id             String   @id @default(cuid())
-  organizationId String
-  storeId        String?
-  periodStart    DateTime
-  paidCount      Int      @default(0)
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(cuid())
+  organizationId  String
+  storeId         String?
+  periodStart     DateTime
+  paidCount       Int      @default(0)
+  lastWarnedLevel Int      @default(0) // highest quota-warning threshold emailed (70/90/100)
+  updatedAt       DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -401,17 +403,23 @@ model UsageRecord {
 }
 
 model Invoice {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
+  planId         String?
   amountUsdCents Int
-  status         String   @default("draft")
+  status         String    @default("draft") // draft | open | paid | void
   periodStart    DateTime
   periodEnd      DateTime
-  createdAt      DateTime @default(now())
+  dueAt          DateTime?
+  paidAt         DateTime?
+  qrString       String?   @db.Text // platform subscription KHQR (separate ledger)
+  md5            String? // for provider status polling
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------

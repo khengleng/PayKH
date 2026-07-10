@@ -56,6 +56,14 @@ export class BakongKhqrProvider implements PaymentProvider {
   }
 
   private async loadCredential(storeId: string, mode: 'test' | 'live'): Promise<BakongCredential> {
+    // Platform subscription payments use a credential from env, not a store.
+    if (storeId === '__platform__') {
+      const raw = this.config.get<string>('bakongPlatformAccount');
+      if (!raw) throw new Error('BAKONG_PLATFORM_ACCOUNT is not configured');
+      const parsed = JSON.parse(raw) as BakongCredential;
+      if (!parsed.bakongAccountId) throw new Error('Platform credential missing bakongAccountId');
+      return parsed;
+    }
     const cred = await this.prisma.providerCredential.findUnique({
       where: {
         storeId_provider_mode: { storeId, provider: 'bakong', mode: mode === 'live' ? 'LIVE' : 'TEST' },

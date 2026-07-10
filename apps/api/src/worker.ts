@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { validateConfig } from './config/configuration';
 import { WorkerModule } from './worker/worker.module';
+import { initSentry } from './observability/sentry';
 
 /**
  * Worker entrypoint. Boots the Nest application context (no HTTP listener) so
@@ -12,6 +13,7 @@ import { WorkerModule } from './worker/worker.module';
  */
 async function bootstrap(): Promise<void> {
   const config = validateConfig();
+  initSentry(config.sentryDsn, config.nodeEnv, 'worker');
   const logger = new Logger('Worker');
 
   const app = await NestFactory.createApplicationContext(WorkerModule, {

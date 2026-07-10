@@ -37,26 +37,32 @@ export class BillingController {
     return this.billing.overview(user, orgId);
   }
 
-  @Post(':orgId/plan')
-  @ApiOperation({ summary: 'Change plan' })
-  async changePlan(
+  @Post(':orgId/subscribe')
+  @ApiOperation({ summary: 'Subscribe to a plan (free activates now; paid returns a KHQR invoice)' })
+  async subscribe(
     @CurrentUser() user: AuthUser,
     @Param('orgId') orgId: string,
     @Body() dto: ChangePlanDto,
     @Req() req: Request,
   ) {
-    const result = await this.billing.changePlan(user, orgId, dto.planId);
+    const result = await this.billing.subscribe(user, orgId, dto.planId);
     await this.audit.record({
       organizationId: orgId,
       actorUserId: user.userId,
-      action: 'billing.plan.change',
+      action: 'billing.subscribe',
       entity: `org:${orgId}`,
-      afterValue: { planId: dto.planId },
+      afterValue: { planId: dto.planId, activated: result.activated },
       ipAddress: req.ip,
       userAgent: req.header('user-agent'),
       requestId: getRequestId(req),
     });
     return result;
+  }
+
+  @Post('invoices/:id/simulate-pay')
+  @ApiOperation({ summary: 'Confirm a subscription invoice payment (mock provider only)' })
+  simulatePay(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.billing.simulateInvoicePayment(user, id);
   }
 
   @Get(':orgId/history')

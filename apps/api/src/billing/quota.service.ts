@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { currentPeriodStart, warningLevel } from './period.util';
+import { EmailService } from '../email/email.service';
+import { quotaWarningEmail } from '../email/templates';
 
 export interface UsageSnapshot {
   period_start: string;
@@ -24,7 +26,10 @@ const DEFAULT_PLAN_ID = 'plan_free';
 export class QuotaService {
   private readonly logger = new Logger('Quota');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly email: EmailService,
+  ) {}
 
   private async planForOrg(organizationId: string) {
     const org = await this.prisma.organization.findUnique({
@@ -77,14 +82,36 @@ export class QuotaService {
     }
   }
 
-  /** Increment the org's paid counter for the current period. */
+  /** Increment the org's paid counter for the current period + emit warnings. */
   async recordPaid(organizationId: string, storeId?: string): Promise<void> {
     const periodStart = currentPeriodStart();
-    await this.prisma.usageRecord.upsert({
+    const usage = await this.prisma.usageRecord.upsert({
       where: { organizationId_periodStart: { organizationId, periodStart } },
       create: { organizationId, storeId: storeId ?? null, periodStart, paidCount: 1 },
       update: { paidCount: { increment: 1 } },
     });
+    await this.maybeWarn(organizationId, usage.paidCount, usage.lastWarnedLevel);
+  }
+
+  /** Email org owners once when a new quota threshold (70/90/100%) is crossed. */
+  private async maybeWarn(organizationId: string, paidCount: number, lastWarned: number): Promise<void> {
+    const { plan } = await this.planForOrg(organizationId);
+    const quota = plan?.monthlyPaidQuota ?? 100;
+    const level = warningLevel(paidCount, quota);
+    if (!level || level <= lastWarned) return;
+
+    await this.prisma.usageRecord.updateMany({
+      where: { organizationId, periodStart: currentPeriodStart() },
+      data: { lastWarnedLevel: level },
+    });
+    const owners = await this.prisma.organizationMember.findMany({
+      where: { organizationId, role: 'OWNER' },
+      include: { user: true },
+    });
+    for (const owner of owners) {
+      await this.email.send(quotaWarningEmail(owner.user.email, level, paidCount, quota));
+    }
+    this.logger.log(`quota warning ${level}% emailed for org ${organizationId}`);
   }
 
   /** Resolve the org from a store and record a paid transaction. */

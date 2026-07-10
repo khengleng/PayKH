@@ -9,6 +9,7 @@ import {
 import { Request, Response } from 'express';
 import { ApiErrorBody, ApiErrorCode } from '@paykh/shared-types';
 import { getRequestId } from './request-context';
+import { captureException } from '../observability/sentry';
 
 /**
  * Converts every thrown error into the platform's structured error envelope:
@@ -53,6 +54,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         `${req.method} ${req.url} -> ${status} [${requestId}]`,
         exception instanceof Error ? exception.stack : String(exception),
       );
+      captureException(exception, { requestId, method: req.method, url: req.url });
     } else {
       this.logger.warn(`${req.method} ${req.url} -> ${status} ${code} [${requestId}]`);
     }

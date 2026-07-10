@@ -32,7 +32,9 @@ export default function LoginPage() {
       const result = await api<AuthResult>(path, { method: 'POST', body, auth: false });
       tokenStore.set(result.token);
       if (result.organization?.id) orgStore.set(result.organization.id);
-      router.push('/overview');
+      const next =
+        typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
+      router.push(next || '/overview');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {

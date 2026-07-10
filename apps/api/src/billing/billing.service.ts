@@ -1,16 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
 import { QuotaService } from './quota.service';
 import { currentPeriodStart, nextPeriodStart } from './period.util';
+import { GRACE_DAYS, INVOICE_DUE_DAYS, PLATFORM_STORE_ID } from './billing.constants';
+import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger('Billing');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly quota: QuotaService,
+    private readonly config: ConfigService,
+    @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
   async overview(user: AuthUser, organizationId: string) {
@@ -42,44 +49,181 @@ export class BillingService {
   }
 
   /**
-   * Change plan (MVP: manual/self-serve, no charge collected). Records a
-   * Subscription row as plan history and issues an invoice for the plan price.
+   * Subscribe to a plan. Free plans activate immediately. Paid plans create an
+   * OPEN invoice with a platform KHQR (separate ledger from merchant customer
+   * payments) — the plan activates only once that invoice is paid.
    */
-  async changePlan(user: AuthUser, organizationId: string, planId: string) {
+  async subscribe(user: AuthUser, organizationId: string, planId: string) {
     requirePermission(user, organizationId, 'billing:manage');
     const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
     if (!plan) throw ApiError.invalidRequest('Unknown plan');
 
+    if (plan.priceUsdCents === 0) {
+      await this.activatePlan(organizationId, planId, null);
+      return { activated: true, ...(await this.overview(user, organizationId)) };
+    }
+
+    const invoice = await this.createOpenInvoice(organizationId, plan.id, plan.priceUsdCents);
+    return {
+      activated: false,
+      invoice: {
+        id: invoice.id,
+        amount_usd_cents: invoice.amountUsdCents,
+        status: invoice.status,
+        due_at: invoice.dueAt?.toISOString() ?? null,
+        qr_string: invoice.qrString,
+      },
+      message: 'Scan the KHQR to pay. Your plan activates once payment is confirmed.',
+    };
+  }
+
+  /** Create an OPEN subscription invoice + platform KHQR for a paid plan. */
+  private async createOpenInvoice(organizationId: string, planId: string, amountUsdCents: number) {
     const periodStart = currentPeriodStart();
     const periodEnd = nextPeriodStart();
+    const dueAt = new Date(Date.now() + INVOICE_DUE_DAYS * 24 * 3600 * 1000);
+    const invoice = await this.prisma.invoice.create({
+      data: { organizationId, planId, amountUsdCents, status: 'open', periodStart, periodEnd, dueAt },
+    });
 
+    try {
+      const result = await this.provider.createKhqr({
+        paymentId: invoice.id,
+        storeId: PLATFORM_STORE_ID,
+        mode: 'live',
+        amount: (amountUsdCents / 100).toFixed(2),
+        currency: 'USD',
+        referenceId: invoice.id,
+        description: 'PayKH subscription',
+        merchantName: 'PayKH',
+        merchantCity: 'Phnom Penh',
+        expiresAt: dueAt,
+      });
+      return this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { qrString: result.qrString, md5: result.md5 },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to generate subscription KHQR for invoice ${invoice.id}: ${err}`);
+      throw ApiError.providerError('Failed to generate subscription payment QR');
+    }
+  }
+
+  /** Mark an invoice paid and activate/renew the plan (idempotent). */
+  async activateFromInvoice(invoiceId: string): Promise<boolean> {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice || invoice.status === 'paid' || !invoice.planId) return false;
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { status: 'paid', paidAt: new Date() },
+    });
+    await this.activatePlan(invoice.organizationId, invoice.planId, invoice.periodEnd);
+    this.logger.log(`invoice ${invoiceId} paid -> plan ${invoice.planId} activated for ${invoice.organizationId}`);
+    return true;
+  }
+
+  /** Set the org's plan, (re)issue the active subscription, clear suspension. */
+  private async activatePlan(organizationId: string, planId: string, periodEnd: Date | null) {
+    const start = currentPeriodStart();
+    const end = periodEnd ?? nextPeriodStart();
     await this.prisma.$transaction([
       this.prisma.subscription.updateMany({
-        where: { organizationId, status: 'ACTIVE' },
+        where: { organizationId, status: { in: ['ACTIVE', 'PAST_DUE'] } },
         data: { status: 'CANCELLED' },
       }),
       this.prisma.subscription.create({
-        data: { organizationId, planId, status: 'ACTIVE', periodStart, periodEnd },
+        data: { organizationId, planId, status: 'ACTIVE', periodStart: start, periodEnd: end },
       }),
       this.prisma.organization.update({
         where: { id: organizationId },
-        data: { planId },
+        data: { planId, status: 'ACTIVE', graceUntil: null },
       }),
-      ...(plan.priceUsdCents > 0
-        ? [
-            this.prisma.invoice.create({
-              data: {
-                organizationId,
-                amountUsdCents: plan.priceUsdCents,
-                status: 'issued',
-                periodStart,
-                periodEnd,
-              },
-            }),
-          ]
-        : []),
     ]);
-    return this.overview(user, organizationId);
+  }
+
+  /** Dev/test only (mock provider): confirm a subscription invoice payment. */
+  async simulateInvoicePayment(user: AuthUser, invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw ApiError.paymentNotFound('Invoice not found');
+    requirePermission(user, invoice.organizationId, 'billing:manage');
+    if (this.provider.name !== 'mock') {
+      throw ApiError.forbidden('Simulation is only available with the mock provider');
+    }
+    const ok = await this.activateFromInvoice(invoiceId);
+    return { invoice_id: invoiceId, paid: ok };
+  }
+
+  /** Dunning + grace + suspension for overdue subscription invoices. */
+  async runDunning(organizationId: string): Promise<void> {
+    const now = new Date();
+    const overdue = await this.prisma.invoice.findFirst({
+      where: { organizationId, status: 'open', dueAt: { lt: now } },
+      orderBy: { dueAt: 'asc' },
+    });
+    if (!overdue) return;
+
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
+    if (!org) return;
+
+    if (!org.graceUntil) {
+      const graceUntil = new Date((overdue.dueAt ?? now).getTime() + GRACE_DAYS * 24 * 3600 * 1000);
+      await this.prisma.$transaction([
+        this.prisma.subscription.updateMany({
+          where: { organizationId, status: 'ACTIVE' },
+          data: { status: 'PAST_DUE' },
+        }),
+        this.prisma.organization.update({ where: { id: organizationId }, data: { graceUntil } }),
+      ]);
+      this.logger.warn(`org ${organizationId} past due; grace until ${graceUntil.toISOString()}`);
+    } else if (org.graceUntil < now && org.status !== 'SUSPENDED') {
+      await this.prisma.organization.update({ where: { id: organizationId }, data: { status: 'SUSPENDED' } });
+      this.logger.warn(`org ${organizationId} suspended after grace period`);
+    }
+  }
+
+  /** Periodic billing sweep (run by the worker): confirm payments, renew, dun. */
+  async sweep(): Promise<void> {
+    const now = new Date();
+
+    // 1. Confirm open invoices via the real provider (mock is simulate-driven).
+    if (this.provider.name !== 'mock') {
+      const open = await this.prisma.invoice.findMany({
+        where: { status: 'open', md5: { not: null } },
+        take: 200,
+      });
+      for (const inv of open) {
+        try {
+          const st = await this.provider.checkPaymentStatus({ md5: inv.md5 });
+          if (st.state === 'paid') await this.activateFromInvoice(inv.id);
+        } catch (err) {
+          this.logger.warn(`invoice poll failed for ${inv.id}: ${err}`);
+        }
+      }
+    }
+
+    // 2. Renewals: paid subscriptions past their period end with no open invoice.
+    const dueSubs = await this.prisma.subscription.findMany({
+      where: { status: 'ACTIVE', periodEnd: { lt: now } },
+      include: { plan: true },
+      take: 200,
+    });
+    for (const sub of dueSubs) {
+      if (sub.plan.priceUsdCents <= 0) continue;
+      const openCount = await this.prisma.invoice.count({
+        where: { organizationId: sub.organizationId, status: 'open' },
+      });
+      if (openCount === 0) {
+        await this.createOpenInvoice(sub.organizationId, sub.planId, sub.plan.priceUsdCents);
+      }
+    }
+
+    // 3. Dunning / grace / suspension per org with an overdue open invoice.
+    const overdue = await this.prisma.invoice.findMany({
+      where: { status: 'open', dueAt: { lt: now } },
+      distinct: ['organizationId'],
+      take: 200,
+    });
+    for (const inv of overdue) await this.runDunning(inv.organizationId);
   }
 
   async planHistory(user: AuthUser, organizationId: string) {

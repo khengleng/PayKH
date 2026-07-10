@@ -3,8 +3,10 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
+import { BillingService } from '../billing/billing.service';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
 import {
+  JOB_BILLING_SWEEP,
   JOB_EXPIRY_SWEEP,
   JOB_IDEMPOTENCY_CLEANUP,
   JOB_STATUS_POLL,
@@ -26,6 +28,7 @@ export class MaintenanceProcessor extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly payments: PaymentsService,
+    private readonly billing: BillingService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {
     super();
@@ -39,6 +42,8 @@ export class MaintenanceProcessor extends WorkerHost {
         return this.statusPoll();
       case JOB_IDEMPOTENCY_CLEANUP:
         return this.idempotencyCleanup();
+      case JOB_BILLING_SWEEP:
+        return this.billing.sweep();
       default:
         return;
     }

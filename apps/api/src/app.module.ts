@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { loadConfig } from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
+import { EmailModule } from './email/email.module';
 import { AuditModule } from './audit/audit.module';
 import { ProviderModule } from './providers/provider.module';
 import { QueueModule } from './queue/queue.module';
@@ -24,6 +25,7 @@ import { RequestIdMiddleware } from './common/request-context';
     ConfigModule.forRoot({ isGlobal: true, load: [loadConfig] }),
     PrismaModule,
     CommonModule,
+    EmailModule,
     AuditModule,
     ProviderModule,
     QueueModule,

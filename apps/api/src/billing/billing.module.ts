@@ -8,6 +8,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [AuthModule],
   controllers: [BillingController],
   providers: [BillingService, QuotaService],
-  exports: [QuotaService],
+  exports: [QuotaService, BillingService],
 })
 export class BillingModule {}

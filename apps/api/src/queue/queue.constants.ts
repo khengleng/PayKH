@@ -5,6 +5,7 @@ export const JOB_DELIVER_WEBHOOK = 'deliver';
 export const JOB_EXPIRY_SWEEP = 'expiry-sweep';
 export const JOB_STATUS_POLL = 'status-poll';
 export const JOB_IDEMPOTENCY_CLEANUP = 'idempotency-cleanup';
+export const JOB_BILLING_SWEEP = 'billing-sweep';
 
 /** Webhook delivery retry policy. */
 export const WEBHOOK_MAX_ATTEMPTS = 6;

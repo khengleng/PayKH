@@ -7,9 +7,11 @@ import express, { Request } from 'express';
 import { AppModule } from './app.module';
 import { validateConfig } from './config/configuration';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { initSentry } from './observability/sentry';
 
 async function bootstrap(): Promise<void> {
   const config = validateConfig();
+  initSentry(config.sentryDsn, config.nodeEnv, 'api');
   const logger = new Logger('Bootstrap');
 
   // Disable Nest's default body parser so we can capture the raw body (needed

@@ -4,6 +4,8 @@ import { Job } from 'bullmq';
 import { buildSignatureHeader } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { EmailService } from '../email/email.service';
+import { endpointDisabledEmail } from '../email/templates';
 import {
   DeliverWebhookJob,
   ENDPOINT_FAILURE_DISABLE_THRESHOLD,
@@ -29,6 +31,7 @@ export class WebhookDeliveryProcessor extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly email: EmailService,
   ) {
     super();
   }
@@ -182,8 +185,14 @@ export class WebhookDeliveryProcessor extends WorkerHost {
         entity: `webhook:${endpointId}`,
         afterValue: { disabled: true, url: endpoint.url },
       });
-      // NOTE: merchant email notification is a Phase 4 item; the security event
-      // + audit record surface it in the dashboard for now.
+      // Notify the org owners by email (best-effort).
+      const owners = await this.prisma.organizationMember.findMany({
+        where: { organization: { stores: { some: { id: endpoint.storeId } } }, role: 'OWNER' },
+        include: { user: true },
+      });
+      for (const owner of owners) {
+        await this.email.send(endpointDisabledEmail(owner.user.email, endpoint.url));
+      }
       this.logger.error(`endpoint ${endpointId} auto-disabled after repeated failures`);
     }
   }

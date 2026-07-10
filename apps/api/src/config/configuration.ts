@@ -11,6 +11,10 @@ export interface AppConfig {
   paymentProvider: 'mock' | 'bakong';
   bakongApiBaseUrl?: string;
   bakongApiToken?: string;
+  bakongPlatformAccount?: string;
+  resendApiKey?: string;
+  emailFrom: string;
+  sentryDsn?: string;
 }
 
 function required(name: string): string {
@@ -35,6 +39,10 @@ export function loadConfig(): AppConfig {
     paymentProvider: (process.env.PAYMENT_PROVIDER as 'mock' | 'bakong') ?? 'mock',
     bakongApiBaseUrl: process.env.BAKONG_API_BASE_URL,
     bakongApiToken: process.env.BAKONG_API_TOKEN,
+    bakongPlatformAccount: process.env.BAKONG_PLATFORM_ACCOUNT,
+    resendApiKey: process.env.RESEND_API_KEY,
+    emailFrom: process.env.EMAIL_FROM ?? 'PayKH <noreply@paykh.cambobia.com>',
+    sentryDsn: process.env.SENTRY_DSN,
   };
 }
 

@@ -1,16 +1,23 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MemberRole as DbRole } from '@prisma/client';
 import { randomBase58 } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
+import { EmailService } from '../email/email.service';
+import { inviteEmail } from '../email/templates';
 
 const toDbRole = (r: string): DbRole => r.toUpperCase() as DbRole;
 
 @Injectable()
 export class TeamService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly email: EmailService,
+    private readonly config: ConfigService,
+  ) {}
 
   async listMembers(user: AuthUser, organizationId: string) {
     requirePermission(user, organizationId, 'team:manage');
@@ -52,6 +59,13 @@ export class TeamService {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
+
+    // Best-effort invite email.
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
+    const dashboardUrl = this.config.get<string>('dashboardBaseUrl');
+    const acceptUrl = `${dashboardUrl}/invite?token=${token}`;
+    await this.email.send(inviteEmail(normalized, org?.name ?? 'an organization', role, acceptUrl));
+
     return {
       id: invitation.id,
       email: normalized,

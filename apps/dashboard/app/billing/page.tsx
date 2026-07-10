@@ -1,9 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
 import { api } from '@/lib/api';
+
+interface OpenInvoice { id: string; amount_usd_cents: number; status: string; qr_string: string | null }
 
 interface Plan { id: string; name: string; monthly_quota: number; price_usd_cents: number }
 interface BillingOverview {
@@ -27,6 +30,7 @@ function BillingContent({ orgId }: { orgId?: string }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [busy, setBusy] = useState(false);
+  const [payInvoice, setPayInvoice] = useState<OpenInvoice | null>(null);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -43,8 +47,20 @@ function BillingContent({ orgId }: { orgId?: string }) {
   const changePlan = async (planId: string) => {
     if (!orgId || !confirm('Switch to this plan?')) return;
     setBusy(true);
-    try { await api(`/billing/${orgId}/plan`, { method: 'POST', body: { planId } }); await load(); }
-    finally { setBusy(false); }
+    try {
+      const res = await api<{ activated: boolean; invoice?: OpenInvoice }>(`/billing/${orgId}/subscribe`, {
+        method: 'POST', body: { planId },
+      });
+      if (res.activated) { await load(); }
+      else if (res.invoice) { setPayInvoice(res.invoice); }
+    } finally { setBusy(false); }
+  };
+
+  const simulatePay = async () => {
+    if (!payInvoice) return;
+    await api(`/billing/invoices/${payInvoice.id}/simulate-pay`, { method: 'POST' });
+    setPayInvoice(null);
+    await load();
   };
 
   if (!ov) return <div className="text-slate-400">Loading billing…</div>;
@@ -101,6 +117,25 @@ function BillingContent({ orgId }: { orgId?: string }) {
           );
         })}
       </div>
+
+      {payInvoice && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={() => setPayInvoice(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold">Pay ${(payInvoice.amount_usd_cents / 100).toFixed(2)}</h3>
+            <p className="mb-4 text-sm text-slate-500">Scan this KHQR with a Bakong app to activate your plan.</p>
+            {payInvoice.qr_string && (
+              <div className="mx-auto inline-block rounded-xl border border-slate-200 p-3">
+                <QRCodeSVG value={payInvoice.qr_string} size={200} level="M" includeMargin />
+              </div>
+            )}
+            <p className="mt-3 text-xs text-slate-400">Waiting for payment confirmation…</p>
+            <div className="mt-4 flex justify-center gap-2">
+              <Button variant="secondary" onClick={() => setPayInvoice(null)}>Close</Button>
+              <Button onClick={simulatePay}>Simulate payment (test)</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <h2 className="mb-2 mt-6 text-lg font-semibold">Invoices</h2>
       <Card className="overflow-x-auto p-0">
