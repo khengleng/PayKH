@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Loyalty → Rewards & Redemption** (Domain 6): a per-store rewards catalog
+  (points cost, optional stock). Customers redeem points for a reward via
+  `POST /v1/loyalty/redemptions` → a voucher code, deducting points + stock
+  atomically. Merchants **fulfill** or **cancel** (refunds points + restores
+  stock) from the dashboard. Insufficient balance / out-of-stock rejected.
 - **Loyalty → Points** (Domain 6): a per-store loyalty program (active +
   points-per-unit). Customers **earn points automatically on paid payments**
   (when a `customer_id` is attached), tracked in a points ledger with a

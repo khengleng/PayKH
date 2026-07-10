@@ -91,6 +91,13 @@ enum PointsTxnType {
   EXPIRE
 }
 
+enum RedemptionStatus {
+  ISSUED
+  FULFILLED
+  CANCELLED
+  EXPIRED
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -206,6 +213,8 @@ model Store {
   branches            Branch[]
   customers           Customer[]
   loyaltyProgram      LoyaltyProgram?
+  rewards             Reward[]
+  redemptions         Redemption[]
 
   @@index([organizationId])
 }
@@ -242,9 +251,46 @@ model Customer {
   store        Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
   payments     Payment[]
   pointsLedger PointsTransaction[]
+  redemptions  Redemption[]
 
   @@unique([storeId, externalId])
   @@index([storeId, email])
+}
+
+model Reward {
+  id          String   @id
+  storeId     String
+  name        String
+  description String?
+  pointsCost  Int
+  stock       Int      @default(-1) // -1 = unlimited
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store       Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  redemptions Redemption[]
+
+  @@index([storeId])
+}
+
+model Redemption {
+  id          String           @id
+  storeId     String
+  customerId  String
+  rewardId    String
+  pointsSpent Int
+  code        String           @unique
+  status      RedemptionStatus @default(ISSUED)
+  createdAt   DateTime         @default(now())
+  fulfilledAt DateTime?
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  reward   Reward   @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  store    Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([storeId, status])
 }
 
 model LoyaltyProgram {

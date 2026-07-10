@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { Payment, PointsTransaction, Prisma } from '@prisma/client';
-import { prefixedId } from '@paykh/security';
+import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { Payment, PointsTransaction, Prisma, Redemption, Reward } from '@prisma/client';
+import { prefixedId, randomBase58 } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
@@ -20,6 +20,21 @@ export class AdjustDto {
 export class RedeemDto {
   @IsInt() @Min(1) points!: number;
   @IsOptional() @IsString() reason?: string;
+}
+
+export class CreateRewardDto {
+  @IsString() @MaxLength(120) name!: string;
+  @IsOptional() @IsString() @MaxLength(300) description?: string;
+  @IsInt() @Min(1) pointsCost!: number;
+  @IsOptional() @IsInt() stock?: number; // -1 = unlimited
+}
+
+export class UpdateRewardDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsString() @MaxLength(300) description?: string;
+  @IsOptional() @IsInt() @Min(1) pointsCost?: number;
+  @IsOptional() @IsInt() stock?: number;
+  @IsOptional() @IsBoolean() active?: boolean;
 }
 
 @Injectable()
@@ -144,5 +159,140 @@ export class LoyaltyService {
     if (!store) throw ApiError.paymentNotFound('Store not found');
     requirePermission(user, store.organizationId, perm);
     return store;
+  }
+
+  // ============================================================ rewards
+  async createReward(user: AuthUser, storeId: string, dto: CreateRewardDto) {
+    await this.assertStore(user, storeId, 'store:write');
+    const reward = await this.prisma.reward.create({
+      data: { id: prefixedId('rwd'), storeId, name: dto.name, description: dto.description ?? null, pointsCost: dto.pointsCost, stock: dto.stock ?? -1 },
+    });
+    return this.serializeReward(reward);
+  }
+
+  async updateReward(user: AuthUser, rewardId: string, dto: UpdateRewardDto) {
+    const reward = await this.prisma.reward.findUnique({ where: { id: rewardId } });
+    if (!reward) throw ApiError.paymentNotFound('Reward not found');
+    await this.assertStore(user, reward.storeId, 'store:write');
+    const updated = await this.prisma.reward.update({ where: { id: rewardId }, data: { name: dto.name, description: dto.description, pointsCost: dto.pointsCost, stock: dto.stock, active: dto.active } });
+    return this.serializeReward(updated);
+  }
+
+  async deleteReward(user: AuthUser, rewardId: string) {
+    const reward = await this.prisma.reward.findUnique({ where: { id: rewardId } });
+    if (!reward) throw ApiError.paymentNotFound('Reward not found');
+    await this.assertStore(user, reward.storeId, 'store:write');
+    const used = await this.prisma.redemption.count({ where: { rewardId } });
+    if (used > 0) {
+      await this.prisma.reward.update({ where: { id: rewardId }, data: { active: false } });
+      return { id: rewardId, deactivated: true };
+    }
+    await this.prisma.reward.delete({ where: { id: rewardId } });
+    return { id: rewardId, deleted: true };
+  }
+
+  /** Dashboard list (all) or public list (active only). */
+  async listRewards(storeId: string, activeOnly: boolean) {
+    const rewards = await this.prisma.reward.findMany({
+      where: { storeId, ...(activeOnly ? { active: true } : {}) },
+      orderBy: { pointsCost: 'asc' },
+    });
+    return rewards.map((r) => this.serializeReward(r));
+  }
+
+  async listRewardsForUser(user: AuthUser, storeId: string) {
+    await this.assertStore(user, storeId, 'store:read');
+    return this.listRewards(storeId, false);
+  }
+
+  // ======================================================== redemption
+  /** Redeem points for a catalog reward: atomic points + stock + voucher. */
+  async redeemReward(storeId: string, customerId: string, rewardId: string): Promise<ReturnType<LoyaltyService['serializeRedemption']>> {
+    return this.prisma.$transaction(async (tx) => {
+      const reward = await tx.reward.findUnique({ where: { id: rewardId } });
+      if (!reward || reward.storeId !== storeId) throw ApiError.invalidRequest('Unknown reward for this store');
+      if (!reward.active) throw ApiError.invalidRequest('Reward is not available');
+      if (reward.stock === 0) throw ApiError.invalidRequest('Reward is out of stock');
+
+      const customer = await tx.customer.findUnique({ where: { id: customerId } });
+      if (!customer || customer.storeId !== storeId) throw ApiError.invalidRequest('Unknown customer for this store');
+      if (customer.pointsBalance < reward.pointsCost) throw ApiError.invalidRequest('Insufficient points balance');
+
+      // Deduct points.
+      await tx.pointsTransaction.create({
+        data: { id: prefixedId('pts'), storeId, customerId, type: 'REDEEM', points: -reward.pointsCost, reason: `reward:${reward.name}` },
+      });
+      await tx.customer.update({ where: { id: customerId }, data: { pointsBalance: customer.pointsBalance - reward.pointsCost } });
+      // Decrement stock (unless unlimited).
+      if (reward.stock > 0) await tx.reward.update({ where: { id: rewardId }, data: { stock: reward.stock - 1 } });
+
+      const redemption = await tx.redemption.create({
+        data: { id: prefixedId('rdm'), storeId, customerId, rewardId, pointsSpent: reward.pointsCost, code: `R${randomBase58(8).toUpperCase()}`, status: 'ISSUED' },
+      });
+      this.logger.log(`redemption ${redemption.id} (${reward.name}, ${reward.pointsCost}pts) for ${customerId}`);
+      return this.serializeRedemption(redemption, reward);
+    });
+  }
+
+  async getRedemption(user: AuthUser, id: string) {
+    const r = await this.prisma.redemption.findUnique({ where: { id }, include: { reward: true } });
+    if (!r) throw ApiError.paymentNotFound('Redemption not found');
+    await this.assertStore(user, r.storeId, 'payment:read');
+    return this.serializeRedemption(r, r.reward);
+  }
+
+  /** Store-scoped redemption fetch for the public API-key path. */
+  async redemptionForStore(storeId: string, id: string) {
+    const r = await this.prisma.redemption.findUnique({ where: { id }, include: { reward: true } });
+    if (!r || r.storeId !== storeId) throw ApiError.paymentNotFound('Redemption not found');
+    return this.serializeRedemption(r, r.reward);
+  }
+
+  async listRedemptions(user: AuthUser, storeId: string) {
+    await this.assertStore(user, storeId, 'payment:read');
+    const rows = await this.prisma.redemption.findMany({ where: { storeId }, include: { reward: true, customer: true }, orderBy: { createdAt: 'desc' }, take: 100 });
+    return rows.map((r) => ({ ...this.serializeRedemption(r, r.reward), customer_name: r.customer.name, customer_email: r.customer.email }));
+  }
+
+  async fulfill(user: AuthUser, id: string) {
+    const r = await this.prisma.redemption.findUnique({ where: { id } });
+    if (!r) throw ApiError.paymentNotFound('Redemption not found');
+    await this.assertStore(user, r.storeId, 'store:write');
+    if (r.status !== 'ISSUED') throw ApiError.invalidRequest(`Cannot fulfill a ${r.status.toLowerCase()} redemption`);
+    const updated = await this.prisma.redemption.update({ where: { id }, data: { status: 'FULFILLED', fulfilledAt: new Date() } });
+    return this.serializeRedemption(updated);
+  }
+
+  /** Cancel an issued redemption: refund points + restore stock. */
+  async cancel(user: AuthUser, id: string) {
+    const r = await this.prisma.redemption.findUnique({ where: { id } });
+    if (!r) throw ApiError.paymentNotFound('Redemption not found');
+    await this.assertStore(user, r.storeId, 'store:write');
+    if (r.status !== 'ISSUED') throw ApiError.invalidRequest(`Cannot cancel a ${r.status.toLowerCase()} redemption`);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.pointsTransaction.create({ data: { id: prefixedId('pts'), storeId: r.storeId, customerId: r.customerId, type: 'ADJUST', points: r.pointsSpent, reason: 'redemption cancelled' } });
+      await tx.customer.update({ where: { id: r.customerId }, data: { pointsBalance: { increment: r.pointsSpent } } });
+      await tx.reward.updateMany({ where: { id: r.rewardId, stock: { gte: 0 } }, data: { stock: { increment: 1 } } });
+      await tx.redemption.update({ where: { id }, data: { status: 'CANCELLED' } });
+    });
+    return { id, cancelled: true, refunded_points: r.pointsSpent };
+  }
+
+  private serializeReward(r: Reward) {
+    return { id: r.id, store_id: r.storeId, name: r.name, description: r.description, points_cost: r.pointsCost, stock: r.stock, active: r.active };
+  }
+
+  private serializeRedemption(r: Redemption, reward?: Reward | null) {
+    return {
+      id: r.id,
+      customer_id: r.customerId,
+      reward_id: r.rewardId,
+      reward_name: reward?.name ?? null,
+      points_spent: r.pointsSpent,
+      code: r.code,
+      status: r.status.toLowerCase(),
+      created_at: r.createdAt.toISOString(),
+      fulfilled_at: r.fulfilledAt?.toISOString() ?? null,
+    };
   }
 }

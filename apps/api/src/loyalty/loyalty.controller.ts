@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Request } from 'express';
-import { LoyaltyService, AdjustDto, RedeemDto, UpdateProgramDto } from './loyalty.service';
+import { LoyaltyService, AdjustDto, CreateRewardDto, RedeemDto, UpdateProgramDto, UpdateRewardDto } from './loyalty.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { ApiKeyGuard, getApiKeyContext } from '../auth/api-key.guard';
@@ -14,6 +14,11 @@ class ApiRedeemDto {
   @IsString() customer_id!: string;
   @IsInt() @Min(1) points!: number;
   @IsOptional() @IsString() reason?: string;
+}
+
+class RedeemRewardDto {
+  @IsString() customer_id!: string;
+  @IsString() reward_id!: string;
 }
 
 /** Dashboard loyalty management (JWT). */
@@ -54,6 +59,50 @@ export class LoyaltyDashboardController {
     await this.audit.record({ actorUserId: user.userId, action: 'loyalty.adjust', entity: `customer:${id}`, afterValue: { points: dto.points, reason: dto.reason }, ipAddress: req.ip, userAgent: req.header('user-agent'), requestId: getRequestId(req) });
     return result;
   }
+
+  // --- rewards catalog ---
+  @Get('stores/:storeId/rewards')
+  @ApiOperation({ summary: 'List rewards (catalog)' })
+  rewards(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.loyalty.listRewardsForUser(user, storeId);
+  }
+
+  @Post('stores/:storeId/rewards')
+  @ApiOperation({ summary: 'Create a reward' })
+  createReward(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: CreateRewardDto) {
+    return this.loyalty.createReward(user, storeId, dto);
+  }
+
+  @Patch('rewards/:id')
+  @ApiOperation({ summary: 'Update a reward' })
+  updateReward(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateRewardDto) {
+    return this.loyalty.updateReward(user, id, dto);
+  }
+
+  @Delete('rewards/:id')
+  @ApiOperation({ summary: 'Delete or deactivate a reward' })
+  deleteReward(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.loyalty.deleteReward(user, id);
+  }
+
+  // --- redemptions ---
+  @Get('stores/:storeId/redemptions')
+  @ApiOperation({ summary: 'List redemptions for a store' })
+  redemptions(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.loyalty.listRedemptions(user, storeId);
+  }
+
+  @Post('redemptions/:id/fulfill')
+  @ApiOperation({ summary: 'Mark a redemption fulfilled' })
+  fulfill(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.loyalty.fulfill(user, id);
+  }
+
+  @Post('redemptions/:id/cancel')
+  @ApiOperation({ summary: 'Cancel a redemption (refund points + restore stock)' })
+  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.loyalty.cancel(user, id);
+  }
 }
 
 /** Public loyalty API (API key) — redeem points. */
@@ -66,9 +115,29 @@ export class LoyaltyController {
   constructor(private readonly loyalty: LoyaltyService) {}
 
   @Post('redeem')
-  @ApiOperation({ summary: 'Redeem a customer’s points' })
+  @ApiOperation({ summary: 'Redeem a customer’s points (raw points)' })
   redeem(@Req() req: Request, @Body() dto: ApiRedeemDto) {
     const ctx = getApiKeyContext(req);
     return this.loyalty.redeem(ctx.storeId, dto.customer_id, dto.points, dto.reason);
+  }
+
+  @Get('rewards')
+  @ApiOperation({ summary: 'List active rewards' })
+  rewards(@Req() req: Request) {
+    return this.loyalty.listRewards(getApiKeyContext(req).storeId, true);
+  }
+
+  @Post('redemptions')
+  @ApiOperation({ summary: 'Redeem points for a reward (returns a voucher code)' })
+  redeemReward(@Req() req: Request, @Body() dto: RedeemRewardDto) {
+    const ctx = getApiKeyContext(req);
+    return this.loyalty.redeemReward(ctx.storeId, dto.customer_id, dto.reward_id);
+  }
+
+  @Get('redemptions/:id')
+  @ApiOperation({ summary: 'Retrieve a redemption' })
+  getRedemption(@Req() req: Request, @Param('id') id: string) {
+    // reuse dashboard read via a synthetic membership check is overkill; scope by store.
+    return this.loyalty.redemptionForStore(getApiKeyContext(req).storeId, id);
   }
 }

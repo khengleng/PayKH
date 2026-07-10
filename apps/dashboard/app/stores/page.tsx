@@ -153,6 +153,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
 
       <BranchesCard storeId={store.id} />
       <LoyaltyCard storeId={store.id} />
+      <RewardsCard storeId={store.id} />
 
       <Card>
         <h3 className="mb-1 font-semibold">Run a test payment</h3>
@@ -251,6 +252,71 @@ function LoyaltyCard({ storeId }: { storeId: string }) {
         <Button onClick={save}>Save</Button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
       </div>
+    </Card>
+  );
+}
+
+interface Reward { id: string; name: string; description: string | null; points_cost: number; stock: number; active: boolean }
+interface Redemption { id: string; reward_name: string | null; points_spent: number; code: string; status: string; customer_name: string | null; created_at: string }
+
+function RewardsCard({ storeId }: { storeId: string }) {
+  const [rewards, setRewards] = useState<Reward[]>([]);
+  const [redemptions, setRedemptions] = useState<Redemption[]>([]);
+  const [name, setName] = useState('');
+  const [cost, setCost] = useState('100');
+  const [stock, setStock] = useState('-1');
+
+  const load = async () => {
+    setRewards(await api<Reward[]>(`/dashboard/stores/${storeId}/rewards`));
+    setRedemptions(await api<Redemption[]>(`/dashboard/stores/${storeId}/redemptions`));
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
+
+  const add = async () => {
+    await api(`/dashboard/stores/${storeId}/rewards`, { method: 'POST', body: { name, pointsCost: Number(cost), stock: Number(stock) } });
+    setName(''); await load();
+  };
+  const toggle = async (r: Reward) => { await api(`/dashboard/rewards/${r.id}`, { method: 'PATCH', body: { active: !r.active } }); await load(); };
+  const del = async (r: Reward) => { if (!confirm('Delete/deactivate reward?')) return; await api(`/dashboard/rewards/${r.id}`, { method: 'DELETE' }); await load(); };
+  const fulfill = async (id: string) => { await api(`/dashboard/redemptions/${id}/fulfill`, { method: 'POST' }); await load(); };
+  const cancel = async (id: string) => { await api(`/dashboard/redemptions/${id}/cancel`, { method: 'POST' }); await load(); };
+
+  return (
+    <Card>
+      <h3 className="mb-1 font-semibold">Rewards catalog</h3>
+      <p className="mb-3 text-sm text-slate-500">Customers redeem points for rewards (via <code>POST /v1/loyalty/redemptions</code>).</p>
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <label className="text-sm"><div className="mb-1 text-slate-600">Reward name</div><input value={name} onChange={(e) => setName(e.target.value)} placeholder="$5 off" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Points cost</div><input value={cost} onChange={(e) => setCost(e.target.value)} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Stock (-1=∞)</div><input value={stock} onChange={(e) => setStock(e.target.value)} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <Button onClick={add} disabled={!name}>Add reward</Button>
+      </div>
+      {rewards.length > 0 && (
+        <ul className="mb-4 divide-y divide-slate-100 text-sm">
+          {rewards.map((r) => (
+            <li key={r.id} className="flex items-center justify-between py-2">
+              <span>{r.name} <span className="text-slate-400">· {r.points_cost} pts · stock {r.stock < 0 ? '∞' : r.stock}</span> {!r.active && <span className="text-xs text-red-500">(inactive)</span>}</span>
+              <span className="flex gap-2"><button onClick={() => toggle(r)} className="text-slate-600 hover:underline">{r.active ? 'Deactivate' : 'Activate'}</button><button onClick={() => del(r)} className="text-red-600 hover:underline">Delete</button></span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {redemptions.length > 0 && (
+        <>
+          <div className="mb-1 text-sm font-medium text-slate-700">Recent redemptions</div>
+          <ul className="divide-y divide-slate-100 text-sm">
+            {redemptions.slice(0, 8).map((r) => (
+              <li key={r.id} className="flex items-center justify-between py-2">
+                <span>{r.reward_name} <span className="font-mono text-xs text-slate-400">{r.code}</span> {r.customer_name && <span className="text-slate-400">· {r.customer_name}</span>}</span>
+                <span className="flex items-center gap-2">
+                  <span className={r.status === 'fulfilled' ? 'text-emerald-600' : r.status === 'cancelled' ? 'text-red-500' : 'text-amber-600'}>{r.status}</span>
+                  {r.status === 'issued' && <><button onClick={() => fulfill(r.id)} className="text-emerald-600 hover:underline">Fulfill</button><button onClick={() => cancel(r.id)} className="text-red-600 hover:underline">Cancel</button></>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </Card>
   );
 }

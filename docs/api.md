@@ -75,8 +75,14 @@ store). Manage customers via `POST/GET /v1/customers` (fields: `name`, `email`,
 
 **Loyalty points.** Enable a loyalty program per store (dashboard → Stores →
 Loyalty points): customers with a `customer_id` **earn points on paid payments**
-(`floor(amount × points_per_unit)`). Redeem via `POST /v1/loyalty/redeem`
+(`floor(amount × points_per_unit)`). Redeem raw points via `POST /v1/loyalty/redeem`
 `{ customer_id, points, reason? }`. The balance appears in Customer 360.
+
+**Rewards & redemption.** Merchants build a rewards catalog (dashboard → Stores →
+Rewards catalog). List active rewards with `GET /v1/loyalty/rewards`; redeem one
+with `POST /v1/loyalty/redemptions` `{ customer_id, reward_id }` → returns a
+voucher `code` and deducts the reward's `points_cost` (+ stock) atomically.
+Merchants **fulfill** or **cancel** (refund) redemptions from the dashboard.
 
 ### Retrieve a payment
 
