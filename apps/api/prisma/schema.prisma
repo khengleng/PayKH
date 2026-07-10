@@ -1,0 +1,433 @@
+// PayKH data model.
+//
+// Phase 1 actively uses: User, Organization, OrganizationMember, Store,
+// StoreBranding, ApiKey, Payment, PaymentStatusHistory,
+// PaymentProviderReference, IdempotencyRecord, ProviderCredential, AuditLog,
+// SecurityEvent.
+//
+// Webhook*, Plan, Subscription, UsageRecord, Invoice are defined here so the
+// schema is forward-compatible (Phase 2/3 wires up the behavior) — this avoids
+// a disruptive migration later. See ASSUMPTIONS.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum KeyMode {
+  TEST
+  LIVE
+}
+
+enum Currency {
+  USD
+  KHR
+}
+
+enum MemberRole {
+  OWNER
+  DEVELOPER
+  ANALYST
+  PLATFORM_ADMIN
+}
+
+enum PaymentStatus {
+  PENDING
+  SCANNED
+  PAID
+  EXPIRED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Identity & organizations
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?  // null when only using Google OAuth (Phase 2)
+  name         String?
+  googleId     String?  @unique
+  mfaEnabled   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships OrganizationMember[]
+  auditLogs   AuditLog[]
+}
+
+model Organization {
+  id        String    @id
+  name      String
+  status    OrgStatus @default(ACTIVE)
+  planId    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  plan          Plan?                @relation(fields: [planId], references: [id])
+  members       OrganizationMember[]
+  stores        Store[]
+  auditLogs     AuditLog[]
+  subscriptions Subscription[]
+  usageRecords  UsageRecord[]
+  invoices      Invoice[]
+}
+
+model OrganizationMember {
+  id             String     @id @default(cuid())
+  organizationId String
+  userId         String
+  role           MemberRole @default(OWNER)
+  createdAt      DateTime   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Stores, branding, credentials
+// ---------------------------------------------------------------------------
+
+model Store {
+  id             String   @id
+  organizationId String
+  name           String
+  liveMode       Boolean  @default(false) // false until production is activated
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branding            StoreBranding?
+  apiKeys             ApiKey[]
+  payments            Payment[]
+  providerCredentials ProviderCredential[]
+  webhookEndpoints    WebhookEndpoint[]
+
+  @@index([organizationId])
+}
+
+model StoreBranding {
+  id            String   @id @default(cuid())
+  storeId       String   @unique
+  displayName   String?
+  logoUrl       String?
+  primaryColor  String   @default("#4F46E5")
+  supportEmail  String?
+  successUrl    String?
+  failureUrl    String?
+  customMessage String?
+  updatedAt     DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+/// Encrypted payment-provider credentials (AES-256-GCM). The `secretCiphertext`
+/// column never holds plaintext.
+model ProviderCredential {
+  id               String   @id @default(cuid())
+  storeId          String
+  provider         String   @default("bakong")
+  mode             KeyMode  @default(TEST)
+  label            String?
+  secretCiphertext String   @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, provider, mode])
+}
+
+// ---------------------------------------------------------------------------
+// API keys (hashed at rest)
+// ---------------------------------------------------------------------------
+
+model ApiKey {
+  id            String    @id
+  storeId       String
+  mode          KeyMode
+  label         String?
+  tokenHash     String    @unique // SHA-256 of the full secret
+  displayPrefix String // e.g. bk_live_ab12
+  last4         String
+  scopes        String[]  @default([])
+  lastUsedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@index([storeId])
+  @@index([tokenHash])
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id          String        @id
+  storeId     String
+  apiKeyId    String?
+  mode        KeyMode
+  status      PaymentStatus @default(PENDING)
+  amount      Decimal       @db.Decimal(20, 4)
+  currency    Currency
+  referenceId String?
+  description String?
+  metadata    Json          @default("{}")
+  qrString    String        @db.Text
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  expiresAt   DateTime
+  paidAt      DateTime?
+
+  store             Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  apiKey            ApiKey?                    @relation(fields: [apiKeyId], references: [id])
+  statusHistory     PaymentStatusHistory[]
+  providerReference PaymentProviderReference?
+  webhookEvents     WebhookEvent[]
+
+  @@index([storeId, status])
+  @@index([storeId, referenceId])
+  @@index([storeId, createdAt])
+}
+
+model PaymentStatusHistory {
+  id         String        @id @default(cuid())
+  paymentId  String
+  fromStatus PaymentStatus?
+  toStatus   PaymentStatus
+  reason     String?
+  createdAt  DateTime      @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+}
+
+model PaymentProviderReference {
+  id             String   @id @default(cuid())
+  paymentId      String   @unique
+  provider       String   @default("bakong")
+  md5            String? // KHQR md5 hash used to poll Bakong
+  billNumber     String?
+  providerTxnId  String?
+  rawResponse    Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency
+// ---------------------------------------------------------------------------
+
+model IdempotencyRecord {
+  id             String   @id @default(cuid())
+  storeId        String
+  endpoint       String // e.g. "POST /v1/payments"
+  idempotencyKey String
+  requestHash    String // SHA-256 of the canonical request body
+  responseStatus Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@unique([storeId, endpoint, idempotencyKey])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks (schema defined in Phase 1; delivery worker wired in Phase 2)
+// ---------------------------------------------------------------------------
+
+model WebhookEndpoint {
+  id           String   @id @default(cuid())
+  storeId      String
+  url          String
+  enabledEvents String[] @default([])
+  disabled     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  secrets    WebhookSecret[]
+  deliveries WebhookDelivery[]
+
+  @@index([storeId])
+}
+
+model WebhookSecret {
+  id         String    @id @default(cuid())
+  endpointId String
+  secret     String // whsec_...
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime?
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId])
+}
+
+model WebhookEvent {
+  id        String   @id
+  storeId   String
+  paymentId String?
+  type      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  payment    Payment?          @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  deliveries WebhookDelivery[]
+
+  @@index([storeId])
+}
+
+model WebhookDelivery {
+  id             String                @id
+  endpointId     String
+  eventId        String
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempt        Int                   @default(0)
+  responseStatus Int?
+  responseBody   String?               @db.Text
+  error          String?
+  nextAttemptAt  DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  event    WebhookEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId])
+  @@index([status, nextAttemptAt])
+}
+
+// ---------------------------------------------------------------------------
+// Plans, billing, usage (schema in Phase 1; behavior in Phase 3)
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id                     String  @id
+  name                   String
+  monthlyPaidQuota       Int // successful payments per month; -1 = unlimited
+  priceUsdCents          Int     @default(0)
+  createdAt              DateTime @default(now())
+
+  organizations Organization[]
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id             String             @id @default(cuid())
+  organizationId String
+  planId         String
+  status         SubscriptionStatus @default(ACTIVE)
+  periodStart    DateTime
+  periodEnd      DateTime
+  createdAt      DateTime           @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         Plan         @relation(fields: [planId], references: [id])
+
+  @@index([organizationId])
+}
+
+model UsageRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  storeId        String?
+  periodStart    DateTime
+  paidCount      Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, periodStart])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  organizationId String
+  amountUsdCents Int
+  status         String   @default("draft")
+  periodStart    DateTime
+  periodEnd      DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit & security (append-only)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  storeId        String?
+  actorUserId    String?
+  action         String
+  entity         String?
+  beforeValue    Json?
+  afterValue     Json?
+  ipAddress      String?
+  userAgent      String?
+  requestId      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+}
+
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  type      String // e.g. "auth.failed", "apikey.invalid", "rate_limited"
+  storeId   String?
+  ipAddress String?
+  userAgent String?
+  detail    Json?
+  requestId String?
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
+}

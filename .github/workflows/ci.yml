@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: paykh
+          POSTGRES_PASSWORD: paykh
+          POSTGRES_DB: paykh
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U paykh"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://paykh:paykh@localhost:5432/paykh?schema=public
+      JWT_SECRET: ci_secret_at_least_16_chars_long_xyz
+      ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+      PAYMENT_PROVIDER: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build:packages
+      - run: npm run prisma:generate
+      - name: Apply migrations
+        run: npm run prisma:migrate --workspace @paykh/api
+      - name: Test
+        run: npm test
+      - name: Build all workspaces
+        run: npm run build

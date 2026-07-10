@@ -1,0 +1,36 @@
+# Local development dependencies (Postgres + Redis).
+# Production uses Railway managed Postgres/Redis — see docs/deployment.md.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: paykh-postgres
+    environment:
+      POSTGRES_USER: paykh
+      POSTGRES_PASSWORD: paykh
+      POSTGRES_DB: paykh
+    ports:
+      - "5432:5432"
+    volumes:
+      - paykh_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paykh"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: paykh-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - paykh_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  paykh_pgdata:
+  paykh_redisdata:

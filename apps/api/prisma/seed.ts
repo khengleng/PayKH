@@ -1,0 +1,94 @@
+/* eslint-disable no-console */
+import { PrismaClient } from '@prisma/client';
+import { hashPassword, generateApiKey, ids } from '@paykh/security';
+
+const prisma = new PrismaClient();
+
+const DEMO_EMAIL = 'owner@demo.paykh.dev';
+const DEMO_PASSWORD = 'Password123!';
+
+async function seedPlans() {
+  const plans = [
+    { id: 'plan_free', name: 'Free', monthlyPaidQuota: 100, priceUsdCents: 0 },
+    { id: 'plan_starter', name: 'Starter', monthlyPaidQuota: 1000, priceUsdCents: 900 },
+    { id: 'plan_growth', name: 'Growth', monthlyPaidQuota: 5000, priceUsdCents: 4900 },
+    { id: 'plan_enterprise', name: 'Enterprise', monthlyPaidQuota: -1, priceUsdCents: 0 },
+  ];
+  for (const plan of plans) {
+    await prisma.plan.upsert({ where: { id: plan.id }, create: plan, update: plan });
+  }
+  console.log(`✓ Seeded ${plans.length} plans`);
+}
+
+async function seedDemoMerchant() {
+  const existing = await prisma.user.findUnique({ where: { email: DEMO_EMAIL } });
+  if (existing) {
+    console.log(`• Demo merchant already exists (${DEMO_EMAIL}) — skipping`);
+    return;
+  }
+
+  const passwordHash = await hashPassword(DEMO_PASSWORD);
+  const orgId = ids.organization();
+  const storeId = ids.store();
+
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: { email: DEMO_EMAIL, passwordHash, name: 'Demo Owner' },
+    });
+    await tx.organization.create({
+      data: { id: orgId, name: 'Demo Merchant Co', planId: 'plan_free' },
+    });
+    await tx.organizationMember.create({
+      data: { organizationId: orgId, userId: user.id, role: 'OWNER' },
+    });
+    await tx.store.create({
+      data: {
+        id: storeId,
+        organizationId: orgId,
+        name: 'Demo Coffee Shop',
+        branding: {
+          create: {
+            displayName: 'Demo Coffee Shop',
+            primaryColor: '#0F766E',
+            supportEmail: 'support@demo.paykh.dev',
+            customMessage: 'Thank you for your order!',
+          },
+        },
+      },
+    });
+  });
+
+  const key = generateApiKey('test');
+  await prisma.apiKey.create({
+    data: {
+      id: ids.apiKey(),
+      storeId,
+      mode: 'TEST',
+      label: 'Default test key',
+      tokenHash: key.tokenHash,
+      displayPrefix: key.displayPrefix,
+      last4: key.last4,
+    },
+  });
+
+  console.log('\n✓ Seeded demo merchant');
+  console.log('  ---------------------------------------------');
+  console.log(`  Login email : ${DEMO_EMAIL}`);
+  console.log(`  Password    : ${DEMO_PASSWORD}`);
+  console.log(`  Store id     : ${storeId}`);
+  console.log(`  TEST API key : ${key.token}`);
+  console.log('  (Store this key now — it is not retrievable again.)');
+  console.log('  ---------------------------------------------\n');
+}
+
+async function main() {
+  await seedPlans();
+  await seedDemoMerchant();
+}
+
+main()
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

@@ -1,0 +1,31 @@
+{
+  "name": "paykh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PayKH — Developer-first Bakong KHQR payment gateway for Cambodia",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/shared-types",
+    "packages/security",
+    "apps/api",
+    "apps/checkout",
+    "apps/dashboard",
+    "apps/worker"
+  ],
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:packages": "npm run build --workspace @paykh/shared-types && npm run build --workspace @paykh/security",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:api": "npm run build:packages && npm run dev --workspace @paykh/api",
+    "dev:checkout": "npm run dev --workspace @paykh/checkout",
+    "dev:dashboard": "npm run dev --workspace @paykh/dashboard",
+    "dev:worker": "npm run build:packages && npm run dev --workspace @paykh/worker",
+    "prisma:generate": "npm run prisma:generate --workspace @paykh/api",
+    "prisma:migrate": "npm run prisma:migrate --workspace @paykh/api",
+    "db:seed": "npm run build:packages && npm run db:seed --workspace @paykh/api"
+  }
+}
