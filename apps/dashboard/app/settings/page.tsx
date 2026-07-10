@@ -17,10 +17,68 @@ export default function SettingsPage() {
 function SettingsContent({ orgId }: { orgId?: string }) {
   return (
     <>
-      <PageTitle title="Settings" subtitle="Security and audit." />
+      <PageTitle title="Settings" subtitle="Verification, security, and audit." />
+      <VerificationCard orgId={orgId} />
       <MfaCard />
       <AuditCard orgId={orgId} />
     </>
+  );
+}
+
+function VerificationCard({ orgId }: { orgId?: string }) {
+  const [status, setStatus] = useState<string>('loading');
+  const [rejection, setRejection] = useState<string | null>(null);
+  const [form, setForm] = useState({ legalName: '', businessType: '', registrationNumber: '', contactName: '', contactPhone: '', address: '' });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const load = useCallback(async () => {
+    if (!orgId) return;
+    const v = await api<any>(`/verification?org_id=${orgId}`);
+    setStatus(v.status);
+    setRejection(v.rejection_reason ?? null);
+    if (v.legal_name) setForm({ legalName: v.legal_name, businessType: v.business_type, registrationNumber: v.registration_number ?? '', contactName: v.contact_name, contactPhone: v.contact_phone ?? '', address: v.address ?? '' });
+  }, [orgId]);
+  useEffect(() => { load(); }, [load]);
+
+  const submit = async () => {
+    if (!orgId) return;
+    setBusy(true); setMsg('');
+    try {
+      await api('/verification', { method: 'POST', body: { organizationId: orgId, ...form } });
+      setMsg('Submitted for review'); await load();
+    } catch (e: any) { setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const badge = { verified: 'text-emerald-600', pending: 'text-amber-600', rejected: 'text-red-600', unverified: 'text-slate-500', loading: 'text-slate-400' }[status] ?? 'text-slate-500';
+
+  return (
+    <Card className="mb-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Merchant verification (KYC)</h3>
+        <span className={`text-sm font-medium capitalize ${badge}`}>{status}</span>
+      </div>
+      <p className="mb-3 text-sm text-slate-500">Required before activating live mode. {rejection && <span className="text-red-600">Rejected: {rejection}</span>}</p>
+      {status !== 'verified' && (
+        <div className="grid gap-2 md:grid-cols-2">
+          {([['legalName', 'Legal business name'], ['businessType', 'Business type'], ['registrationNumber', 'Registration no. (optional)'], ['contactName', 'Contact name'], ['contactPhone', 'Contact phone (optional)'], ['address', 'Address (optional)']] as const).map(([k, label]) => (
+            <label key={k} className="text-sm">
+              <div className="mb-1 text-slate-600">{label}</div>
+              <input value={(form as any)[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </label>
+          ))}
+        </div>
+      )}
+      {status !== 'verified' && (
+        <div className="mt-3 flex items-center gap-2">
+          <Button onClick={submit} disabled={busy || !form.legalName || !form.businessType || !form.contactName}>
+            {status === 'pending' ? 'Resubmit' : 'Submit for verification'}
+          </Button>
+          {msg && <span className="text-sm text-slate-500">{msg}</span>}
+        </div>
+      )}
+    </Card>
   );
 }
 

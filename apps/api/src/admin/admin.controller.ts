@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nest
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AdminService, UpsertPlanDto } from './admin.service';
+import { VerificationService } from '../verification/verification.service';
+import { RejectVerificationDto } from '../verification/dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { AuditService } from '../audit/audit.service';
@@ -14,6 +16,7 @@ import { getRequestId } from '../common/request-context';
 export class AdminController {
   constructor(
     private readonly admin: AdminService,
+    private readonly verification: VerificationService,
     private readonly audit: AuditService,
   ) {}
 
@@ -59,6 +62,37 @@ export class AdminController {
     await this.audit.record({
       organizationId: id, actorUserId: user.userId, action: 'admin.org.reactivate', entity: `org:${id}`,
       ipAddress: req.ip, userAgent: req.header('user-agent'), requestId: getRequestId(req),
+    });
+    return result;
+  }
+
+  @Get('verifications')
+  @ApiOperation({ summary: 'List merchant verifications pending review' })
+  async verifications(@CurrentUser() user: AuthUser) {
+    await this.admin.assertAdmin(user.userId);
+    return this.verification.listForReview();
+  }
+
+  @Post('verifications/:orgId/approve')
+  @ApiOperation({ summary: 'Approve a merchant verification' })
+  async approve(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Req() req: Request) {
+    await this.admin.assertAdmin(user.userId);
+    const result = await this.verification.review(orgId, true, user.userId);
+    await this.audit.record({
+      organizationId: orgId, actorUserId: user.userId, action: 'verification.approve', entity: `org:${orgId}`,
+      ipAddress: req.ip, userAgent: req.header('user-agent'), requestId: getRequestId(req),
+    });
+    return result;
+  }
+
+  @Post('verifications/:orgId/reject')
+  @ApiOperation({ summary: 'Reject a merchant verification' })
+  async reject(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() dto: RejectVerificationDto, @Req() req: Request) {
+    await this.admin.assertAdmin(user.userId);
+    const result = await this.verification.review(orgId, false, user.userId, dto.reason);
+    await this.audit.record({
+      organizationId: orgId, actorUserId: user.userId, action: 'verification.reject', entity: `org:${orgId}`,
+      afterValue: { reason: dto.reason }, ipAddress: req.ip, userAgent: req.header('user-agent'), requestId: getRequestId(req),
     });
     return result;
   }

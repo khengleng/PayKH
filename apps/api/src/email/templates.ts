@@ -39,6 +39,25 @@ export function quotaWarningEmail(to: string, level: number, used: number, quota
   };
 }
 
+export function verificationEmail(to: string, approved: boolean, reason?: string): EmailMessage {
+  return {
+    to,
+    subject: approved ? 'Your PayKH merchant account is verified' : 'PayKH verification needs attention',
+    html: layout(
+      approved ? 'You’re verified 🎉' : 'Verification not approved',
+      approved
+        ? `<p style="color:#334155">Your merchant verification (KYC) was approved. You can now activate <b>live mode</b> and accept real payments.</p>
+           <p style="margin:20px 0"><a href="https://paykh.cambobia.com/stores" style="background:#4F46E5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Go live</a></p>`
+        : `<p style="color:#334155">Your verification could not be approved${reason ? `: <b>${reason}</b>` : '.'}</p>
+           <p style="color:#334155">Please update your details and resubmit from the dashboard.</p>
+           <p style="margin:20px 0"><a href="https://paykh.cambobia.com/settings" style="background:#4F46E5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Update verification</a></p>`,
+    ),
+    text: approved
+      ? 'Your PayKH merchant verification was approved. You can now activate live mode.'
+      : `Your PayKH verification was not approved${reason ? `: ${reason}` : ''}. Please resubmit.`,
+  };
+}
+
 export function endpointDisabledEmail(to: string, url: string): EmailMessage {
   return {
     to,

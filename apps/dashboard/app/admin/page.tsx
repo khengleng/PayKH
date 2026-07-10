@@ -15,15 +15,27 @@ export default function AdminPage() {
   const [email, setEmail] = useState('');
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [orgs, setOrgs] = useState<Org[]>([]);
+  const [verifs, setVerifs] = useState<any[]>([]);
   const [search, setSearch] = useState('');
 
   const loadData = useCallback(async () => {
-    const [m, o] = await Promise.all([
+    const [m, o, v] = await Promise.all([
       api<Metrics>('/admin/metrics'),
       api<Org[]>(`/admin/orgs${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+      api<any[]>('/admin/verifications'),
     ]);
-    setMetrics(m); setOrgs(o);
+    setMetrics(m); setOrgs(o); setVerifs(v);
   }, [search]);
+
+  const reviewVerif = async (orgId: string, approve: boolean) => {
+    if (!approve) {
+      const reason = prompt('Rejection reason?') || 'Not specified';
+      await api(`/admin/verifications/${orgId}/reject`, { method: 'POST', body: { reason } });
+    } else {
+      await api(`/admin/verifications/${orgId}/approve`, { method: 'POST' });
+    }
+    await loadData();
+  };
 
   useEffect(() => {
     if (!tokenStore.get()) { router.replace('/login?next=/admin'); return; }
@@ -71,6 +83,35 @@ export default function AdminPage() {
           <Stat label="Payments" value={metrics.total_payments} hint={`${metrics.success_rate}% success`} />
           <Stat label="Paid volume" value={`$${metrics.paid_volume}`} />
         </div>
+      )}
+
+      {verifs.length > 0 && (
+        <>
+          <h2 className="mb-2 mt-6 text-lg font-semibold">Verifications pending review ({verifs.length})</h2>
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead className="border-b border-slate-100 text-left text-slate-500">
+                <tr><th className="px-4 py-3">Organization</th><th className="px-4 py-3">Legal name</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3"></th></tr>
+              </thead>
+              <tbody>
+                {verifs.map((v) => (
+                  <tr key={v.organization_id} className="border-b border-slate-50">
+                    <td className="px-4 py-3">{v.organization_name}</td>
+                    <td className="px-4 py-3">{v.legal_name}</td>
+                    <td className="px-4 py-3 text-slate-500">{v.business_type}</td>
+                    <td className="px-4 py-3 text-slate-500">{v.contact_name}{v.contact_phone ? ` · ${v.contact_phone}` : ''}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => reviewVerif(v.organization_id, true)} className="text-emerald-600 hover:underline">Approve</button>
+                        <button onClick={() => reviewVerif(v.organization_id, false)} className="text-red-600 hover:underline">Reject</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </>
       )}
 
       <div className="mb-3 mt-6 flex items-center gap-2">

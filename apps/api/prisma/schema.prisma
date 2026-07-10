@@ -77,6 +77,13 @@ enum SubscriptionStatus {
   CANCELLED
 }
 
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -114,6 +121,28 @@ model Organization {
   usageRecords  UsageRecord[]
   invoices      Invoice[]
   invitations   Invitation[]
+  verification  MerchantVerification?
+}
+
+model MerchantVerification {
+  id                 String             @id @default(cuid())
+  organizationId     String             @unique
+  status             VerificationStatus @default(PENDING)
+  legalName          String
+  businessType       String
+  registrationNumber String?
+  contactName        String
+  contactPhone       String?
+  address            String?
+  documents          Json               @default("[]") // [{type,name,url}]
+  rejectionReason    String?
+  submittedAt        DateTime           @default(now())
+  reviewedAt         DateTime?
+  reviewedByUserId   String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
 }
 
 model Invitation {

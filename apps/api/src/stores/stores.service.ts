@@ -7,12 +7,14 @@ import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requireMembership, requirePermission } from '../auth/rbac';
 import { CreateStoreDto, UpdateBrandingDto, UpsertCredentialDto } from './dto';
+import { VerificationService } from '../verification/verification.service';
 
 @Injectable()
 export class StoresService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
+    private readonly verification: VerificationService,
   ) {}
 
   /** Load a store and assert the user is a member of its org. Returns the store. */
@@ -83,6 +85,10 @@ export class StoresService {
   async setLiveMode(user: AuthUser, storeId: string, liveMode: boolean) {
     const store = await this.loadStoreForUser(user, storeId);
     requirePermission(user, store.organizationId, 'store:write');
+    // KYC gate: activating live mode requires an approved merchant verification.
+    if (liveMode) {
+      await this.verification.assertVerified(store.organizationId);
+    }
     const updated = await this.prisma.store.update({
       where: { id: storeId },
       data: { liveMode },

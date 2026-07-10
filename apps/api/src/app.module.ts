@@ -18,6 +18,7 @@ import { BillingModule } from './billing/billing.module';
 import { TeamModule } from './team/team.module';
 import { AdminModule } from './admin/admin.module';
 import { SettlementsModule } from './settlements/settlements.module';
+import { VerificationModule } from './verification/verification.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { RequestIdMiddleware } from './common/request-context';
@@ -42,6 +43,7 @@ import { RequestIdMiddleware } from './common/request-context';
     TeamModule,
     AdminModule,
     SettlementsModule,
+    VerificationModule,
     DashboardModule,
     HealthModule,
   ],

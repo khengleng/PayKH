@@ -17,8 +17,12 @@ The Phase 1 onboarding path, end to end.
    (display name, primary color, logo, support email, redirect URLs, message).
 7. **Create a webhook endpoint** — Phase 2.
 8. **Run a test payment** — see below.
-9. **Activate production** — dashboard → Stores → *Activate live mode*, then
-   create `bk_live_…` keys.
+9. **Complete verification (KYC)** — dashboard → Settings → *Merchant
+   verification*: submit legal business name, type, contact, and documents.
+   A platform admin reviews it (approve/reject); you're emailed the decision.
+10. **Activate production** — dashboard → Stores → *Activate live mode*. This is
+    **gated on an approved verification** (returns `403` until verified), then
+    create `bk_live_…` keys.
 
 ## Sandbox vs live
 
