@@ -3,11 +3,12 @@ import { createHash } from 'crypto';
 import { Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Payment, Prisma, PaymentStatus as DbStatus } from '@prisma/client';
-import { ids } from '@paykh/security';
+import { ids, prefixedId } from '@paykh/security';
 import {
   canTransition,
   PaymentResource,
   PaymentStatus,
+  RefundResource,
   STATUS_TO_EVENT,
 } from '@paykh/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,10 +19,12 @@ import {
 } from '../providers/payment-provider.interface';
 import { ApiKeyContext } from '../auth/api-key.guard';
 import { validateAmount, formatAmount } from './amount.util';
-import { CreatePaymentDto, ListPaymentsDto } from './dto';
+import { CreatePaymentDto, ListPaymentsDto, RefundDto } from './dto';
+import { Refund } from '@prisma/client';
 import { PaymentEventsService } from './payment-events.service';
 import { WebhookEventsService } from '../webhooks/webhook-events.service';
 import { QuotaService } from '../billing/quota.service';
+import { AuditService } from '../audit/audit.service';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -42,6 +45,7 @@ export class PaymentsService {
     private readonly events: PaymentEventsService,
     private readonly webhookEvents: WebhookEventsService,
     private readonly quota: QuotaService,
+    private readonly audit: AuditService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -247,6 +251,163 @@ export class PaymentsService {
     return this.serialize(updated);
   }
 
+  // --------------------------------------------------------------------- refund
+  /**
+   * Refund a paid payment (full or partial). Uses an optimistic lock on
+   * refundedAmount to prevent double-refunds, supports idempotency keys, and
+   * transitions the payment to `refunded` once fully refunded.
+   */
+  async refund(
+    ctx: ApiKeyContext,
+    paymentId: string,
+    dto: RefundDto,
+    idempotencyKey: string | undefined,
+    rawBody: string,
+  ): Promise<{ resource: RefundResource; status: number }> {
+    const endpoint = `POST /v1/payments/${paymentId}/refund`;
+    const requestHash = this.hashBody(rawBody);
+
+    if (idempotencyKey) {
+      const existing = await this.prisma.idempotencyRecord.findUnique({
+        where: { storeId_endpoint_idempotencyKey: { storeId: ctx.storeId, endpoint, idempotencyKey } },
+      });
+      if (existing) {
+        if (existing.requestHash !== requestHash) {
+          throw ApiError.idempotencyConflict('Idempotency-Key already used with a different request body');
+        }
+        return { resource: existing.responseBody as unknown as RefundResource, status: existing.responseStatus };
+      }
+    }
+
+    const payment = await this.findScoped(ctx.storeId, paymentId);
+    if (toApiStatus(payment.status) !== 'paid') {
+      throw ApiError.invalidRequest('Only paid payments can be refunded');
+    }
+    const total = payment.amount;
+    const alreadyRefunded = payment.refundedAmount;
+    const remaining = total.minus(alreadyRefunded);
+    if (remaining.lessThanOrEqualTo(0)) {
+      throw ApiError.invalidRequest('Payment is already fully refunded');
+    }
+
+    const refundAmount = dto.amount ? validateAmount(dto.amount, payment.currency) : remaining;
+    if (refundAmount.lessThanOrEqualTo(0)) {
+      throw ApiError.amountTooLow('Refund amount must be greater than 0');
+    }
+    if (refundAmount.greaterThan(remaining)) {
+      throw ApiError.invalidRequest(
+        `Refund amount exceeds refundable balance (${formatAmount(remaining, payment.currency)})`,
+      );
+    }
+
+    // Ask the provider to process (mock succeeds; Bakong records manual intent).
+    let providerResult;
+    try {
+      providerResult = await this.provider.refundPayment({
+        paymentId,
+        amount: formatAmount(refundAmount, payment.currency),
+        currency: payment.currency,
+        ref: { md5: undefined, billNumber: undefined },
+      });
+    } catch (err) {
+      this.logger.error(`Provider refund failed for ${paymentId}`, err as Error);
+      throw ApiError.providerError('Refund failed at provider');
+    }
+    if (!providerResult.ok) throw ApiError.providerError('Provider declined the refund');
+
+    const refundId = prefixedId('rf');
+    const newRefunded = alreadyRefunded.plus(refundAmount);
+    const fullyRefunded = newRefunded.greaterThanOrEqualTo(total);
+
+    // Optimistic-locked increment: only succeeds if refundedAmount is unchanged,
+    // which prevents concurrent over-refunding.
+    const refund = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.payment.updateMany({
+        where: { id: paymentId, refundedAmount: alreadyRefunded },
+        data: { refundedAmount: newRefunded },
+      });
+      if (updated.count !== 1) {
+        throw ApiError.idempotencyConflict('Concurrent refund detected; retry');
+      }
+      const created = await tx.refund.create({
+        data: {
+          id: refundId,
+          paymentId,
+          amount: refundAmount,
+          currency: payment.currency,
+          reason: dto.reason ?? null,
+          status: 'SUCCEEDED',
+          providerRefId: providerResult.providerRefId ?? null,
+        },
+      });
+      await tx.paymentStatusHistory.create({
+        data: {
+          paymentId,
+          fromStatus: 'PAID',
+          toStatus: 'PAID',
+          reason: `refund ${formatAmount(refundAmount, payment.currency)}${providerResult.manual ? ' (manual settlement)' : ''}`,
+        },
+      });
+      return created;
+    });
+
+    // Full refund → transition to refunded (emits payment.refunded). Partial →
+    // status stays paid, so emit the refund event directly.
+    if (fullyRefunded) {
+      await this.transition(paymentId, 'refunded', 'fully refunded');
+    } else {
+      const refreshed = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+      if (refreshed) await this.webhookEvents.emitRefunded(refreshed);
+    }
+
+    const resource = this.serializeRefund(refund);
+    if (idempotencyKey) {
+      await this.prisma.idempotencyRecord
+        .create({
+          data: {
+            storeId: ctx.storeId,
+            endpoint,
+            idempotencyKey,
+            requestHash,
+            responseStatus: 201,
+            responseBody: resource as unknown as Prisma.InputJsonValue,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        })
+        .catch(() => undefined);
+    }
+    await this.audit.record({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      action: 'payment.refund',
+      entity: `payment:${paymentId}`,
+      afterValue: { refund_id: refundId, amount: resource.amount, fully_refunded: fullyRefunded, reason: dto.reason },
+    });
+    this.logger.log(`refund ${refundId} ${resource.amount} ${resource.currency} for ${paymentId}`);
+    return { resource, status: 201 };
+  }
+
+  async listRefunds(ctx: ApiKeyContext, paymentId: string): Promise<RefundResource[]> {
+    await this.findScoped(ctx.storeId, paymentId);
+    const refunds = await this.prisma.refund.findMany({
+      where: { paymentId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return refunds.map((r) => this.serializeRefund(r));
+  }
+
+  private serializeRefund(r: Refund): RefundResource {
+    return {
+      id: r.id,
+      payment_id: r.paymentId,
+      amount: formatAmount(r.amount, r.currency),
+      currency: r.currency,
+      reason: r.reason,
+      status: r.status.toLowerCase() as RefundResource['status'],
+      created_at: r.createdAt.toISOString(),
+    };
+  }
+
   // ------------------------------------------------------------ simulate (test)
   /** Test-mode-only status simulation, backing the "run a test payment" flow. */
   async simulate(
@@ -385,6 +546,7 @@ export class PaymentsService {
       created_at: payment.createdAt.toISOString(),
       expires_at: payment.expiresAt.toISOString(),
       paid_at: payment.paidAt?.toISOString() ?? null,
+      refunded_amount: formatAmount(payment.refundedAmount, payment.currency),
     };
   }
 }

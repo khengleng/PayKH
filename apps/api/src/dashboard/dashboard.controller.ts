@@ -1,9 +1,15 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { IsOptional, IsString } from 'class-validator';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { PaymentStatus } from '@paykh/shared-types';
+
+class DashboardRefundDto {
+  @IsOptional() @IsString() amount?: string;
+  @IsOptional() @IsString() reason?: string;
+}
 
 /** Merchant dashboard read APIs (JWT-authenticated). */
 @ApiTags('dashboard')
@@ -41,6 +47,12 @@ export class DashboardController {
   @ApiOperation({ summary: 'Payment detail with timeline (dashboard view)' })
   getPayment(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.dashboard.getPayment(user, id);
+  }
+
+  @Post('payments/:id/refund')
+  @ApiOperation({ summary: 'Refund a payment (dashboard, requires payment:write)' })
+  refund(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DashboardRefundDto) {
+    return this.dashboard.refund(user, id, dto);
   }
 
   @Get('orgs/:orgId/audit-logs')

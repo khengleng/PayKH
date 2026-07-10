@@ -6,10 +6,31 @@ import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requireMembership, requirePermission } from '../auth/rbac';
 import { formatAmount } from '../payments/amount.util';
+import { PaymentsService } from '../payments/payments.service';
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly payments: PaymentsService,
+  ) {}
+
+  /** Refund a payment from the dashboard (requires payment:write). */
+  async refund(user: AuthUser, paymentId: string, dto: { amount?: string; reason?: string }) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw ApiError.paymentNotFound();
+    const store = await this.prisma.store.findUnique({ where: { id: payment.storeId } });
+    if (!store) throw ApiError.paymentNotFound('Store not found');
+    requirePermission(user, store.organizationId, 'payment:write');
+    const ctx = {
+      apiKeyId: '',
+      storeId: payment.storeId,
+      organizationId: store.organizationId,
+      mode: payment.mode === 'LIVE' ? ('live' as const) : ('test' as const),
+    };
+    const { resource } = await this.payments.refund(ctx, paymentId, dto, undefined, JSON.stringify(dto));
+    return resource;
+  }
 
   private async assertStoreAccess(user: AuthUser, storeId: string) {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
@@ -101,12 +122,20 @@ export class DashboardService {
       include: {
         statusHistory: { orderBy: { createdAt: 'asc' } },
         providerReference: true,
+        refunds: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!payment) throw ApiError.paymentNotFound();
     await this.assertStoreAccess(user, payment.storeId);
     return {
       ...this.serialize(payment),
+      refunds: payment.refunds.map((r) => ({
+        id: r.id,
+        amount: formatAmount(r.amount, r.currency),
+        reason: r.reason,
+        status: r.status.toLowerCase(),
+        created_at: r.createdAt.toISOString(),
+      })),
       timeline: payment.statusHistory.map((h) => ({
         from: h.fromStatus?.toLowerCase() ?? null,
         to: h.toStatus.toLowerCase(),
@@ -221,6 +250,7 @@ export class DashboardService {
       reference_id: p.referenceId,
       description: p.description,
       metadata: (p.metadata as Record<string, unknown>) ?? {},
+      refunded_amount: formatAmount(p.refundedAmount, p.currency),
       created_at: p.createdAt.toISOString(),
       expires_at: p.expiresAt.toISOString(),
       paid_at: p.paidAt?.toISOString() ?? null,

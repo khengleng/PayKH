@@ -38,6 +38,20 @@ export interface ProviderHealth {
   detail?: string;
 }
 
+export interface RefundInput {
+  paymentId: string;
+  amount: string; // decimal string
+  currency: 'USD' | 'KHR';
+  ref: ProviderReference;
+}
+
+export interface RefundResult {
+  ok: boolean;
+  providerRefId?: string;
+  /** true when the provider only records intent (settlement is out-of-band). */
+  manual?: boolean;
+}
+
 /**
  * All payment-provider interactions go through this interface. Controllers and
  * services must never call a provider SDK directly.
@@ -48,6 +62,7 @@ export interface PaymentProvider {
   checkPaymentStatus(ref: ProviderReference): Promise<ProviderStatusResult>;
   verifyPayment(ref: ProviderReference): Promise<boolean>;
   cancelPayment(ref: ProviderReference): Promise<void>;
+  refundPayment(input: RefundInput): Promise<RefundResult>;
   getProviderHealth(): Promise<ProviderHealth>;
 }
 

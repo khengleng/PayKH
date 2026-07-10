@@ -60,6 +60,12 @@ enum WebhookDeliveryStatus {
   FAILED
 }
 
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
 enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
@@ -228,22 +234,40 @@ model Payment {
   currency    Currency
   referenceId String?
   description String?
-  metadata    Json          @default("{}")
-  qrString    String        @db.Text
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  expiresAt   DateTime
-  paidAt      DateTime?
+  metadata       Json          @default("{}")
+  qrString       String        @db.Text
+  refundedAmount Decimal       @default(0) @db.Decimal(20, 4)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  expiresAt      DateTime
+  paidAt         DateTime?
 
   store             Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   apiKey            ApiKey?                    @relation(fields: [apiKeyId], references: [id])
   statusHistory     PaymentStatusHistory[]
   providerReference PaymentProviderReference?
   webhookEvents     WebhookEvent[]
+  refunds           Refund[]
 
   @@index([storeId, status])
   @@index([storeId, referenceId])
   @@index([storeId, createdAt])
+}
+
+model Refund {
+  id            String       @id
+  paymentId     String
+  amount        Decimal      @db.Decimal(20, 4)
+  currency      Currency
+  reason        String?
+  status        RefundStatus @default(SUCCEEDED)
+  providerRefId String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
 }
 
 model PaymentStatusHistory {

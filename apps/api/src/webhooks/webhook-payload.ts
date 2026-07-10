@@ -22,6 +22,7 @@ export function buildWebhookPayload(
         reference_id: payment.referenceId,
         metadata: (payment.metadata as Record<string, unknown>) ?? {},
         approved_at: payment.paidAt?.toISOString() ?? null,
+        amount_refunded: formatAmount(payment.refundedAmount, payment.currency),
       },
     },
   };

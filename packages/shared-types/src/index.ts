@@ -18,7 +18,7 @@ export type PaymentStatus =
 export const PAYMENT_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
   pending: ['scanned', 'paid', 'expired', 'failed', 'cancelled'],
   scanned: ['paid', 'expired', 'failed', 'cancelled'],
-  paid: [], // terminal (refunded added in a later phase)
+  paid: ['refunded'], // fully refunded
   expired: [],
   failed: [],
   cancelled: [],
@@ -45,6 +45,17 @@ export interface PaymentResource {
   created_at: string; // ISO 8601
   expires_at: string; // ISO 8601
   paid_at?: string | null;
+  refunded_amount?: string; // cumulative refunded, decimal string
+}
+
+export interface RefundResource {
+  id: string;
+  payment_id: string;
+  amount: string;
+  currency: Currency;
+  reason: string | null;
+  status: 'succeeded' | 'pending' | 'failed';
+  created_at: string;
 }
 
 export interface CreatePaymentRequest {
@@ -82,7 +93,8 @@ export type WebhookEventType =
   | 'payment.completed'
   | 'payment.expired'
   | 'payment.failed'
-  | 'payment.cancelled';
+  | 'payment.cancelled'
+  | 'payment.refunded';
 
 export interface WebhookEventPayload {
   id: string;
@@ -97,6 +109,7 @@ export interface WebhookEventPayload {
       reference_id: string | null;
       metadata: Record<string, unknown>;
       approved_at?: string | null;
+      amount_refunded?: string;
     };
   };
 }
@@ -108,6 +121,7 @@ export const STATUS_TO_EVENT: Partial<Record<PaymentStatus, WebhookEventType>> =
   expired: 'payment.expired',
   failed: 'payment.failed',
   cancelled: 'payment.cancelled',
+  refunded: 'payment.refunded',
 };
 
 // ---------------------------------------------------------------------------

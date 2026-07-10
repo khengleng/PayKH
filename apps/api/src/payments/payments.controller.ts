@@ -14,7 +14,7 @@ import {
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { PaymentsService } from './payments.service';
-import { CreatePaymentDto, ListPaymentsDto, SimulateDto } from './dto';
+import { CreatePaymentDto, ListPaymentsDto, RefundDto, SimulateDto } from './dto';
 import { ApiKeyGuard, getApiKeyContext } from '../auth/api-key.guard';
 import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
@@ -60,6 +60,30 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Cancel a payment (before completion)' })
   cancel(@Req() req: Request, @Param('id') id: string) {
     return this.payments.cancel(getApiKeyContext(req), id);
+  }
+
+  @Post(':id/refund')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Refund a paid payment (full or partial)' })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  async refund(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: RefundDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const ctx = getApiKeyContext(req);
+    const rawBody = (req as Request & { rawBody?: string }).rawBody ?? JSON.stringify(dto);
+    const { resource, status } = await this.payments.refund(ctx, id, dto, idempotencyKey, rawBody);
+    res.status(status);
+    return resource;
+  }
+
+  @Get(':id/refunds')
+  @ApiOperation({ summary: 'List refunds for a payment' })
+  listRefunds(@Req() req: Request, @Param('id') id: string) {
+    return this.payments.listRefunds(getApiKeyContext(req), id);
   }
 
   @Post(':id/simulate')

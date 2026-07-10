@@ -95,6 +95,38 @@ curl -X POST http://localhost:4000/v1/payments/pay_xxx/cancel \
 
 Only allowed before completion; a `paid` payment cannot be cancelled.
 
+### Refund a payment
+
+```
+POST /v1/payments/:id/refund
+Authorization: Bearer bk_live_xxx
+Idempotency-Key: unique-value        # optional
+```
+
+```bash
+# Full refund (omit amount) or partial (specify amount ≤ refundable balance)
+curl -X POST http://localhost:4000/v1/payments/pay_xxx/refund \
+  -H "Authorization: Bearer bk_live_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "amount": "0.50", "reason": "customer request" }'
+```
+
+`201 Created`:
+
+```json
+{ "id": "rf_xxx", "payment_id": "pay_xxx", "amount": "0.50", "currency": "USD",
+  "reason": "customer request", "status": "succeeded", "created_at": "..." }
+```
+
+Only **paid** payments can be refunded. Partial refunds keep the payment `paid`
+(with a growing `refunded_amount`); once fully refunded the payment becomes
+`refunded`. Over-refunding is rejected. Each refund fires a `payment.refunded`
+webhook. List with `GET /v1/payments/:id/refunds`.
+
+> **Bakong note:** Bakong has no programmatic refund API — refunds are recorded
+> and audited by PayKH, but settlement back to the payer is completed
+> out-of-band by the operator.
+
 ### Simulate a status change (test mode only)
 
 Drives the mock provider so you can run an end-to-end test payment.

@@ -6,7 +6,10 @@ import {
   ProviderHealth,
   ProviderReference,
   ProviderStatusResult,
+  RefundInput,
+  RefundResult,
 } from './payment-provider.interface';
+import { prefixedId } from '@paykh/security';
 import { buildMockKhqr } from './khqr.util';
 import { CircuitBreaker, withResilience } from './resilience';
 
@@ -48,6 +51,11 @@ export class MockKhqrProvider implements PaymentProvider {
 
   async cancelPayment(_ref: ProviderReference): Promise<void> {
     // no-op for the mock
+  }
+
+  async refundPayment(input: RefundInput): Promise<RefundResult> {
+    this.logger.debug(`Mock refund ${input.amount} ${input.currency} for ${input.paymentId}`);
+    return { ok: true, providerRefId: prefixedId('mockrf', 16) };
   }
 
   async getProviderHealth(): Promise<ProviderHealth> {

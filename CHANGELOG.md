@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Refunds** (Domain 4): full/partial refunds on paid payments with an
+  optimistic-locked balance (no over-refund), idempotency, `payment.refunded`
+  webhook, audit logging, and a dashboard refund action. Provider abstraction
+  gains `refundPayment()` (mock succeeds; Bakong records a manual-settlement
+  intent).
 - **DevSecOps/Release:** hardened CI (lint + Prisma validate + Python SDK tests),
   a Security workflow (npm audit, gitleaks, CodeQL), Dependabot, CODEOWNERS,
   PR template, and a tag-driven release workflow.

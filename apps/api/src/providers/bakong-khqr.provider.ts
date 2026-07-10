@@ -7,6 +7,8 @@ import {
   ProviderHealth,
   ProviderReference,
   ProviderStatusResult,
+  RefundInput,
+  RefundResult,
 } from './payment-provider.interface';
 import { CircuitBreaker, withResilience } from './resilience';
 import { buildBakongKhqr } from './khqr.util';
@@ -136,6 +138,16 @@ export class BakongKhqrProvider implements PaymentProvider {
 
   async cancelPayment(_ref: ProviderReference): Promise<void> {
     // Bakong KHQR payments cannot be cancelled server-side; expiry handles it.
+  }
+
+  async refundPayment(input: RefundInput): Promise<RefundResult> {
+    // Bakong does not expose a programmatic refund API — refunds settle
+    // out-of-band (bank transfer back to the payer). We record the refund
+    // intent here so it is tracked/audited; operators complete settlement.
+    this.logger.warn(
+      `Bakong refund recorded as MANUAL for ${input.paymentId} (${input.amount} ${input.currency})`,
+    );
+    return { ok: true, manual: true };
   }
 
   async getProviderHealth(): Promise<ProviderHealth> {

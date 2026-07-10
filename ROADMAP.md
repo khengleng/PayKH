@@ -14,7 +14,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Organization · ✅ Stores · ⬜ Branches · ✅ Team invitation · ⬜ Merchant verification
 
 ## 4. Payment Platform
-✅ Payment APIs · ✅ KHQR abstraction · 🟡 Settlement · ⬜ Refunds · ⬜ Reconciliation
+✅ Payment APIs · ✅ KHQR abstraction · 🟡 Settlement · ✅ Refunds · ⬜ Reconciliation
 
 ## 5. Customer Platform
 ⬜ Customer 360 · ⬜ CRM · ⬜ Segmentation · ⬜ Preferences · ⬜ Consent

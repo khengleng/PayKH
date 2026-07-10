@@ -70,3 +70,14 @@ export class SimulateDto {
   @IsIn(['scanned', 'paid', 'failed', 'expired'])
   status!: 'scanned' | 'paid' | 'failed' | 'expired';
 }
+
+export class RefundDto {
+  @IsOptional()
+  @IsString()
+  amount?: string; // omit for a full refund of the remaining amount
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}

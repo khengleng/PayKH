@@ -12,10 +12,11 @@ describe('payment state machine', () => {
     expect(canTransition('pending', 'cancelled')).toBe(true);
   });
 
-  it('treats paid as terminal', () => {
-    expect(PAYMENT_TRANSITIONS.paid).toHaveLength(0);
-    expect(canTransition('paid', 'refunded')).toBe(false);
+  it('allows paid -> refunded (only)', () => {
+    expect(canTransition('paid', 'refunded')).toBe(true);
     expect(canTransition('paid', 'cancelled')).toBe(false);
+    expect(canTransition('paid', 'expired')).toBe(false);
+    expect(PAYMENT_TRANSITIONS.refunded).toHaveLength(0); // refunded is terminal
   });
 
   it('rejects transitions out of terminal states', () => {

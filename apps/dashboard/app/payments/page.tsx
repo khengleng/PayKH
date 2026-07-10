@@ -123,13 +123,38 @@ function PaymentsContent({ storeId }: { storeId: string }) {
 
 function PaymentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const [data, setData] = useState<any>(null);
-  useEffect(() => {
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [refundError, setRefundError] = useState('');
+
+  const load = () =>
     fetch(`${API_BASE}/dashboard/payments/${id}`, {
       headers: { Authorization: `Bearer ${tokenStore.get()}` },
     })
       .then((r) => r.json())
       .then(setData);
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const doRefund = async () => {
+    setRefundBusy(true); setRefundError('');
+    try {
+      const res = await fetch(`${API_BASE}/dashboard/payments/${id}/refund`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokenStore.get()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: refundAmount || undefined, reason: refundReason || undefined }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message || 'Refund failed');
+      setRefundAmount(''); setRefundReason('');
+      await load();
+    } catch (e: any) { setRefundError(e.message); }
+    finally { setRefundBusy(false); }
+  };
 
   return (
     <div className="fixed inset-0 z-20 flex justify-end bg-black/30" onClick={onClose}>
@@ -149,8 +174,39 @@ function PaymentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             <Row k="Reference" v={data.reference_id ?? '—'} />
             <Row k="Created" v={new Date(data.created_at).toLocaleString()} />
             <Row k="Paid at" v={data.paid_at ? new Date(data.paid_at).toLocaleString() : '—'} />
+            <Row k="Refunded" v={`${data.refunded_amount ?? '0.00'} ${data.currency}`} />
             {data.provider_reference && (
               <Row k="Provider md5" v={<span className="font-mono text-xs">{data.provider_reference.md5}</span>} />
+            )}
+
+            {(data.status === 'paid') && Number(data.refunded_amount ?? 0) < Number(data.amount) && (
+              <div className="rounded-xl border border-slate-200 p-3">
+                <div className="mb-2 font-medium text-slate-700">Refund</div>
+                <div className="flex gap-2">
+                  <input value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} placeholder={`Amount (blank = full)`} className="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+                  <input value={refundReason} onChange={(e) => setRefundReason(e.target.value)} placeholder="Reason" className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button onClick={doRefund} disabled={refundBusy} className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">
+                    {refundBusy ? 'Refunding…' : 'Issue refund'}
+                  </button>
+                  {refundError && <span className="text-xs text-red-600">{refundError}</span>}
+                </div>
+              </div>
+            )}
+
+            {data.refunds && data.refunds.length > 0 && (
+              <div>
+                <div className="mb-2 font-medium text-slate-700">Refunds</div>
+                <ul className="space-y-1 text-xs">
+                  {data.refunds.map((r: any) => (
+                    <li key={r.id} className="flex justify-between border-b border-slate-50 pb-1">
+                      <span>{r.amount} {data.currency} <span className="text-slate-400">{r.reason ?? ''}</span></span>
+                      <span className="text-slate-400">{new Date(r.created_at).toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <div>
               <div className="mb-2 font-medium text-slate-700">Timeline</div>

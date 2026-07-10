@@ -41,6 +41,14 @@ export class WebhookEventsService {
     await this.emit(payment, 'payment.created');
   }
 
+  /**
+   * Emit payment.refunded. Called for partial refunds (where the payment status
+   * stays `paid`, so emitForStatus wouldn't fire) and full refunds alike.
+   */
+  async emitRefunded(payment: Payment): Promise<void> {
+    await this.emit(payment, 'payment.refunded');
+  }
+
   private async emit(payment: Payment, type: WebhookEventType): Promise<void> {
     const endpoints = await this.prisma.webhookEndpoint.findMany({
       where: { storeId: payment.storeId, disabled: false },

@@ -14,6 +14,7 @@
 | `payment.expired` | Payment expires |
 | `payment.failed` | Payment fails |
 | `payment.cancelled` | Payment is cancelled |
+| `payment.refunded` | Payment is fully or partially refunded |
 
 ## Payload
 
