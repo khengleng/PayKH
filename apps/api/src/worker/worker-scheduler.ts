@@ -5,6 +5,7 @@ import {
   JOB_BILLING_SWEEP,
   JOB_EXPIRY_SWEEP,
   JOB_IDEMPOTENCY_CLEANUP,
+  JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
   QUEUE_MAINTENANCE,
 } from '../queue/queue.constants';
@@ -41,6 +42,12 @@ export class WorkerScheduler implements OnModuleInit {
     await this.queue.add(JOB_BILLING_SWEEP, {}, {
       repeat: { every: 300_000 }, // every 5 min: confirm payments, renew, dun
       jobId: 'repeat:billing-sweep',
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+    await this.queue.add(JOB_SETTLEMENT_SWEEP, {}, {
+      repeat: { every: 3_600_000 }, // hourly: batch completed-day paid payments
+      jobId: 'repeat:settlement-sweep',
       removeOnComplete: true,
       removeOnFail: true,
     });

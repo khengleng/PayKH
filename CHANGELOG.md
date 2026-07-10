@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Settlement & Reconciliation** (Domain 4): daily settlement batches per
+  store/currency (gross/refunds/fee/net, `Store.feeBps`), an hourly worker
+  settlement-sweep plus a manual "settle now", and a reconciliation engine
+  (internal invariants + Bakong provider cross-check) producing stored reports.
+  Dashboard **Settlements** page.
 - **Refunds** (Domain 4): full/partial refunds on paid payments with an
   optimistic-locked balance (no over-refund), idempotency, `payment.refunded`
   webhook, audit logging, and a dashboard refund action. Provider abstraction

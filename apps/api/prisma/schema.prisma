@@ -66,6 +66,11 @@ enum RefundStatus {
   FAILED
 }
 
+enum SettlementStatus {
+  PENDING
+  SETTLED
+}
+
 enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
@@ -151,6 +156,7 @@ model Store {
   organizationId String
   name           String
   liveMode       Boolean  @default(false) // false until production is activated
+  feeBps         Int      @default(0) // settlement fee in basis points (100 = 1%)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -160,6 +166,7 @@ model Store {
   payments            Payment[]
   providerCredentials ProviderCredential[]
   webhookEndpoints    WebhookEndpoint[]
+  settlements         Settlement[]
 
   @@index([organizationId])
 }
@@ -237,6 +244,7 @@ model Payment {
   metadata       Json          @default("{}")
   qrString       String        @db.Text
   refundedAmount Decimal       @default(0) @db.Decimal(20, 4)
+  settlementId   String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   expiresAt      DateTime
@@ -248,6 +256,7 @@ model Payment {
   providerReference PaymentProviderReference?
   webhookEvents     WebhookEvent[]
   refunds           Refund[]
+  settlement        Settlement?                @relation(fields: [settlementId], references: [id])
 
   @@index([storeId, status])
   @@index([storeId, referenceId])
@@ -268,6 +277,43 @@ model Refund {
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@index([paymentId])
+}
+
+model Settlement {
+  id           String           @id
+  storeId      String
+  currency     Currency
+  payoutDate   DateTime // the UTC day being settled
+  status       SettlementStatus @default(SETTLED)
+  grossAmount  Decimal          @db.Decimal(20, 4)
+  refundAmount Decimal          @db.Decimal(20, 4)
+  feeBps       Int              @default(0)
+  feeAmount    Decimal          @db.Decimal(20, 4)
+  netAmount    Decimal          @db.Decimal(20, 4)
+  paymentCount Int              @default(0)
+  createdAt    DateTime         @default(now())
+  settledAt    DateTime?
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@unique([storeId, currency, payoutDate])
+  @@index([storeId, payoutDate])
+}
+
+model ReconciliationReport {
+  id            String   @id
+  storeId       String?
+  provider      String
+  periodStart   DateTime
+  periodEnd     DateTime
+  checked       Int      @default(0)
+  matched       Int      @default(0)
+  mismatched    Int      @default(0)
+  discrepancies Json     @default("[]")
+  createdAt     DateTime @default(now())
+
+  @@index([storeId, createdAt])
 }
 
 model PaymentStatusHistory {

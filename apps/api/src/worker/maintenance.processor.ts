@@ -4,11 +4,13 @@ import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
 import { BillingService } from '../billing/billing.service';
+import { SettlementService } from '../settlements/settlement.service';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
 import {
   JOB_BILLING_SWEEP,
   JOB_EXPIRY_SWEEP,
   JOB_IDEMPOTENCY_CLEANUP,
+  JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
   QUEUE_MAINTENANCE,
 } from '../queue/queue.constants';
@@ -29,6 +31,7 @@ export class MaintenanceProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
     private readonly payments: PaymentsService,
     private readonly billing: BillingService,
+    private readonly settlement: SettlementService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {
     super();
@@ -44,8 +47,22 @@ export class MaintenanceProcessor extends WorkerHost {
         return this.idempotencyCleanup();
       case JOB_BILLING_SWEEP:
         return this.billing.sweep();
+      case JOB_SETTLEMENT_SWEEP:
+        return this.settlementSweep();
       default:
         return;
+    }
+  }
+
+  /** Settle each store's completed-day paid payments into daily batches. */
+  private async settlementSweep(): Promise<void> {
+    const stores = await this.prisma.store.findMany({ select: { id: true }, take: 1000 });
+    for (const store of stores) {
+      try {
+        await this.settlement.runForStore(store.id, false);
+      } catch (err) {
+        this.logger.warn(`settlement sweep failed for store ${store.id}: ${err}`);
+      }
     }
   }
 
