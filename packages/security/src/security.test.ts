@@ -12,6 +12,7 @@ import {
 } from './hmac';
 import { encrypt, decrypt, loadEncryptionKey } from './encryption';
 import { prefixedId, ids } from './ids';
+import { generateTotpSecret, totpCode, verifyTotp, base32Decode, base32Encode } from './totp';
 
 describe('apiKeys', () => {
   it('generates a live key with the correct prefix and a matching hash', () => {
@@ -110,5 +111,31 @@ describe('ids', () => {
     expect(prefixedId('pay')).toMatch(/^pay_[1-9A-HJ-NP-Za-km-z]{24}$/);
     expect(ids.payment()).toMatch(/^pay_/);
     expect(ids.event()).toMatch(/^evt_/);
+  });
+});
+
+describe('totp', () => {
+  it('base32 round-trips', () => {
+    const buf = Buffer.from('hello world');
+    expect(base32Decode(base32Encode(buf)).toString()).toBe('hello world');
+  });
+
+  it('verifies its own current code', () => {
+    const secret = generateTotpSecret();
+    const now = 1_700_000_000_000;
+    const code = totpCode(secret, now);
+    expect(verifyTotp(secret, code, now)).toBe(true);
+  });
+
+  it('rejects a wrong code and tolerates ±1 step drift', () => {
+    const secret = generateTotpSecret();
+    const now = 1_700_000_000_000;
+    expect(verifyTotp(secret, '000000', now)).toBe(false);
+    // code from the previous 30s window still valid within window=1
+    const prev = totpCode(secret, now - 30_000);
+    expect(verifyTotp(secret, prev, now, 1)).toBe(true);
+    // two windows back is rejected
+    const older = totpCode(secret, now - 90_000);
+    expect(verifyTotp(secret, older, now, 1)).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+// (MfaCodeDto below shares these validators)
 
 export class RegisterDto {
   @IsEmail()
@@ -27,4 +28,13 @@ export class LoginDto {
   @IsString()
   @MinLength(1)
   password!: string;
+
+  @IsString()
+  @IsOptional()
+  mfaCode?: string;
+}
+
+export class MfaCodeDto {
+  @IsString()
+  code!: string;
 }

@@ -2,21 +2,26 @@ import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto } from './dto';
+import { MfaService } from './mfa.service';
+import { LoginDto, MfaCodeDto, RegisterDto } from './dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser, AuthUser } from './current-user';
 import { AuditService } from '../audit/audit.service';
 import { getRequestId } from '../common/request-context';
+import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
+    private readonly mfa: MfaService,
     private readonly audit: AuditService,
   ) {}
 
   @Post('register')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 10, windowSec: 60, by: 'ip' })
   @ApiOperation({ summary: 'Create a merchant account + organization' })
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const result = await this.auth.register(dto);
@@ -33,6 +38,8 @@ export class AuthController {
   }
 
   @Post('login')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 10, windowSec: 60, by: 'ip' })
   @ApiOperation({ summary: 'Log in with email + password' })
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     const result = await this.auth.login(dto);
@@ -53,5 +60,45 @@ export class AuthController {
   @ApiOperation({ summary: 'Get the current user + organizations' })
   async me(@CurrentUser() user: AuthUser) {
     return this.auth.me(user.userId);
+  }
+
+  @Post('mfa/setup')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Begin MFA setup (returns secret + otpauth URL)' })
+  mfaSetup(@CurrentUser() user: AuthUser) {
+    return this.mfa.setup(user.userId);
+  }
+
+  @Post('mfa/enable')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Confirm and enable MFA with a TOTP code' })
+  async mfaEnable(@CurrentUser() user: AuthUser, @Body() dto: MfaCodeDto, @Req() req: Request) {
+    const result = await this.mfa.enable(user.userId, dto.code);
+    await this.audit.record({
+      actorUserId: user.userId,
+      action: 'mfa.enable',
+      ipAddress: req.ip,
+      userAgent: req.header('user-agent'),
+      requestId: getRequestId(req),
+    });
+    return result;
+  }
+
+  @Post('mfa/disable')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Disable MFA (requires a valid code)' })
+  async mfaDisable(@CurrentUser() user: AuthUser, @Body() dto: MfaCodeDto, @Req() req: Request) {
+    const result = await this.mfa.disable(user.userId, dto.code);
+    await this.audit.record({
+      actorUserId: user.userId,
+      action: 'mfa.disable',
+      ipAddress: req.ip,
+      userAgent: req.header('user-agent'),
+      requestId: getRequestId(req),
+    });
+    return result;
   }
 }

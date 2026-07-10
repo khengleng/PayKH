@@ -3,9 +3,9 @@
 A developer-first SaaS platform for Cambodian merchants to accept **Bakong KHQR**
 payments through a simple REST API, hosted checkout pages, and real-time webhooks.
 
-> **Status: Phase 2 complete** — This repository implements Phases 1 and 2 of
+> **Status: all 4 phases complete.** This repository implements Phases 1–4 of
 > the delivery plan. See [`docs/architecture.md`](docs/architecture.md) for the
-> full roadmap and [`ASSUMPTIONS.md`](ASSUMPTIONS.md) for scope decisions.
+> roadmap and [`ASSUMPTIONS.md`](ASSUMPTIONS.md) for scope decisions.
 
 ## What's implemented
 
@@ -28,6 +28,22 @@ Phase 2:
 - **Payment status monitoring** + **expiry sweep** (worker maintenance jobs)
 - **Hardened idempotency** (atomic key reservation) + expired-record cleanup
 - Redis + BullMQ; a dedicated `worker` service (runs the API image)
+
+Phase 3:
+- **Plans & quotas** — monthly successful-payment quota with HTTP 402
+  enforcement and 70/90/100% warnings
+- **Billing** — plan change, subscription/plan history, usage ledger, invoices
+- **Team RBAC** — invitations (auto-join on register), role assignment, removal
+- **Audit-log views** and **reporting** (date-range metrics + CSV export)
+
+Phase 4:
+- **SDKs** — Node ([`@paykh/sdk-node`](packages/sdk-node)), PHP, Python
+- **Sandbox** (test mode + simulator), **Redis-backed rate limiting** (429)
+- **MFA** (TOTP), **`/metrics`** observability endpoint
+- Docs: [security](docs/security.md), [load testing](docs/load-testing.md) (k6),
+  [disaster recovery](docs/disaster-recovery.md),
+  [production readiness](docs/production-readiness.md),
+  [sandbox](docs/sandbox.md); Postman collection
 
 ## Repository layout
 

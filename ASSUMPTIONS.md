@@ -29,7 +29,36 @@ concrete decision.
 - Unit tests for crypto, KHQR/CRC, amount validation, and the state machine;
   end-to-end runtime verification of the full flow.
 
-## Deliberately deferred (per the phase plan)
+## Phases 2–4 (delivered after initial review)
+
+- **Phase 2:** real `BakongKhqrProvider`, signed webhooks + BullMQ retry worker,
+  payment status monitoring + expiry sweep, hardened idempotency.
+- **Phase 3:** plans & quota enforcement (HTTP 402 + 70/90/100% warnings),
+  billing (plan change, subscription/plan history, usage ledger, invoices),
+  team RBAC with invitations (auto-join on register), audit-log views,
+  reporting (date-range metrics + CSV).
+- **Phase 4:** Node/PHP/Python SDKs, sandbox (test mode + simulator), Redis
+  rate limiting (429), MFA (TOTP), `/metrics`, and the security / load-testing /
+  disaster-recovery / production-readiness / sandbox docs + Postman collection.
+
+### Phase 2–4 decisions
+- **Billing has no real charge collection.** Plan changes are manual/self-serve
+  (MVP), issuing an invoice record but not collecting payment. Bakong-based
+  subscription billing is a later refinement — merchant customer payments and
+  platform subscription payments already use separate ledgers/references.
+- **Bakong provider is implemented but deployed on `mock`.** Real NBC
+  credentials/token are required to activate (`PAYMENT_PROVIDER=bakong`); its
+  network mapping is unit-tested with a mocked HTTP client.
+- **The worker runs the API image** (`apps/api/Dockerfile.worker`) rather than a
+  separate package, so all business logic (transitions, webhooks, quota) is
+  shared with zero duplication. The Phase 1 `apps/worker` stub was removed.
+- **Rate limiting is fixed-window and fails open** on Redis errors.
+- **Email delivery** (invitations, quota warnings, endpoint auto-disable
+  notices) is surfaced in-app (tokens/audit/security events); SMTP delivery is a
+  remaining Phase 4+ item.
+- **Reporting time-series** uses a parameterized `date_trunc` raw query.
+
+## Deliberately deferred (roadmap beyond this build)
 
 - **Real Bakong integration** (Phase 2): `BakongKhqrProvider` is a placeholder
   that throws unless implemented; `PAYMENT_PROVIDER=mock` is the default.

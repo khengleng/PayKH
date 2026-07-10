@@ -1,0 +1,75 @@
+{
+  "info": {
+    "name": "PayKH API",
+    "description": "Bakong KHQR payment gateway. Set collection variables: base_url, api_key (bk_test_/bk_live_), jwt (dashboard token).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://api.paykh.cambobia.com" },
+    { "key": "api_key", "value": "bk_test_xxx" },
+    { "key": "jwt", "value": "" },
+    { "key": "payment_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"you@example.com\",\n  \"password\": \"Password123!\",\n  \"organizationName\": \"My Co\"\n}" }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"you@example.com\",\n  \"password\": \"Password123!\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments (v1)",
+      "item": [
+        {
+          "name": "Create payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "order_1024" }
+            ],
+            "url": "{{base_url}}/v1/payments",
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"1.50\",\n  \"currency\": \"USD\",\n  \"reference_id\": \"order_1024\",\n  \"metadata\": { \"customer_id\": \"cus_123\" }\n}" }
+          }
+        },
+        { "name": "Retrieve payment", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{api_key}}" }], "url": "{{base_url}}/v1/payments/{{payment_id}}" } },
+        { "name": "List payments", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{api_key}}" }], "url": "{{base_url}}/v1/payments?limit=20" } },
+        { "name": "Cancel payment", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{api_key}}" }], "url": "{{base_url}}/v1/payments/{{payment_id}}/cancel" } },
+        { "name": "Simulate (test only)", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{api_key}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/v1/payments/{{payment_id}}/simulate", "body": { "mode": "raw", "raw": "{ \"status\": \"paid\" }" } } }
+      ]
+    },
+    {
+      "name": "Webhooks (dashboard)",
+      "item": [
+        { "name": "Create endpoint", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }, { "key": "Content-Type", "value": "application/json" }], "url": "{{base_url}}/webhook-endpoints", "body": { "mode": "raw", "raw": "{\n  \"storeId\": \"store_xxx\",\n  \"url\": \"https://example.com/webhooks\"\n}" } } },
+        { "name": "Send test", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }], "url": "{{base_url}}/webhook-endpoints/:id/test" } }
+      ]
+    },
+    {
+      "name": "Observability",
+      "item": [
+        { "name": "Health", "request": { "method": "GET", "url": "{{base_url}}/health" } },
+        { "name": "Ready", "request": { "method": "GET", "url": "{{base_url}}/ready" } },
+        { "name": "Metrics", "request": { "method": "GET", "url": "{{base_url}}/metrics" } }
+      ]
+    }
+  ]
+}

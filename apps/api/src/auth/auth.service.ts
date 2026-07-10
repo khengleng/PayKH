@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword, ids } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { LoginDto, RegisterDto } from './dto';
+import { MfaService } from './mfa.service';
 
 export interface AuthResult {
   token: string;
@@ -16,6 +17,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly mfa: MfaService,
   ) {}
 
   private sign(userId: string, email: string): Promise<string> {
@@ -46,6 +48,21 @@ export class AuthService {
       return { user, org };
     });
 
+    // Auto-accept any pending invitations addressed to this email.
+    const invites = await this.prisma.invitation.findMany({
+      where: { email, status: 'pending', expiresAt: { gt: new Date() } },
+    });
+    for (const invite of invites) {
+      await this.prisma.$transaction([
+        this.prisma.organizationMember.upsert({
+          where: { organizationId_userId: { organizationId: invite.organizationId, userId: result.user.id } },
+          create: { organizationId: invite.organizationId, userId: result.user.id, role: invite.role },
+          update: {},
+        }),
+        this.prisma.invitation.update({ where: { id: invite.id }, data: { status: 'accepted' } }),
+      ]);
+    }
+
     const token = await this.sign(result.user.id, result.user.email);
     return {
       token,
@@ -65,6 +82,14 @@ export class AuthService {
       user?.passwordHash && (await verifyPassword(dto.password, user.passwordHash));
     if (!user || !ok) {
       throw ApiError.unauthorized('Invalid email or password');
+    }
+
+    // Enforce MFA when enabled.
+    if (user.mfaEnabled && user.mfaSecret) {
+      const valid = await this.mfa.verifyLogin(user.mfaSecret, dto.mfaCode);
+      if (!valid) {
+        throw new ApiError('unauthorized', 'MFA code required', 401);
+      }
     }
 
     const primary = user.memberships[0];

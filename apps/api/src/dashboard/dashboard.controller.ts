@@ -42,4 +42,29 @@ export class DashboardController {
   getPayment(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.dashboard.getPayment(user, id);
   }
+
+  @Get('orgs/:orgId/audit-logs')
+  @ApiOperation({ summary: 'Read-only audit log (owner/admin)' })
+  auditLogs(
+    @CurrentUser() user: AuthUser,
+    @Param('orgId') orgId: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.dashboard.auditLogs(user, orgId, {
+      limit: limit ? Number(limit) : undefined,
+      cursor,
+    });
+  }
+
+  @Get('stores/:storeId/report')
+  @ApiOperation({ summary: 'Settlement / transaction report over a date range' })
+  report(
+    @CurrentUser() user: AuthUser,
+    @Param('storeId') storeId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.dashboard.report(user, storeId, from, to);
+  }
 }

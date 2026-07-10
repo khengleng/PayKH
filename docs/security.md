@@ -63,9 +63,26 @@ Audit records are never editable from the dashboard.
 request carries an `x-request-id`; 5xx errors are logged with the request id and
 never leak internals to the client.
 
-## Phase-4 hardening (planned)
+## Rate limiting (implemented)
 
-MFA for admin auth, secret rotation automation, dependency scanning in CI,
-Redis-backed distributed rate limiting, database backups & DR runbooks,
-penetration testing, load testing. See [`../ASSUMPTIONS.md`](../ASSUMPTIONS.md)
-for what is intentionally deferred.
+Redis-backed fixed-window limiter (`apps/api/src/ratelimit`):
+
+- Public `/v1` API: **100 requests / 10s per API key**.
+- `POST /auth/login` and `/auth/register`: **10 / 60s per IP** (brute-force
+  defense).
+
+Exceeding a limit returns `429 rate_limit_exceeded` with `RateLimit-*` and
+`Retry-After` headers. The limiter **fails open** if Redis is unavailable so an
+outage never takes down the API.
+
+## MFA (implemented)
+
+TOTP-based two-factor auth (`/auth/mfa/*`). The secret is AES-GCM-encrypted at
+rest and only enforced after the user confirms a code (`enable`). When enabled,
+login requires a valid `mfaCode`.
+
+## Remaining hardening (roadmap)
+
+Automated secret rotation, external error tracking/alerting, WAF/DDoS at the
+edge, and penetration testing. See [`production-readiness.md`](production-readiness.md)
+and [`disaster-recovery.md`](disaster-recovery.md).

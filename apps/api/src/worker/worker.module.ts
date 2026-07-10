@@ -6,6 +6,8 @@ import { CommonModule } from '../common/common.module';
 import { AuditModule } from '../audit/audit.module';
 import { ProviderModule } from '../providers/provider.module';
 import { QueueModule } from '../queue/queue.module';
+import { RedisModule } from '../redis/redis.module';
+import { RateLimitModule } from '../ratelimit/rate-limit.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
@@ -27,6 +29,8 @@ import { WorkerScheduler } from './worker-scheduler';
     AuditModule,
     ProviderModule,
     QueueModule,
+    RedisModule,
+    RateLimitModule,
     WebhooksModule,
     PaymentsModule,
   ],

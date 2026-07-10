@@ -16,11 +16,13 @@ import { Request, Response } from 'express';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto, ListPaymentsDto, SimulateDto } from './dto';
 import { ApiKeyGuard, getApiKeyContext } from '../auth/api-key.guard';
+import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
 /** Public developer API — authenticated with a `bk_live_` / `bk_test_` API key. */
 @ApiTags('payments')
 @ApiBearerAuth()
-@UseGuards(ApiKeyGuard)
+@UseGuards(ApiKeyGuard, RateLimitGuard)
+@RateLimit({ limit: 100, windowSec: 10, by: 'apiKey' })
 @Controller({ path: 'payments', version: '1' })
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}

@@ -21,6 +21,7 @@ import { validateAmount, formatAmount } from './amount.util';
 import { CreatePaymentDto, ListPaymentsDto } from './dto';
 import { PaymentEventsService } from './payment-events.service';
 import { WebhookEventsService } from '../webhooks/webhook-events.service';
+import { QuotaService } from '../billing/quota.service';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -40,6 +41,7 @@ export class PaymentsService {
     private readonly config: ConfigService,
     private readonly events: PaymentEventsService,
     private readonly webhookEvents: WebhookEventsService,
+    private readonly quota: QuotaService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -76,6 +78,10 @@ export class PaymentsService {
         };
       }
     }
+
+    // Quota gate: reject new payment creation with HTTP 402 once the monthly
+    // paid quota is reached (lookups + webhooks stay operational).
+    await this.quota.assertWithinQuota(ctx.organizationId);
 
     const amount = validateAmount(dto.amount, dto.currency);
     const store = await this.prisma.store.findUnique({
@@ -331,6 +337,9 @@ export class PaymentsService {
 
     // Live checkout update (SSE) + webhook fan-out for interesting statuses.
     if (emit) {
+      if (to === 'paid') {
+        await this.quota.recordPaidForStore(result.storeId);
+      }
       this.events.publish({ paymentId, status: to, at: new Date().toISOString() });
       if (STATUS_TO_EVENT[to]) {
         await this.webhookEvents.emitForStatus(result, to);

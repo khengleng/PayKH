@@ -6,11 +6,15 @@ import { CommonModule } from './common/common.module';
 import { AuditModule } from './audit/audit.module';
 import { ProviderModule } from './providers/provider.module';
 import { QueueModule } from './queue/queue.module';
+import { RedisModule } from './redis/redis.module';
+import { RateLimitModule } from './ratelimit/rate-limit.module';
 import { AuthModule } from './auth/auth.module';
 import { StoresModule } from './stores/stores.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { BillingModule } from './billing/billing.module';
+import { TeamModule } from './team/team.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { RequestIdMiddleware } from './common/request-context';
@@ -23,11 +27,15 @@ import { RequestIdMiddleware } from './common/request-context';
     AuditModule,
     ProviderModule,
     QueueModule,
+    RedisModule,
+    RateLimitModule,
     AuthModule,
     StoresModule,
     ApiKeysModule,
     PaymentsModule,
     WebhooksModule,
+    BillingModule,
+    TeamModule,
     DashboardModule,
     HealthModule,
   ],
