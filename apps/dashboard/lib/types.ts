@@ -48,6 +48,37 @@ export interface Payment {
   paid_at: string | null;
 }
 
+export interface WebhookEndpoint {
+  id: string;
+  store_id: string;
+  url: string;
+  enabled_events: string[];
+  disabled: boolean;
+  created_at: string;
+  signing_secret?: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  event_id: string;
+  event_type: string | null;
+  status: string;
+  attempt: number;
+  response_status: number | null;
+  error: string | null;
+  next_attempt_at: string | null;
+  created_at: string;
+}
+
+export const WEBHOOK_EVENT_TYPES = [
+  'payment.created',
+  'payment.scanned',
+  'payment.completed',
+  'payment.expired',
+  'payment.failed',
+  'payment.cancelled',
+];
+
 export interface Overview {
   total_payments: number;
   paid_count: number;

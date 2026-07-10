@@ -20,6 +20,7 @@ import { ApiKeyContext } from '../auth/api-key.guard';
 import { validateAmount, formatAmount } from './amount.util';
 import { CreatePaymentDto, ListPaymentsDto } from './dto';
 import { PaymentEventsService } from './payment-events.service';
+import { WebhookEventsService } from '../webhooks/webhook-events.service';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -38,6 +39,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly events: PaymentEventsService,
+    private readonly webhookEvents: WebhookEventsService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -93,6 +95,8 @@ export class PaymentsService {
     try {
       providerResult = await this.provider.createKhqr({
         paymentId,
+        storeId: ctx.storeId,
+        mode: ctx.mode,
         amount: formatAmount(amount, dto.currency),
         currency: dto.currency,
         referenceId: dto.reference_id ?? null,
@@ -106,45 +110,84 @@ export class PaymentsService {
       throw ApiError.providerError('Failed to generate KHQR');
     }
 
-    const payment = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.payment.create({
-        data: {
-          id: paymentId,
-          storeId: ctx.storeId,
-          apiKeyId: ctx.apiKeyId,
-          mode: ctx.mode === 'live' ? 'LIVE' : 'TEST',
-          status: 'PENDING',
-          amount,
-          currency: dto.currency,
-          referenceId: dto.reference_id ?? null,
-          description: dto.description ?? null,
-          metadata: (dto.metadata ?? {}) as Prisma.InputJsonValue,
-          qrString: providerResult.qrString,
-          expiresAt,
-        },
+    let payment: Payment;
+    try {
+      // Create the payment and (atomically) reserve the idempotency key in one
+      // transaction. The unique constraint on the idempotency record is what
+      // prevents two concurrent requests with the same key from both creating a
+      // payment: the loser's insert throws P2002 and the whole tx rolls back.
+      payment = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.payment.create({
+          data: {
+            id: paymentId,
+            storeId: ctx.storeId,
+            apiKeyId: ctx.apiKeyId,
+            mode: ctx.mode === 'live' ? 'LIVE' : 'TEST',
+            status: 'PENDING',
+            amount,
+            currency: dto.currency,
+            referenceId: dto.reference_id ?? null,
+            description: dto.description ?? null,
+            metadata: (dto.metadata ?? {}) as Prisma.InputJsonValue,
+            qrString: providerResult.qrString,
+            expiresAt,
+          },
+        });
+        await tx.paymentStatusHistory.create({
+          data: { paymentId, fromStatus: null, toStatus: 'PENDING', reason: 'created' },
+        });
+        await tx.paymentProviderReference.create({
+          data: {
+            paymentId,
+            provider: this.provider.name,
+            md5: providerResult.md5,
+            billNumber: providerResult.billNumber ?? null,
+            rawResponse: (providerResult.raw ?? {}) as Prisma.InputJsonValue,
+          },
+        });
+        if (idempotencyKey) {
+          await tx.idempotencyRecord.create({
+            data: {
+              storeId: ctx.storeId,
+              endpoint,
+              idempotencyKey,
+              requestHash,
+              responseStatus: 201,
+              responseBody: this.serialize(created) as unknown as Prisma.InputJsonValue,
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            },
+          });
+        }
+        return created;
       });
-      await tx.paymentStatusHistory.create({
-        data: { paymentId, fromStatus: null, toStatus: 'PENDING', reason: 'created' },
-      });
-      await tx.paymentProviderReference.create({
-        data: {
-          paymentId,
-          provider: this.provider.name,
-          md5: providerResult.md5,
-          billNumber: providerResult.billNumber ?? null,
-          rawResponse: (providerResult.raw ?? {}) as Prisma.InputJsonValue,
-        },
-      });
-      return created;
-    });
+    } catch (err) {
+      if (
+        idempotencyKey &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        // A concurrent request with the same key won the race — return its result.
+        const existing = await this.prisma.idempotencyRecord.findUnique({
+          where: { storeId_endpoint_idempotencyKey: { storeId: ctx.storeId, endpoint, idempotencyKey } },
+        });
+        if (existing) {
+          if (existing.requestHash !== requestHash) {
+            throw ApiError.idempotencyConflict(
+              'Idempotency-Key already used with a different request body',
+            );
+          }
+          return {
+            resource: existing.responseBody as unknown as PaymentResource,
+            status: existing.responseStatus,
+          };
+        }
+      }
+      throw err;
+    }
 
     const resource = this.serialize(payment);
-    // payment.created event contract (delivery worker lands in Phase 2).
     this.logger.log(`payment.created ${paymentId} amount=${resource.amount} ${resource.currency}`);
-
-    if (idempotencyKey) {
-      await this.storeIdempotency(ctx.storeId, endpoint, idempotencyKey, requestHash, 201, resource);
-    }
+    await this.webhookEvents.emitCreated(payment);
     return { resource, status: 201 };
   }
 
@@ -261,11 +304,15 @@ export class PaymentsService {
     to: PaymentStatus,
     reason: string,
   ): Promise<Payment> {
-    return this.prisma.$transaction(async (tx) => {
+    let emit = true;
+    const result = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({ where: { id: paymentId } });
       if (!payment) throw ApiError.paymentNotFound();
       const from = toApiStatus(payment.status);
-      if (from === to) return payment;
+      if (from === to) {
+        emit = false; // no-op transition — don't re-emit
+        return payment;
+      }
       if (!canTransition(from, to)) {
         throw ApiError.invalidRequest(`Illegal transition ${from} -> ${to}`);
       }
@@ -280,15 +327,16 @@ export class PaymentsService {
         data: { paymentId, fromStatus: payment.status, toStatus: toDbStatus(to), reason },
       });
       return updated;
-    }).then((updated) => {
-      const event = STATUS_TO_EVENT[to];
-      if (event) {
-        // Phase 2: enqueue webhook delivery job here.
-        this.logger.log(`${event} ${paymentId}`);
-      }
-      this.events.publish({ paymentId, status: to, at: new Date().toISOString() });
-      return updated;
     });
+
+    // Live checkout update (SSE) + webhook fan-out for interesting statuses.
+    if (emit) {
+      this.events.publish({ paymentId, status: to, at: new Date().toISOString() });
+      if (STATUS_TO_EVENT[to]) {
+        await this.webhookEvents.emitForStatus(result, to);
+      }
+    }
+    return result;
   }
 
   // ----------------------------------------------------------------- internals
@@ -311,33 +359,6 @@ export class PaymentsService {
 
   private hashBody(rawBody: string): string {
     return createHash('sha256').update(rawBody || '{}').digest('hex');
-  }
-
-  private async storeIdempotency(
-    storeId: string,
-    endpoint: string,
-    idempotencyKey: string,
-    requestHash: string,
-    responseStatus: number,
-    resource: PaymentResource,
-  ): Promise<void> {
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await this.prisma.idempotencyRecord
-      .create({
-        data: {
-          storeId,
-          endpoint,
-          idempotencyKey,
-          requestHash,
-          responseStatus,
-          responseBody: resource as unknown as Prisma.InputJsonValue,
-          expiresAt,
-        },
-      })
-      .catch((err) => {
-        // Unique-constraint race: another request stored it first — safe to ignore.
-        this.logger.warn(`Idempotency store race for key=${idempotencyKey}: ${err}`);
-      });
   }
 
   private serialize(payment: Payment): PaymentResource {

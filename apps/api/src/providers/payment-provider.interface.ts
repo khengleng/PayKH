@@ -1,5 +1,7 @@
 export interface CreateKhqrInput {
   paymentId: string;
+  storeId: string;
+  mode: 'test' | 'live';
   amount: string; // decimal string
   currency: 'USD' | 'KHR';
   referenceId?: string | null;

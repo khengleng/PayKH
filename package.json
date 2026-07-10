@@ -9,8 +9,7 @@
     "packages/security",
     "apps/api",
     "apps/checkout",
-    "apps/dashboard",
-    "apps/worker"
+    "apps/dashboard"
   ],
   "engines": {
     "node": ">=18.18.0"
@@ -23,7 +22,7 @@
     "dev:api": "npm run build:packages && npm run dev --workspace @paykh/api",
     "dev:checkout": "npm run dev --workspace @paykh/checkout",
     "dev:dashboard": "npm run dev --workspace @paykh/dashboard",
-    "dev:worker": "npm run build:packages && npm run dev --workspace @paykh/worker",
+    "dev:worker": "npm run build:packages && npm run dev:worker --workspace @paykh/api",
     "prisma:generate": "npm run prisma:generate --workspace @paykh/api",
     "prisma:migrate": "npm run prisma:migrate --workspace @paykh/api",
     "db:seed": "npm run build:packages && npm run db:seed --workspace @paykh/api"

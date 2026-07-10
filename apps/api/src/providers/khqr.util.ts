@@ -42,6 +42,59 @@ const CURRENCY_CODE: Record<'USD' | 'KHR', string> = {
   KHR: '116',
 };
 
+export interface BakongKhqrParams {
+  /** Bakong account id, e.g. "shop_name@bank". */
+  bakongAccountId: string;
+  merchantName: string;
+  merchantCity: string;
+  amount: string;
+  currency: 'USD' | 'KHR';
+  /** Optional merchant id / acquiring bank for the merchant-present tag. */
+  merchantId?: string;
+  acquiringBank?: string;
+  billNumber?: string;
+  mobileNumber?: string;
+  storeLabel?: string;
+  /** true → merchant (tag 30) with merchantId; false → individual (tag 29). */
+  isMerchant?: boolean;
+}
+
+/**
+ * Build a Bakong KHQR payload per the NBC KHQR spec. Used by the real
+ * BakongKhqrProvider. Individual accounts use tag 29; merchant accounts use
+ * tag 30 (which also carries the merchant id + acquiring bank).
+ */
+export function buildBakongKhqr(p: BakongKhqrParams): { qrString: string; md5: string } {
+  const isMerchant = p.isMerchant ?? false;
+  const accountTag = isMerchant ? '30' : '29';
+  const accountInfo =
+    tlv('00', p.bakongAccountId) +
+    (isMerchant && p.merchantId ? tlv('01', p.merchantId) : '') +
+    (isMerchant && p.acquiringBank ? tlv('02', p.acquiringBank) : '');
+
+  let payload = '';
+  payload += tlv('00', '01');
+  payload += tlv('01', '12'); // dynamic
+  payload += tlv(accountTag, accountInfo);
+  payload += tlv('52', '5999');
+  payload += tlv('53', CURRENCY_CODE[p.currency]);
+  payload += tlv('54', p.amount);
+  payload += tlv('58', 'KH');
+  payload += tlv('59', p.merchantName.slice(0, 25));
+  payload += tlv('60', p.merchantCity.slice(0, 15));
+
+  const additional =
+    (p.billNumber ? tlv('01', p.billNumber.slice(0, 25)) : '') +
+    (p.mobileNumber ? tlv('02', p.mobileNumber.slice(0, 25)) : '') +
+    (p.storeLabel ? tlv('03', p.storeLabel.slice(0, 25)) : '');
+  if (additional) payload += tlv('62', additional);
+
+  payload += '6304';
+  const qrString = payload + crc16(payload);
+  const md5 = createHash('md5').update(qrString).digest('hex');
+  return { qrString, md5 };
+}
+
 export function buildMockKhqr(params: KhqrParams): { qrString: string; md5: string } {
   const merchantAccount = tlv('00', 'mock@paykh') + tlv('01', 'PayKH Mock Acquirer');
 

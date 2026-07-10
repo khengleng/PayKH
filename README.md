@@ -3,22 +3,31 @@
 A developer-first SaaS platform for Cambodian merchants to accept **Bakong KHQR**
 payments through a simple REST API, hosted checkout pages, and real-time webhooks.
 
-> **Status: Phase 1 (MVP)** — This repository currently implements Phase 1 of the
-> delivery plan. See [`docs/architecture.md`](docs/architecture.md) for the full
-> roadmap and [`ASSUMPTIONS.md`](ASSUMPTIONS.md) for Phase 1 scope decisions.
+> **Status: Phase 2 complete** — This repository implements Phases 1 and 2 of
+> the delivery plan. See [`docs/architecture.md`](docs/architecture.md) for the
+> full roadmap and [`ASSUMPTIONS.md`](ASSUMPTIONS.md) for scope decisions.
 
-## What's implemented (Phase 1)
+## What's implemented
 
+Phase 1:
 - Monorepo (npm workspaces)
-- Merchant sign up / login (JWT session auth)
-- Organizations & stores
+- Merchant sign up / login (JWT session auth), organizations & stores
 - API keys (hashed at rest, `bk_test_` / `bk_live_` prefixes, shown once)
 - Payments API: create / retrieve / list / cancel with state machine
 - **Mock** KHQR provider behind a `PaymentProvider` abstraction
 - Hosted checkout page with live status (SSE + polling fallback)
-- Basic merchant dashboard (overview, payments, API keys, stores)
+- Merchant dashboard (overview, payments, API keys, stores)
 - OpenAPI docs, health/readiness endpoints, structured errors
-- Dockerfiles + Railway config + seed script
+
+Phase 2:
+- **Real `BakongKhqrProvider`** (NBC Open API): KHQR generation + status polling,
+  behind the provider abstraction with timeout/retry/circuit-breaker
+- **Webhooks**: signed (HMAC-SHA256) delivery via a BullMQ worker, exponential
+  backoff + max retries, delivery logs, resend, send-test, secret rotation,
+  auto-disable on repeated failure; dashboard Webhooks module
+- **Payment status monitoring** + **expiry sweep** (worker maintenance jobs)
+- **Hardened idempotency** (atomic key reservation) + expired-record cleanup
+- Redis + BullMQ; a dedicated `worker` service (runs the API image)
 
 ## Repository layout
 

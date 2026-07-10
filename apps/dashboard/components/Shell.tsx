@@ -10,6 +10,7 @@ const NAV = [
   { href: '/overview', label: 'Overview', icon: '📊' },
   { href: '/payments', label: 'Payments', icon: '💳' },
   { href: '/keys', label: 'API Keys', icon: '🔑' },
+  { href: '/webhooks', label: 'Webhooks', icon: '🔔' },
   { href: '/stores', label: 'Stores', icon: '🏬' },
 ];
 

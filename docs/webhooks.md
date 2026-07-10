@@ -1,8 +1,8 @@
 # Webhooks
 
-> **Status:** The webhook *contract, signing scheme, and data model* are defined
-> in Phase 1. The delivery worker (retries, delivery logs, resend, test-send) is
-> implemented in **Phase 2**. This document is the target contract.
+> **Status: implemented (Phase 2).** Signed delivery, exponential-backoff
+> retries, per-attempt delivery logs, resend, send-test, secret rotation, and
+> auto-disable-on-repeated-failure are live. Deliveries run in the BullMQ worker.
 
 ## Events
 
@@ -76,15 +76,19 @@ valid      = constant_time_equals(expected, parts["v1"])
            and abs(now - timestamp) <= 300
 ```
 
-## Delivery semantics (Phase 2)
+## Delivery semantics
 
 - At-least-once delivery; endpoints must be **idempotent** on `event.id`.
-- Exponential backoff with a maximum retry count; each attempt is logged
-  (`WebhookDelivery`).
-- Endpoints are auto-disabled only after repeated **permanent** failures, and
-  only **with merchant notification**.
-- Dashboard: view deliveries, **resend** an event, **send a test** event,
-  **rotate** the signing secret.
+- Exponential backoff (`30s → 1m → 2m → …`, up to 6 attempts); each attempt is
+  logged on the `WebhookDelivery` row (status, attempt, HTTP code, error).
+- Endpoints are auto-disabled after 20 consecutive permanent failures; the
+  merchant is notified via a `SecurityEvent` + audit-log entry surfaced in the
+  dashboard (email notification is a Phase 4 item).
+- Dashboard → **Webhooks**: add/enable/disable endpoints, select events, view
+  the signing secret, **rotate** it (old secret valid 24h), view **deliveries**,
+  **resend** a delivery, and **send a test** event.
+- The `X-Payment-Event` header carries the event type; `X-Payment-Id` carries
+  the event id for idempotent processing.
 
 ## Data model
 
