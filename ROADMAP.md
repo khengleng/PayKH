@@ -1,4 +1,4 @@
-# PayKH (TrustOS) Roadmap
+# PayKH Roadmap
 
 This roadmap tracks the **Master AI Engineering Blueprint** — 100 modules across
 20 domains. Legend: ✅ shipped · 🟡 partial · ⬜ planned. We build one module at a
@@ -62,7 +62,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ⬜ Model registry · ⬜ Prompt governance · ⬜ Guardrails · ⬜ Evaluation · ⬜ Cost mgmt
 
 ## 20. Ecosystem Vision
-⬜ TrustOS Learn · ⬜ TrustOS Merchant · ⬜ TrustOS Gold · ⬜ TrustOS Fortune · ⬜ Shared services
+⬜ Learn PayKH · ⬜ Merchant PayKH · ⬜ Gold PayKH · ⬜ Fortune PayKH · ⬜ Shared platform services
 
 ---
 

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to PayKH (TrustOS) are documented here. The format follows
+All notable changes to PayKH are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/). Releases are cut by tagging `vX.Y.Z`
 (see `.github/workflows/release.yml`).
