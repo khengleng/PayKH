@@ -15,6 +15,7 @@ export interface AppConfig {
   resendApiKey?: string;
   emailFrom: string;
   sentryDsn?: string;
+  metricsToken?: string;
 }
 
 function required(name: string): string {
@@ -43,6 +44,7 @@ export function loadConfig(): AppConfig {
     resendApiKey: process.env.RESEND_API_KEY,
     emailFrom: process.env.EMAIL_FROM ?? 'PayKH <noreply@paykh.cambobia.com>',
     sentryDsn: process.env.SENTRY_DSN,
+    metricsToken: process.env.METRICS_TOKEN,
   };
 }
 

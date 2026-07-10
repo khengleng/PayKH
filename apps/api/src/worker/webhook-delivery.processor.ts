@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EmailService } from '../email/email.service';
 import { endpointDisabledEmail } from '../email/templates';
+import { assertSafeUrl } from '../common/ssrf';
 import {
   DeliverWebhookJob,
   ENDPOINT_FAILURE_DISABLE_THRESHOLD,
@@ -68,6 +69,14 @@ export class WebhookDeliveryProcessor extends WorkerHost {
       return;
     }
 
+    // SSRF guard: never deliver to internal/metadata targets in production.
+    const allowPrivate = process.env.NODE_ENV !== 'production';
+    const safe = await assertSafeUrl(endpoint.url, allowPrivate);
+    if (!safe.ok) {
+      await this.markPermanentFailure(deliveryId, endpoint.id, job, null, `blocked target: ${safe.reason}`);
+      return;
+    }
+
     const attempt = job.attemptsMade + 1;
     const rawBody = JSON.stringify(delivery.event.payload);
     const timestamp = Math.floor(Date.now() / 1000);
@@ -91,6 +100,9 @@ export class WebhookDeliveryProcessor extends WorkerHost {
           },
           body: rawBody,
           signal: controller.signal,
+          // Block redirects so a public URL can't 302 into an internal target
+          // (defeats DNS-rebinding / redirect-based SSRF).
+          redirect: 'error',
         });
         responseStatus = res.status;
         if (!res.ok) {

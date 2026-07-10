@@ -7,6 +7,7 @@ import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
 import { WebhookEventsService } from './webhook-events.service';
 import { CreateWebhookDto, UpdateWebhookDto } from './dto';
+import { assertSafeUrl } from '../common/ssrf';
 
 @Injectable()
 export class WebhooksService {
@@ -31,9 +32,16 @@ export class WebhooksService {
     return endpoint;
   }
 
+  private async assertUrlSafe(url: string) {
+    const allowPrivate = process.env.NODE_ENV !== 'production';
+    const check = await assertSafeUrl(url, allowPrivate);
+    if (!check.ok) throw ApiError.invalidRequest(`Webhook URL not allowed: ${check.reason}`);
+  }
+
   async create(user: AuthUser, dto: CreateWebhookDto) {
     const orgId = await this.storeOrgId(dto.storeId);
     requirePermission(user, orgId, 'webhook:write');
+    await this.assertUrlSafe(dto.url);
 
     const endpoint = await this.prisma.webhookEndpoint.create({
       data: {
@@ -60,6 +68,7 @@ export class WebhooksService {
 
   async update(user: AuthUser, endpointId: string, dto: UpdateWebhookDto) {
     await this.loadEndpointForUser(user, endpointId);
+    if (dto.url) await this.assertUrlSafe(dto.url);
     const updated = await this.prisma.webhookEndpoint.update({
       where: { id: endpointId },
       data: {

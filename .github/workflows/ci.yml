@@ -5,7 +5,22 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run build:packages
+      - run: npm run prisma:generate --workspace @paykh/api
+      - name: Typecheck / lint workspaces
+        run: npm run lint --workspaces --if-present
+
   build-test:
     runs-on: ubuntu-latest
     services:
@@ -27,15 +42,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+        with: { node-version: 20, cache: npm }
       - run: npm ci
       - run: npm run build:packages
-      - run: npm run prisma:generate
+      - run: npm run prisma:generate --workspace @paykh/api
+      - name: Validate Prisma schema
+        run: npx prisma validate --schema apps/api/prisma/schema.prisma
       - name: Apply migrations
         run: npm run prisma:migrate --workspace @paykh/api
       - name: Test
         run: npm test
       - name: Build all workspaces
         run: npm run build
+
+  python-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Test Python SDK
+        run: python -m unittest discover -s tests
+        working-directory: packages/sdk-python

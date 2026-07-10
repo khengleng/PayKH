@@ -81,9 +81,28 @@ async function seedDemoMerchant() {
   console.log('  ---------------------------------------------\n');
 }
 
+async function seedPlatformAdmin() {
+  const email = 'admin@paykh.dev';
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    console.log(`• Platform admin already exists (${email}) — skipping`);
+    return;
+  }
+  const passwordHash = await hashPassword('AdminPassword123!');
+  await prisma.user.create({
+    data: { email, passwordHash, name: 'Platform Admin', isPlatformAdmin: true },
+  });
+  console.log('\n✓ Seeded platform admin');
+  console.log('  ---------------------------------------------');
+  console.log(`  Admin email : ${email}`);
+  console.log('  Password    : AdminPassword123!');
+  console.log('  ---------------------------------------------\n');
+}
+
 async function main() {
   await seedPlans();
   await seedDemoMerchant();
+  await seedPlatformAdmin();
 }
 
 main()

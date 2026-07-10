@@ -1,10 +1,13 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, Req } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
+import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { QUEUE_MAINTENANCE, QUEUE_WEBHOOK } from '../queue/queue.constants';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
+import { ApiError } from '../common/api-error';
 
 /**
  * Operational metrics (aggregate, no PII). Suitable for a status board or a
@@ -15,14 +18,29 @@ import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider
 export class MetricsController {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
     @InjectQueue(QUEUE_WEBHOOK) private readonly webhookQueue: Queue,
     @InjectQueue(QUEUE_MAINTENANCE) private readonly maintenanceQueue: Queue,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
+  /**
+   * Aggregate metrics contain cross-tenant totals, so they require a scrape
+   * token (METRICS_TOKEN) whenever one is configured. In dev (no token set)
+   * the endpoint is open for convenience.
+   */
+  private authorize(req: Request): void {
+    const token = this.config.get<string>('metricsToken');
+    if (!token) return;
+    const header = req.header('authorization') ?? '';
+    const provided = /^Bearer\s+(.+)$/i.exec(header)?.[1];
+    if (provided !== token) throw ApiError.unauthorized('Metrics scrape token required');
+  }
+
   @Get()
-  @ApiOperation({ summary: 'Aggregate operational metrics' })
-  async metrics() {
+  @ApiOperation({ summary: 'Aggregate operational metrics (requires METRICS_TOKEN)' })
+  async metrics(@Req() req: Request) {
+    this.authorize(req);
     const [byStatus, deliveryByStatus, webhookCounts, maintenanceCounts, providerHealth] =
       await Promise.all([
         this.prisma.payment.groupBy({ by: ['status'], _count: { _all: true } }),

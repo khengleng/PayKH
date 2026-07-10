@@ -18,6 +18,10 @@ async function bootstrap(): Promise<void> {
   // for idempotency hashing and, in Phase 2, inbound webhook signature checks).
   const app = await NestFactory.create(AppModule, { bodyParser: false });
 
+  // Trust exactly one front proxy (Railway's edge) so req.ip is the real client
+  // IP for rate limiting + audit — without trusting attacker-spoofable XFF hops.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   const rawBodySaver = (req: Request, _res: unknown, buf: Buffer) => {
     if (buf?.length) {
       (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');

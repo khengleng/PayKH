@@ -6,6 +6,9 @@ import { ApiError } from '../common/api-error';
 import { LoginDto, RegisterDto } from './dto';
 import { MfaService } from './mfa.service';
 
+/** A valid bcrypt hash used only to equalize login timing for unknown emails. */
+const DECOY_HASH = '$2a$12$6OLD4IHTLvrnE7I8TXy/4eUd4pNDXYqkdBYqi22Yv.fVHmzHvAWk.';
+
 export interface AuthResult {
   token: string;
   user: { id: string; email: string; name: string | null };
@@ -48,20 +51,10 @@ export class AuthService {
       return { user, org };
     });
 
-    // Auto-accept any pending invitations addressed to this email.
-    const invites = await this.prisma.invitation.findMany({
-      where: { email, status: 'pending', expiresAt: { gt: new Date() } },
-    });
-    for (const invite of invites) {
-      await this.prisma.$transaction([
-        this.prisma.organizationMember.upsert({
-          where: { organizationId_userId: { organizationId: invite.organizationId, userId: result.user.id } },
-          create: { organizationId: invite.organizationId, userId: result.user.id, role: invite.role },
-          update: {},
-        }),
-        this.prisma.invitation.update({ where: { id: invite.id }, data: { status: 'accepted' } }),
-      ]);
-    }
+    // NOTE: we deliberately do NOT auto-join pending invitations on register.
+    // Since registration doesn't verify email ownership, auto-join would let an
+    // attacker claim an invited email. Joining requires the invitation token
+    // (delivered to the invited mailbox) via POST /team/invitations/accept.
 
     const token = await this.sign(result.user.id, result.user.email);
     return {
@@ -77,10 +70,11 @@ export class AuthService {
       where: { email },
       include: { memberships: { include: { organization: true } } },
     });
-    // Constant-ish work whether or not the user exists to reduce enumeration.
-    const ok =
-      user?.passwordHash && (await verifyPassword(dto.password, user.passwordHash));
-    if (!user || !ok) {
+    // Always run bcrypt (against a decoy hash when the user/hash is absent) so
+    // login timing does not reveal whether an account exists (user enumeration).
+    const hash = user?.passwordHash ?? DECOY_HASH;
+    const passwordOk = await verifyPassword(dto.password, hash);
+    if (!user || !user.passwordHash || !passwordOk) {
       throw ApiError.unauthorized('Invalid email or password');
     }
 

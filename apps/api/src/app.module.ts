@@ -16,6 +16,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { BillingModule } from './billing/billing.module';
 import { TeamModule } from './team/team.module';
+import { AdminModule } from './admin/admin.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { RequestIdMiddleware } from './common/request-context';
@@ -38,6 +39,7 @@ import { RequestIdMiddleware } from './common/request-context';
     WebhooksModule,
     BillingModule,
     TeamModule,
+    AdminModule,
     DashboardModule,
     HealthModule,
   ],

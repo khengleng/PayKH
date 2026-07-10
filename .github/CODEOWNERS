@@ -1,0 +1,9 @@
+# Default owners for everything in the repo.
+* @khengleng
+
+# Security-sensitive areas require security review.
+/packages/security/            @khengleng
+/apps/api/src/auth/            @khengleng
+/apps/api/src/ratelimit/       @khengleng
+/apps/api/src/billing/         @khengleng
+/.github/                      @khengleng

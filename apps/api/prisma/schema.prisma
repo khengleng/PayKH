@@ -75,9 +75,10 @@ model User {
   email        String   @unique
   passwordHash String?  // null when only using Google OAuth (Phase 2)
   name         String?
-  googleId     String?  @unique
-  mfaEnabled   Boolean  @default(false)
-  mfaSecret    String?  // AES-GCM-encrypted TOTP secret (null until enrolled)
+  googleId        String?  @unique
+  mfaEnabled      Boolean  @default(false)
+  mfaSecret       String?  // AES-GCM-encrypted TOTP secret (null until enrolled)
+  isPlatformAdmin Boolean  @default(false) // global platform operator
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
