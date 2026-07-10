@@ -73,6 +73,11 @@ store). Manage customers via `POST/GET /v1/customers` (fields: `name`, `email`,
 `phone`, `external_id`, `metadata`). The dashboard **Customers** page shows a
 **Customer 360** view (lifetime value, paid volume, refunds, recent payments).
 
+**Loyalty points.** Enable a loyalty program per store (dashboard → Stores →
+Loyalty points): customers with a `customer_id` **earn points on paid payments**
+(`floor(amount × points_per_unit)`). Redeem via `POST /v1/loyalty/redeem`
+`{ customer_id, points, reason? }`. The balance appears in Customer 360.
+
 ### Retrieve a payment
 
 ```bash

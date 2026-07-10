@@ -152,6 +152,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
       </Card>
 
       <BranchesCard storeId={store.id} />
+      <LoyaltyCard storeId={store.id} />
 
       <Card>
         <h3 className="mb-1 font-semibold">Run a test payment</h3>
@@ -217,6 +218,39 @@ function BranchesCard({ storeId }: { storeId: string }) {
           ))}
         </ul>
       )}
+    </Card>
+  );
+}
+
+function LoyaltyCard({ storeId }: { storeId: string }) {
+  const [active, setActive] = useState(false);
+  const [ppu, setPpu] = useState('1');
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    api<{ active: boolean; points_per_unit: string }>(`/dashboard/stores/${storeId}/loyalty`).then((p) => { setActive(p.active); setPpu(p.points_per_unit); });
+  }, [storeId]);
+
+  const save = async () => {
+    const p = await api<{ active: boolean; points_per_unit: string }>(`/dashboard/stores/${storeId}/loyalty`, { method: 'PUT', body: { active, pointsPerUnit: ppu } });
+    setActive(p.active); setPpu(p.points_per_unit); setMsg('Saved'); setTimeout(() => setMsg(''), 1500);
+  };
+
+  return (
+    <Card>
+      <h3 className="mb-1 font-semibold">Loyalty points</h3>
+      <p className="mb-3 text-sm text-slate-500">Customers earn points on paid payments (needs a <code>customer_id</code> on the payment).</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active
+        </label>
+        <label className="text-sm">
+          <div className="mb-1 text-slate-600">Points per currency unit</div>
+          <input value={ppu} onChange={(e) => setPpu(e.target.value)} className="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+        <Button onClick={save}>Save</Button>
+        {msg && <span className="text-sm text-emerald-600">{msg}</span>}
+      </div>
     </Card>
   );
 }

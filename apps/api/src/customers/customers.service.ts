@@ -149,6 +149,7 @@ export class CustomersService {
       phone: c.phone,
       external_id: c.externalId,
       metadata: (c.metadata as Record<string, unknown>) ?? {},
+      points_balance: c.pointsBalance,
       created_at: c.createdAt.toISOString(),
     };
   }

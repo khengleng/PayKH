@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Loyalty → Points** (Domain 6): a per-store loyalty program (active +
+  points-per-unit). Customers **earn points automatically on paid payments**
+  (when a `customer_id` is attached), tracked in a points ledger with a
+  denormalized balance. Redeem via `POST /v1/loyalty/redeem` (API key) and
+  manual `+/-` adjust from the dashboard; balance shown in Customer 360.
 - **Customer 360 / CRM** (Domain 5): customer records (name/email/phone/
   external_id/metadata) with `POST/GET /v1/customers`; attach a `customer_id` to
   payments; a dashboard **Customers** page with a **Customer 360** view (lifetime

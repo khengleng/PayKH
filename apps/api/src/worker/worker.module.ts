@@ -15,6 +15,7 @@ import { BillingModule } from '../billing/billing.module';
 import { SettlementsModule } from '../settlements/settlements.module';
 import { BranchesModule } from '../branches/branches.module';
 import { CustomersModule } from '../customers/customers.module';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
 import { MaintenanceProcessor } from './maintenance.processor';
 import { WorkerScheduler } from './worker-scheduler';
@@ -43,6 +44,7 @@ import { WorkerScheduler } from './worker-scheduler';
     SettlementsModule,
     BranchesModule,
     CustomersModule,
+    LoyaltyModule,
   ],
   providers: [WebhookDeliveryProcessor, MaintenanceProcessor, WorkerScheduler],
 })

@@ -84,6 +84,13 @@ enum VerificationStatus {
   REJECTED
 }
 
+enum PointsTxnType {
+  EARN
+  REDEEM
+  ADJUST
+  EXPIRE
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -198,6 +205,7 @@ model Store {
   settlements         Settlement[]
   branches            Branch[]
   customers           Customer[]
+  loyaltyProgram      LoyaltyProgram?
 
   @@index([organizationId])
 }
@@ -220,21 +228,50 @@ model Branch {
 }
 
 model Customer {
-  id         String   @id
-  storeId    String
-  name       String?
-  email      String?
-  phone      String?
-  externalId String? // the merchant's own customer id
-  metadata   Json     @default("{}")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String   @id
+  storeId       String
+  name          String?
+  email         String?
+  phone         String?
+  externalId    String? // the merchant's own customer id
+  metadata      Json     @default("{}")
+  pointsBalance Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  payments Payment[]
+  store        Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  payments     Payment[]
+  pointsLedger PointsTransaction[]
 
   @@unique([storeId, externalId])
   @@index([storeId, email])
+}
+
+model LoyaltyProgram {
+  id            String   @id @default(cuid())
+  storeId       String   @unique
+  active        Boolean  @default(false)
+  pointsPerUnit Decimal  @default(1) @db.Decimal(12, 4) // points earned per 1 unit of payment currency
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+model PointsTransaction {
+  id         String        @id
+  storeId    String
+  customerId String
+  type       PointsTxnType
+  points     Int // signed: + for earn/adjust-up, - for redeem
+  paymentId  String?
+  reason     String?
+  createdAt  DateTime      @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([paymentId])
 }
 
 model StoreBranding {

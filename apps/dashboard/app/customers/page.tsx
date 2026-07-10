@@ -82,9 +82,9 @@ function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Stat label="Lifetime value" value={`$${data.metrics.lifetime_value}`} />
+              <Stat label="Loyalty points" value={data.points_balance ?? 0} />
               <Stat label="Paid payments" value={data.metrics.paid_count} />
               <Stat label="Paid volume" value={`$${data.metrics.paid_volume}`} />
-              <Stat label="Refunded" value={`$${data.metrics.refunded_total}`} />
             </div>
             <div>
               <div className="mb-2 font-medium text-slate-700">Recent payments</div>
