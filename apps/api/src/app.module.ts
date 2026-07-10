@@ -12,6 +12,7 @@ import { RateLimitModule } from './ratelimit/rate-limit.module';
 import { AuthModule } from './auth/auth.module';
 import { StoresModule } from './stores/stores.module';
 import { BranchesModule } from './branches/branches.module';
+import { CustomersModule } from './customers/customers.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -38,6 +39,7 @@ import { RequestIdMiddleware } from './common/request-context';
     AuthModule,
     StoresModule,
     BranchesModule,
+    CustomersModule,
     ApiKeysModule,
     PaymentsModule,
     WebhooksModule,

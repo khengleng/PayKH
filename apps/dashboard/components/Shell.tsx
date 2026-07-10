@@ -9,6 +9,7 @@ import { Me, Store } from '@/lib/types';
 const NAV = [
   { href: '/overview', label: 'Overview', icon: '📊' },
   { href: '/payments', label: 'Payments', icon: '💳' },
+  { href: '/customers', label: 'Customers', icon: '👤' },
   { href: '/reports', label: 'Reports', icon: '📈' },
   { href: '/settlements', label: 'Settlements', icon: '🏦' },
   { href: '/keys', label: 'API Keys', icon: '🔑' },

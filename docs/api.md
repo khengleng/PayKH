@@ -68,6 +68,11 @@ Optional **`branch_id`** attributes the payment to a store branch (must belong t
 the store and be active). Manage branches in the dashboard (Stores → Branches) or
 via `POST/GET /stores/:storeId/branches`, `PATCH/DELETE /branches/:id`.
 
+Optional **`customer_id`** links the payment to a customer (must belong to the
+store). Manage customers via `POST/GET /v1/customers` (fields: `name`, `email`,
+`phone`, `external_id`, `metadata`). The dashboard **Customers** page shows a
+**Customer 360** view (lifetime value, paid volume, refunds, recent payments).
+
 ### Retrieve a payment
 
 ```bash

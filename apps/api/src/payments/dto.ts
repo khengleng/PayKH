@@ -40,6 +40,10 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   branch_id?: string;
+
+  @IsOptional()
+  @IsString()
+  customer_id?: string;
 }
 
 export class ListPaymentsDto {

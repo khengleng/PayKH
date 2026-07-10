@@ -26,6 +26,7 @@ import { WebhookEventsService } from '../webhooks/webhook-events.service';
 import { QuotaService } from '../billing/quota.service';
 import { AuditService } from '../audit/audit.service';
 import { BranchesService } from '../branches/branches.service';
+import { CustomersService } from '../customers/customers.service';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -48,6 +49,7 @@ export class PaymentsService {
     private readonly quota: QuotaService,
     private readonly audit: AuditService,
     private readonly branches: BranchesService,
+    private readonly customers: CustomersService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -101,6 +103,11 @@ export class PaymentsService {
     if (dto.branch_id) {
       branchId = await this.branches.resolveActive(ctx.storeId, dto.branch_id);
     }
+    // Optional customer attribution (must belong to this store).
+    let customerId: string | null = null;
+    if (dto.customer_id) {
+      customerId = await this.customers.resolveForStore(ctx.storeId, dto.customer_id);
+    }
 
     const paymentId = ids.payment();
     const now = new Date();
@@ -149,6 +156,7 @@ export class PaymentsService {
             metadata: (dto.metadata ?? {}) as Prisma.InputJsonValue,
             qrString: providerResult.qrString,
             branchId,
+            customerId,
             expiresAt,
           },
         });
@@ -557,6 +565,7 @@ export class PaymentsService {
       paid_at: payment.paidAt?.toISOString() ?? null,
       refunded_amount: formatAmount(payment.refundedAmount, payment.currency),
       branch_id: payment.branchId ?? null,
+      customer_id: payment.customerId ?? null,
     };
   }
 }

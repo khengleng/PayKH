@@ -197,6 +197,7 @@ model Store {
   webhookEndpoints    WebhookEndpoint[]
   settlements         Settlement[]
   branches            Branch[]
+  customers           Customer[]
 
   @@index([organizationId])
 }
@@ -216,6 +217,24 @@ model Branch {
 
   @@unique([storeId, code])
   @@index([storeId])
+}
+
+model Customer {
+  id         String   @id
+  storeId    String
+  name       String?
+  email      String?
+  phone      String?
+  externalId String? // the merchant's own customer id
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@unique([storeId, externalId])
+  @@index([storeId, email])
 }
 
 model StoreBranding {
@@ -293,6 +312,7 @@ model Payment {
   refundedAmount Decimal       @default(0) @db.Decimal(20, 4)
   settlementId   String?
   branchId       String?
+  customerId     String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   expiresAt      DateTime
@@ -306,6 +326,7 @@ model Payment {
   refunds           Refund[]
   settlement        Settlement?                @relation(fields: [settlementId], references: [id])
   branch            Branch?                    @relation(fields: [branchId], references: [id])
+  customer          Customer?                  @relation(fields: [customerId], references: [id])
 
   @@index([storeId, status])
   @@index([storeId, referenceId])

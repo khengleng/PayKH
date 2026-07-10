@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Customer 360 / CRM** (Domain 5): customer records (name/email/phone/
+  external_id/metadata) with `POST/GET /v1/customers`; attach a `customer_id` to
+  payments; a dashboard **Customers** page with a **Customer 360** view (lifetime
+  value, paid volume, refunds, recent payments). Foundation for Loyalty &
+  Campaigns.
 - **Branches** (Domain 3): sub-locations under a store (name/code/address,
   active flag). Manage from the dashboard (Stores → Branches); attribute a
   payment to a branch via `branch_id` on `POST /v1/payments`. **Domain 3

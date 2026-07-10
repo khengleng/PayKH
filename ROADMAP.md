@@ -17,7 +17,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Payment APIs · ✅ KHQR abstraction · ✅ Settlement · ✅ Refunds · ✅ Reconciliation
 
 ## 5. Customer Platform
-⬜ Customer 360 · ⬜ CRM · ⬜ Segmentation · ⬜ Preferences · ⬜ Consent
+✅ Customer 360 · 🟡 CRM · ⬜ Segmentation · ⬜ Preferences · ⬜ Consent
 
 ## 6. Loyalty
 ⬜ Points · ⬜ Tiers · ⬜ Rewards · ⬜ Redemption · ⬜ Liability

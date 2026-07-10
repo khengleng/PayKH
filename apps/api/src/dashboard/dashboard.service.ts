@@ -124,6 +124,7 @@ export class DashboardService {
         providerReference: true,
         refunds: { orderBy: { createdAt: 'desc' } },
         branch: true,
+        customer: true,
       },
     });
     if (!payment) throw ApiError.paymentNotFound();
@@ -131,6 +132,7 @@ export class DashboardService {
     return {
       ...this.serialize(payment),
       branch: payment.branch ? { id: payment.branch.id, name: payment.branch.name, code: payment.branch.code } : null,
+      customer: payment.customer ? { id: payment.customer.id, name: payment.customer.name, email: payment.customer.email, external_id: payment.customer.externalId } : null,
       refunds: payment.refunds.map((r) => ({
         id: r.id,
         amount: formatAmount(r.amount, r.currency),

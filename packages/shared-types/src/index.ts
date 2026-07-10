@@ -47,6 +47,7 @@ export interface PaymentResource {
   paid_at?: string | null;
   refunded_amount?: string; // cumulative refunded, decimal string
   branch_id?: string | null;
+  customer_id?: string | null;
 }
 
 export interface RefundResource {
@@ -67,6 +68,7 @@ export interface CreatePaymentRequest {
   metadata?: Record<string, unknown>;
   expires_in_seconds?: number;
   branch_id?: string;
+  customer_id?: string;
 }
 
 export interface ListPaymentsQuery {
