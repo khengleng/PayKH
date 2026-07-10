@@ -196,8 +196,26 @@ model Store {
   providerCredentials ProviderCredential[]
   webhookEndpoints    WebhookEndpoint[]
   settlements         Settlement[]
+  branches            Branch[]
 
   @@index([organizationId])
+}
+
+model Branch {
+  id        String   @id
+  storeId   String
+  name      String
+  code      String?
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@unique([storeId, code])
+  @@index([storeId])
 }
 
 model StoreBranding {
@@ -274,6 +292,7 @@ model Payment {
   qrString       String        @db.Text
   refundedAmount Decimal       @default(0) @db.Decimal(20, 4)
   settlementId   String?
+  branchId       String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   expiresAt      DateTime
@@ -286,6 +305,7 @@ model Payment {
   webhookEvents     WebhookEvent[]
   refunds           Refund[]
   settlement        Settlement?                @relation(fields: [settlementId], references: [id])
+  branch            Branch?                    @relation(fields: [branchId], references: [id])
 
   @@index([storeId, status])
   @@index([storeId, referenceId])

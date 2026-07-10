@@ -6,9 +6,10 @@ import { PaymentEventsService } from './payment-events.service';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { BillingModule } from '../billing/billing.module';
+import { BranchesModule } from '../branches/branches.module';
 
 @Module({
-  imports: [WebhooksModule, BillingModule],
+  imports: [WebhooksModule, BillingModule, BranchesModule],
   controllers: [PaymentsController, CheckoutController],
   providers: [PaymentsService, PaymentEventsService, ApiKeyGuard],
   exports: [PaymentsService],

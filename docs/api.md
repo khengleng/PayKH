@@ -64,6 +64,10 @@ curl -X POST http://localhost:4000/v1/payments \
 Amount is a **decimal string**. Bounds: USD `0.01`–`100000.00`, KHR `100`–`400000000`.
 `expires_in_seconds` is `30`–`86400` (default `300`).
 
+Optional **`branch_id`** attributes the payment to a store branch (must belong to
+the store and be active). Manage branches in the dashboard (Stores → Branches) or
+via `POST/GET /stores/:storeId/branches`, `PATCH/DELETE /branches/:id`.
+
 ### Retrieve a payment
 
 ```bash

@@ -123,12 +123,14 @@ export class DashboardService {
         statusHistory: { orderBy: { createdAt: 'asc' } },
         providerReference: true,
         refunds: { orderBy: { createdAt: 'desc' } },
+        branch: true,
       },
     });
     if (!payment) throw ApiError.paymentNotFound();
     await this.assertStoreAccess(user, payment.storeId);
     return {
       ...this.serialize(payment),
+      branch: payment.branch ? { id: payment.branch.id, name: payment.branch.name, code: payment.branch.code } : null,
       refunds: payment.refunds.map((r) => ({
         id: r.id,
         amount: formatAmount(r.amount, r.currency),

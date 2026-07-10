@@ -46,6 +46,7 @@ export interface PaymentResource {
   expires_at: string; // ISO 8601
   paid_at?: string | null;
   refunded_amount?: string; // cumulative refunded, decimal string
+  branch_id?: string | null;
 }
 
 export interface RefundResource {
@@ -65,6 +66,7 @@ export interface CreatePaymentRequest {
   description?: string;
   metadata?: Record<string, unknown>;
   expires_in_seconds?: number;
+  branch_id?: string;
 }
 
 export interface ListPaymentsQuery {

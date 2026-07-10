@@ -11,7 +11,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Authentication · ✅ RBAC · ✅ Tenant isolation · ✅ Secrets mgmt · ✅ MFA
 
 ## 3. Merchant Onboarding
-✅ Organization · ✅ Stores · ⬜ Branches · ✅ Team invitation · ✅ Merchant verification
+✅ Organization · ✅ Stores · ✅ Branches · ✅ Team invitation · ✅ Merchant verification
 
 ## 4. Payment Platform
 ✅ Payment APIs · ✅ KHQR abstraction · ✅ Settlement · ✅ Refunds · ✅ Reconciliation

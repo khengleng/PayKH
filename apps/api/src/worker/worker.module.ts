@@ -13,6 +13,7 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { BillingModule } from '../billing/billing.module';
 import { SettlementsModule } from '../settlements/settlements.module';
+import { BranchesModule } from '../branches/branches.module';
 import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
 import { MaintenanceProcessor } from './maintenance.processor';
 import { WorkerScheduler } from './worker-scheduler';
@@ -39,6 +40,7 @@ import { WorkerScheduler } from './worker-scheduler';
     PaymentsModule,
     BillingModule,
     SettlementsModule,
+    BranchesModule,
   ],
   providers: [WebhookDeliveryProcessor, MaintenanceProcessor, WorkerScheduler],
 })

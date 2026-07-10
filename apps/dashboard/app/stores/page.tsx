@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Shell, ShellContext } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
 import { api, API_BASE } from '@/lib/api';
@@ -151,6 +151,8 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
         </div>
       </Card>
 
+      <BranchesCard storeId={store.id} />
+
       <Card>
         <h3 className="mb-1 font-semibold">Run a test payment</h3>
         <p className="mb-3 text-sm text-slate-500">Create a test payment with your <code>bk_test_</code> key, then open its checkout URL.</p>
@@ -165,6 +167,57 @@ curl -X POST ${API_BASE}/v1/payments/PAY_ID/simulate \\
   -d '{"status":"paid"}'`}</pre>
       </Card>
     </div>
+  );
+}
+
+interface Branch { id: string; name: string; code: string | null; address: string | null; is_active: boolean }
+
+function BranchesCard({ storeId }: { storeId: string }) {
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = async () => setBranches(await api<Branch[]>(`/stores/${storeId}/branches`));
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
+
+  const add = async () => {
+    setErr('');
+    try {
+      await api(`/stores/${storeId}/branches`, { method: 'POST', body: { name, code: code || undefined } });
+      setName(''); setCode(''); await load();
+    } catch (e: any) { setErr(e.message); }
+  };
+  const toggle = async (b: Branch) => { await api(`/branches/${b.id}`, { method: 'PATCH', body: { isActive: !b.is_active } }); await load(); };
+  const remove = async (b: Branch) => { if (!confirm('Delete/deactivate this branch?')) return; await api(`/branches/${b.id}`, { method: 'DELETE' }); await load(); };
+
+  return (
+    <Card>
+      <h3 className="mb-1 font-semibold">Branches</h3>
+      <p className="mb-3 text-sm text-slate-500">Sub-locations under this store. Attribute a payment with <code>branch_id</code>.</p>
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <label className="text-sm"><div className="mb-1 text-slate-600">Name</div>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Downtown" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Code (optional)</div>
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="DT-01" className="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <Button onClick={add} disabled={!name}>Add branch</Button>
+        {err && <span className="text-sm text-red-600">{err}</span>}
+      </div>
+      {branches.length === 0 ? <p className="text-sm text-slate-400">No branches yet.</p> : (
+        <ul className="divide-y divide-slate-100 text-sm">
+          {branches.map((b) => (
+            <li key={b.id} className="flex items-center justify-between py-2">
+              <span>{b.name} {b.code && <span className="text-slate-400">· {b.code}</span>} {!b.is_active && <span className="ml-1 text-xs text-red-500">(inactive)</span>}
+                <span className="ml-2 font-mono text-[10px] text-slate-400">{b.id}</span></span>
+              <span className="flex gap-2">
+                <button onClick={() => toggle(b)} className="text-slate-600 hover:underline">{b.is_active ? 'Deactivate' : 'Activate'}</button>
+                <button onClick={() => remove(b)} className="text-red-600 hover:underline">Delete</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 

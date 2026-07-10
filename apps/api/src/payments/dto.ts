@@ -36,6 +36,10 @@ export class CreatePaymentDto {
   @Min(30)
   @Max(86_400)
   expires_in_seconds?: number;
+
+  @IsOptional()
+  @IsString()
+  branch_id?: string;
 }
 
 export class ListPaymentsDto {

@@ -25,6 +25,7 @@ import { PaymentEventsService } from './payment-events.service';
 import { WebhookEventsService } from '../webhooks/webhook-events.service';
 import { QuotaService } from '../billing/quota.service';
 import { AuditService } from '../audit/audit.service';
+import { BranchesService } from '../branches/branches.service';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -46,6 +47,7 @@ export class PaymentsService {
     private readonly webhookEvents: WebhookEventsService,
     private readonly quota: QuotaService,
     private readonly audit: AuditService,
+    private readonly branches: BranchesService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -94,6 +96,12 @@ export class PaymentsService {
     });
     if (!store) throw ApiError.internal('Store missing for API key');
 
+    // Optional branch attribution (must belong to this store and be active).
+    let branchId: string | null = null;
+    if (dto.branch_id) {
+      branchId = await this.branches.resolveActive(ctx.storeId, dto.branch_id);
+    }
+
     const paymentId = ids.payment();
     const now = new Date();
     const expiresAt = new Date(
@@ -140,6 +148,7 @@ export class PaymentsService {
             description: dto.description ?? null,
             metadata: (dto.metadata ?? {}) as Prisma.InputJsonValue,
             qrString: providerResult.qrString,
+            branchId,
             expiresAt,
           },
         });
@@ -547,6 +556,7 @@ export class PaymentsService {
       expires_at: payment.expiresAt.toISOString(),
       paid_at: payment.paidAt?.toISOString() ?? null,
       refunded_amount: formatAmount(payment.refundedAmount, payment.currency),
+      branch_id: payment.branchId ?? null,
     };
   }
 }

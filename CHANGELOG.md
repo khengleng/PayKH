@@ -8,6 +8,10 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Branches** (Domain 3): sub-locations under a store (name/code/address,
+  active flag). Manage from the dashboard (Stores → Branches); attribute a
+  payment to a branch via `branch_id` on `POST /v1/payments`. **Domain 3
+  complete.**
 - **Merchant verification / KYC** (Domain 3): merchants submit business details;
   platform admins approve/reject (admin console). **Live-mode activation is now
   gated** on an approved verification. Owners are emailed the decision. Audited.

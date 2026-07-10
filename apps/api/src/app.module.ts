@@ -11,6 +11,7 @@ import { RedisModule } from './redis/redis.module';
 import { RateLimitModule } from './ratelimit/rate-limit.module';
 import { AuthModule } from './auth/auth.module';
 import { StoresModule } from './stores/stores.module';
+import { BranchesModule } from './branches/branches.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -36,6 +37,7 @@ import { RequestIdMiddleware } from './common/request-context';
     RateLimitModule,
     AuthModule,
     StoresModule,
+    BranchesModule,
     ApiKeysModule,
     PaymentsModule,
     WebhooksModule,
