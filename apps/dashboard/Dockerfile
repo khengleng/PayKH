@@ -4,6 +4,10 @@ COPY package.json package-lock.json* ./
 COPY apps/dashboard/package.json apps/dashboard/
 RUN npm install
 COPY apps/dashboard apps/dashboard
+# NEXT_PUBLIC_* is inlined at build time — accept it as a build arg (Railway
+# passes service variables to the Docker build automatically).
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build --workspace @paykh/dashboard
 
