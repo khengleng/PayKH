@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Ops → Support console & Queue monitor** (Domain 12): a platform-admin
+  **universal support lookup** (`/admin/support/search`) across payments,
+  customers, stores, and orgs by id/reference/email/phone/name, and a **queue
+  monitor** (`/admin/queues`) exposing live BullMQ depths (waiting/active/
+  completed/failed/delayed) for the webhook + maintenance queues. Both on the
+  admin console. **Domain 12 complete.**
 - **Monetization → Revenue share & Accounting ledger** (Domain 13): partner
   **revenue-share agreements** (a partner earns N bps of a store's processing
   fees) with CRUD, and a **derived accounting ledger** — a read-only P&L over a

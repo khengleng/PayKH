@@ -38,7 +38,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ⬜ Merchant assistant · ⬜ Campaign generator · ⬜ Fraud insights · ⬜ Marketing copy · ⬜ Analytics summary
 
 ## 12. Operations
-🟡 Support console (admin) · ⬜ Queue monitor · ✅ Webhook retry · 🟡 Incident mgmt (runbooks) · ✅ Audit
+✅ Support console (admin) · ✅ Queue monitor · ✅ Webhook retry · 🟡 Incident mgmt (runbooks) · ✅ Audit
 
 ## 13. Finance
 ✅ Billing · ✅ Subscriptions · ✅ Revenue share · ✅ Invoices · ✅ Accounting ledger

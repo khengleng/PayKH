@@ -85,6 +85,8 @@ export default function AdminPage() {
         </div>
       )}
 
+      <SupportConsole />
+
       {verifs.length > 0 && (
         <>
           <h2 className="mb-2 mt-6 text-lg font-semibold">Verifications pending review ({verifs.length})</h2>
@@ -145,5 +147,74 @@ export default function AdminPage() {
         </table>
       </Card>
     </div>
+  );
+}
+
+interface Queue { name: string; waiting?: number; active?: number; completed?: number; failed?: number; delayed?: number; paused?: number; healthy: boolean; error?: string }
+
+function SupportConsole() {
+  const [q, setQ] = useState('');
+  const [res, setRes] = useState<any>(null);
+  const [queues, setQueues] = useState<Queue[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { api<{ queues: Queue[] }>('/admin/queues').then((d) => setQueues(d.queues)).catch(() => {}); }, []);
+
+  const run = async () => {
+    if (q.trim().length < 2) return;
+    setBusy(true);
+    try { setRes(await api<any>(`/admin/support/search?q=${encodeURIComponent(q.trim())}`)); } catch { setRes(null); }
+    setBusy(false);
+  };
+
+  return (
+    <>
+      <h2 className="mb-2 mt-6 text-lg font-semibold">Queue monitor</h2>
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-2">
+        {queues.map((qq) => (
+          <Card key={qq.name}>
+            <div className="flex items-center justify-between">
+              <span className="font-medium">{qq.name}</span>
+              <span className={`h-2.5 w-2.5 rounded-full ${qq.healthy ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            </div>
+            {qq.error ? <p className="mt-1 text-xs text-red-500">{qq.error}</p> : (
+              <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-600">
+                <span>waiting <b>{qq.waiting ?? 0}</b></span>
+                <span>active <b>{qq.active ?? 0}</b></span>
+                <span>delayed <b>{qq.delayed ?? 0}</b></span>
+                <span className={((qq.failed ?? 0) > 0) ? 'text-red-500' : ''}>failed <b>{qq.failed ?? 0}</b></span>
+                <span>done <b>{qq.completed ?? 0}</b></span>
+              </div>
+            )}
+          </Card>
+        ))}
+      </div>
+
+      <h2 className="mb-2 text-lg font-semibold">Support lookup</h2>
+      <Card className="mb-6">
+        <div className="flex gap-2">
+          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && run()} placeholder="payment id, reference, customer email/phone, store or org name…" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          <Button onClick={run} disabled={busy}>{busy ? 'Searching…' : 'Search'}</Button>
+        </div>
+        {res && (
+          <div className="mt-4 space-y-3 text-sm">
+            {(['payments', 'customers', 'stores', 'organizations'] as const).map((k) => res[k]?.length > 0 && (
+              <div key={k}>
+                <div className="mb-1 font-medium capitalize text-slate-600">{k}</div>
+                <ul className="divide-y divide-slate-100">
+                  {res[k].map((row: any) => (
+                    <li key={row.id} className="flex flex-wrap justify-between gap-2 py-1.5">
+                      <span className="font-mono text-xs">{row.id}</span>
+                      <span className="text-slate-600">{row.name ?? row.email ?? row.reference_id ?? ''} {row.amount ? `· ${row.amount} ${row.currency}` : ''} {row.status ? `· ${row.status}` : ''} {row.live_mode !== undefined ? (row.live_mode ? '· live' : '· test') : ''}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+            {(['payments', 'customers', 'stores', 'organizations'] as const).every((k) => !res[k]?.length) && <p className="text-slate-400">No matches.</p>}
+          </div>
+        )}
+      </Card>
+    </>
   );
 }

@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { currentPeriodStart } from '../billing/period.util';
+import { QUEUE_MAINTENANCE, QUEUE_WEBHOOK } from '../queue/queue.constants';
 
 export class UpsertPlanDto {
   @IsString() id!: string;
@@ -23,11 +26,61 @@ export class AdminListQuery {
  */
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @InjectQueue(QUEUE_WEBHOOK) private readonly webhookQueue: Queue,
+    @InjectQueue(QUEUE_MAINTENANCE) private readonly maintenanceQueue: Queue,
+  ) {}
 
   async assertAdmin(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user?.isPlatformAdmin) throw ApiError.forbidden('Platform admin access required');
+  }
+
+  // -------------------------------------------------------- support console
+  /**
+   * Universal support lookup across payments, customers, stores, and orgs.
+   * Matches an id/reference/email/name so support can jump straight to the
+   * relevant record. Platform-admin only.
+   */
+  async supportSearch(user: AuthUser, q: string) {
+    await this.assertAdmin(user.userId);
+    const query = (q ?? '').trim();
+    if (query.length < 2) throw ApiError.invalidRequest('Search query too short');
+
+    const [payments, customers, stores, orgs] = await Promise.all([
+      this.prisma.payment.findMany({ where: { OR: [{ id: query }, { referenceId: query }] }, take: 10, select: { id: true, storeId: true, status: true, amount: true, currency: true, referenceId: true, createdAt: true } }),
+      this.prisma.customer.findMany({ where: { OR: [{ id: query }, { email: { equals: query, mode: 'insensitive' } }, { phone: query }] }, take: 10, select: { id: true, storeId: true, name: true, email: true, phone: true } }),
+      this.prisma.store.findMany({ where: { OR: [{ id: query }, { name: { contains: query, mode: 'insensitive' } }] }, take: 10, select: { id: true, organizationId: true, name: true, liveMode: true } }),
+      this.prisma.organization.findMany({ where: { OR: [{ id: query }, { name: { contains: query, mode: 'insensitive' } }] }, take: 10, select: { id: true, name: true, status: true } }),
+    ]);
+    return {
+      query,
+      payments: payments.map((p) => ({ id: p.id, store_id: p.storeId, status: p.status.toLowerCase(), amount: p.amount.toFixed(2), currency: p.currency, reference_id: p.referenceId, created_at: p.createdAt.toISOString() })),
+      customers: customers.map((c) => ({ id: c.id, store_id: c.storeId, name: c.name, email: c.email, phone: c.phone })),
+      stores: stores.map((s) => ({ id: s.id, organization_id: s.organizationId, name: s.name, live_mode: s.liveMode })),
+      organizations: orgs.map((o) => ({ id: o.id, name: o.name, status: o.status.toLowerCase() })),
+    };
+  }
+
+  // ------------------------------------------------------------ queue monitor
+  /** BullMQ queue depths (waiting/active/completed/failed/delayed). Admin only. */
+  async queueStats(user: AuthUser) {
+    await this.assertAdmin(user.userId);
+    const describe = async (name: string, queue: Queue) => {
+      try {
+        const c = await queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused');
+        return { name, ...c, healthy: (c.failed ?? 0) < 100 };
+      } catch (e) {
+        return { name, error: String(e), healthy: false };
+      }
+    };
+    return {
+      queues: await Promise.all([
+        describe('webhook-delivery', this.webhookQueue),
+        describe('maintenance', this.maintenanceQueue),
+      ]),
+    };
   }
 
   async whoami(user: AuthUser) {

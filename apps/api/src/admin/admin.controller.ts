@@ -32,6 +32,18 @@ export class AdminController {
     return this.admin.platformMetrics(user);
   }
 
+  @Get('support/search')
+  @ApiOperation({ summary: 'Universal support lookup (payments/customers/stores/orgs)' })
+  supportSearch(@CurrentUser() user: AuthUser, @Query('q') q: string) {
+    return this.admin.supportSearch(user, q);
+  }
+
+  @Get('queues')
+  @ApiOperation({ summary: 'BullMQ queue depths' })
+  queues(@CurrentUser() user: AuthUser) {
+    return this.admin.queueStats(user);
+  }
+
   @Get('orgs')
   @ApiOperation({ summary: 'List all organizations (merchants)' })
   orgs(@CurrentUser() user: AuthUser, @Query('search') search?: string) {
