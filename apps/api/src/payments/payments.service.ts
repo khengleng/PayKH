@@ -523,6 +523,7 @@ export class PaymentsService {
         await this.quota.recordPaidForStore(result.storeId);
         await this.loyalty.awardForPayment(result); // earn loyalty points
         await this.referrals.onPaidPayment(result); // reward pending referral
+        await this.referrals.accrueCommission(result); // affiliate commission
       }
       this.events.publish({ paymentId, status: to, at: new Date().toISOString() });
       if (STATUS_TO_EVENT[to]) {

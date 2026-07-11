@@ -121,16 +121,16 @@ enum ReferralStatus {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String?  // null when only using Google OAuth (Phase 2)
-  name         String?
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String? // null when only using Google OAuth (Phase 2)
+  name            String?
   googleId        String?  @unique
   mfaEnabled      Boolean  @default(false)
-  mfaSecret       String?  // AES-GCM-encrypted TOTP secret (null until enrolled)
+  mfaSecret       String? // AES-GCM-encrypted TOTP secret (null until enrolled)
   isPlatformAdmin Boolean  @default(false) // global platform operator
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   memberships OrganizationMember[]
   auditLogs   AuditLog[]
@@ -145,7 +145,7 @@ model Organization {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  plan          Plan?                @relation(fields: [planId], references: [id])
+  plan          Plan?                 @relation(fields: [planId], references: [id])
   members       OrganizationMember[]
   stores        Store[]
   auditLogs     AuditLog[]
@@ -260,20 +260,20 @@ model Branch {
 }
 
 model Customer {
-  id            String   @id
-  storeId       String
-  name          String?
-  email         String?
-  phone         String?
-  externalId     String? // the merchant's own customer id
-  metadata       Json     @default("{}")
-  pointsBalance  Int      @default(0)
-  lifetimePoints Int      @default(0) // cumulative earned; drives tier (never decremented)
-  tierId         String?
-  referralCode   String? // this customer's own referral code
+  id                   String   @id
+  storeId              String
+  name                 String?
+  email                String?
+  phone                String?
+  externalId           String? // the merchant's own customer id
+  metadata             Json     @default("{}")
+  pointsBalance        Int      @default(0)
+  lifetimePoints       Int      @default(0) // cumulative earned; drives tier (never decremented)
+  tierId               String?
+  referralCode         String? // this customer's own referral code
   referredByCustomerId String? // who referred this customer
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   store        Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
   payments     Payment[]
@@ -299,15 +299,47 @@ model TelegramConfig {
 }
 
 model ReferralProgram {
-  id             String   @id @default(cuid())
-  storeId        String   @unique
-  active         Boolean  @default(false)
-  referrerPoints Int      @default(0)
-  refereePoints  Int      @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  storeId                String   @unique
+  active                 Boolean  @default(false)
+  referrerPoints         Int      @default(0)
+  refereePoints          Int      @default(0)
+  // Affiliate commission: the referrer earns commissionBps (basis points) of
+  // every paid payment their referees make. 0 = no commission. When
+  // commissionDurationDays is set, commission only accrues within that many
+  // days of the referral being created (null = lifetime).
+  commissionBps          Int      @default(0)
+  commissionDurationDays Int?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+enum CommissionStatus {
+  ACCRUED
+  PAID
+  VOID
+}
+
+/// A commission accrued to a referrer on one of their referee's paid payments.
+model ReferralCommission {
+  id                 String           @id
+  storeId            String
+  referralId         String
+  referrerCustomerId String
+  paymentId          String           @unique // one commission per payment (idempotent)
+  amount             Decimal          @db.Decimal(18, 2)
+  currency           String
+  bps                Int
+  status             CommissionStatus @default(ACCRUED)
+  createdAt          DateTime         @default(now())
+  paidAt             DateTime?
+  payoutRef          String?
+
+  @@index([storeId, status])
+  @@index([referrerCustomerId])
+  @@index([referralId])
 }
 
 model Referral {
@@ -392,23 +424,23 @@ model Segment {
 }
 
 model Promotion {
-  id           String          @id
-  storeId      String
-  name         String
-  type         PromotionType
-  status       PromotionStatus @default(DRAFT)
-  segmentId    String? // null = all customers
-  config       Json            @default("{}") // { multiplier?, bonusPoints?, minAmount? }
-  budgetPoints Int? // cap on total bonus points; null = unlimited
-  spentPoints  Int             @default(0)
-  startAt      DateTime?
-  endAt        DateTime?
-  submittedForApproval Boolean  @default(false)
-  approved             Boolean  @default(false)
+  id                   String          @id
+  storeId              String
+  name                 String
+  type                 PromotionType
+  status               PromotionStatus @default(DRAFT)
+  segmentId            String? // null = all customers
+  config               Json            @default("{}") // { multiplier?, bonusPoints?, minAmount? }
+  budgetPoints         Int? // cap on total bonus points; null = unlimited
+  spentPoints          Int             @default(0)
+  startAt              DateTime?
+  endAt                DateTime?
+  submittedForApproval Boolean         @default(false)
+  approved             Boolean         @default(false)
   approvedByUserId     String?
   approvalNote         String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
@@ -503,15 +535,15 @@ model ApiKey {
 // ---------------------------------------------------------------------------
 
 model Payment {
-  id          String        @id
-  storeId     String
-  apiKeyId    String?
-  mode        KeyMode
-  status      PaymentStatus @default(PENDING)
-  amount      Decimal       @db.Decimal(20, 4)
-  currency    Currency
-  referenceId String?
-  description String?
+  id             String        @id
+  storeId        String
+  apiKeyId       String?
+  mode           KeyMode
+  status         PaymentStatus @default(PENDING)
+  amount         Decimal       @db.Decimal(20, 4)
+  currency       Currency
+  referenceId    String?
+  description    String?
   metadata       Json          @default("{}")
   qrString       String        @db.Text
   refundedAmount Decimal       @default(0) @db.Decimal(20, 4)
@@ -523,15 +555,15 @@ model Payment {
   expiresAt      DateTime
   paidAt         DateTime?
 
-  store             Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  apiKey            ApiKey?                    @relation(fields: [apiKeyId], references: [id])
+  store             Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  apiKey            ApiKey?                   @relation(fields: [apiKeyId], references: [id])
   statusHistory     PaymentStatusHistory[]
   providerReference PaymentProviderReference?
   webhookEvents     WebhookEvent[]
   refunds           Refund[]
-  settlement        Settlement?                @relation(fields: [settlementId], references: [id])
-  branch            Branch?                    @relation(fields: [branchId], references: [id])
-  customer          Customer?                  @relation(fields: [customerId], references: [id])
+  settlement        Settlement?               @relation(fields: [settlementId], references: [id])
+  branch            Branch?                   @relation(fields: [branchId], references: [id])
+  customer          Customer?                 @relation(fields: [customerId], references: [id])
 
   @@index([storeId, status])
   @@index([storeId, referenceId])
@@ -592,12 +624,12 @@ model ReconciliationReport {
 }
 
 model PaymentStatusHistory {
-  id         String        @id @default(cuid())
+  id         String         @id @default(cuid())
   paymentId  String
   fromStatus PaymentStatus?
   toStatus   PaymentStatus
   reason     String?
-  createdAt  DateTime      @default(now())
+  createdAt  DateTime       @default(now())
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
@@ -605,15 +637,15 @@ model PaymentStatusHistory {
 }
 
 model PaymentProviderReference {
-  id             String   @id @default(cuid())
-  paymentId      String   @unique
-  provider       String   @default("bakong")
-  md5            String? // KHQR md5 hash used to poll Bakong
-  billNumber     String?
-  providerTxnId  String?
-  rawResponse    Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String   @id @default(cuid())
+  paymentId     String   @unique
+  provider      String   @default("bakong")
+  md5           String? // KHQR md5 hash used to poll Bakong
+  billNumber    String?
+  providerTxnId String?
+  rawResponse   Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 }
@@ -642,13 +674,13 @@ model IdempotencyRecord {
 // ---------------------------------------------------------------------------
 
 model WebhookEndpoint {
-  id           String   @id @default(cuid())
-  storeId      String
-  url          String
+  id            String   @id @default(cuid())
+  storeId       String
+  url           String
   enabledEvents String[] @default([])
-  disabled     Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  disabled      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
   secrets    WebhookSecret[]
@@ -709,11 +741,11 @@ model WebhookDelivery {
 // ---------------------------------------------------------------------------
 
 model Plan {
-  id                     String  @id
-  name                   String
-  monthlyPaidQuota       Int // successful payments per month; -1 = unlimited
-  priceUsdCents          Int     @default(0)
-  createdAt              DateTime @default(now())
+  id               String   @id
+  name             String
+  monthlyPaidQuota Int // successful payments per month; -1 = unlimited
+  priceUsdCents    Int      @default(0)
+  createdAt        DateTime @default(now())
 
   organizations Organization[]
   subscriptions Subscription[]

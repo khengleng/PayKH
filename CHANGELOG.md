@@ -8,6 +8,13 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Referral & Affiliate → Commission** (Domain 8): affiliate commission — the
+  referrer earns a configurable **% (basis points) of every paid payment** their
+  referees make (not just the one-time points bonus), optionally limited to a
+  **duration window** after the referral. Each accrual is an idempotent ledger
+  entry (`ReferralCommission`, one per payment); the dashboard shows **owed vs.
+  paid per referrer** and supports a **payout** (all or one referrer) that marks
+  entries paid with an optional external reference.
 - **Notification Hub → Telegram** (Domain 10): per-store Telegram notifications
   for payment events (mirrors the webhook fan-out — completed/refunded/failed/
   expired/cancelled, with event selection). Pluggable `TelegramService` (Bot API

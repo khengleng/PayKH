@@ -366,37 +366,76 @@ function RewardsCard({ storeId }: { storeId: string }) {
 }
 
 interface Referral { id: string; referrer: string; referee: string; code: string; status: string; reward_referrer: number; reward_referee: number }
+interface CommissionSummary { referrer: string; referrer_customer_id: string; currency: string; accrued: string; paid: string; count: number }
 
 function ReferralsCard({ storeId }: { storeId: string }) {
   const [active, setActive] = useState(false);
   const [referrer, setReferrer] = useState('50');
   const [referee, setReferee] = useState('25');
+  const [commissionPct, setCommissionPct] = useState('0');
+  const [durationDays, setDurationDays] = useState('');
   const [rows, setRows] = useState<Referral[]>([]);
+  const [summary, setSummary] = useState<CommissionSummary[]>([]);
   const [msg, setMsg] = useState('');
 
   const load = async () => {
     const p = await api<any>(`/dashboard/stores/${storeId}/referral-program`);
     setActive(p.active); setReferrer(String(p.referrer_points)); setReferee(String(p.referee_points));
+    setCommissionPct((p.commission_bps / 100).toString());
+    setDurationDays(p.commission_duration_days ? String(p.commission_duration_days) : '');
     setRows(await api<Referral[]>(`/dashboard/stores/${storeId}/referrals`));
+    setSummary(await api<CommissionSummary[]>(`/dashboard/stores/${storeId}/commissions/summary`));
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
 
   const save = async () => {
-    await api(`/dashboard/stores/${storeId}/referral-program`, { method: 'PUT', body: { active, referrerPoints: Number(referrer), refereePoints: Number(referee) } });
+    await api(`/dashboard/stores/${storeId}/referral-program`, { method: 'PUT', body: {
+      active, referrerPoints: Number(referrer), refereePoints: Number(referee),
+      commissionBps: Math.round(Number(commissionPct) * 100),
+      commissionDurationDays: durationDays ? Number(durationDays) : 0,
+    } });
     setMsg('Saved'); setTimeout(() => setMsg(''), 1500); await load();
+  };
+
+  const payout = async (referrerCustomerId?: string) => {
+    const r = await api<{ paid_count: number; totals: { currency: string; amount: string }[] }>(`/dashboard/stores/${storeId}/commissions/payout`, { method: 'POST', body: referrerCustomerId ? { referrerCustomerId } : {} });
+    setMsg(r.paid_count ? `Paid ${r.paid_count}: ${r.totals.map((t) => `${t.amount} ${t.currency}`).join(', ')}` : 'Nothing to pay');
+    setTimeout(() => setMsg(''), 2500); await load();
   };
 
   return (
     <Card>
-      <h3 className="mb-1 font-semibold">Referrals</h3>
-      <p className="mb-3 text-sm text-slate-500">Customers get a referral code (<code>POST /v1/customers/:id/referral-code</code>); both are rewarded on the referee's first paid payment.</p>
+      <h3 className="mb-1 font-semibold">Referrals & Affiliate</h3>
+      <p className="mb-3 text-sm text-slate-500">Customers get a referral code (<code>POST /v1/customers/:id/referral-code</code>); both earn points on the referee's first paid payment. Affiliate <b>commission</b> pays the referrer a % of every referee payment.</p>
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active</label>
         <label className="text-sm"><div className="mb-1 text-slate-600">Referrer points</div><input value={referrer} onChange={(e) => setReferrer(e.target.value)} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
         <label className="text-sm"><div className="mb-1 text-slate-600">Referee points</div><input value={referee} onChange={(e) => setReferee(e.target.value)} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Commission %</div><input value={commissionPct} onChange={(e) => setCommissionPct(e.target.value)} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Duration (days)</div><input value={durationDays} onChange={(e) => setDurationDays(e.target.value)} placeholder="lifetime" className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
         <Button onClick={save}>Save</Button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
       </div>
+      {summary.length > 0 && (
+        <div className="mb-3 rounded-lg border border-slate-100 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-medium">Commission owed</span>
+            <button onClick={() => payout()} className="rounded-md border border-slate-200 px-3 py-1 text-xs hover:bg-slate-50">Pay out all</button>
+          </div>
+          <ul className="divide-y divide-slate-100 text-sm">
+            {summary.map((s) => (
+              <li key={`${s.referrer_customer_id}-${s.currency}`} className="flex items-center justify-between py-2">
+                <span>{s.referrer}</span>
+                <span className="flex items-center gap-3">
+                  <span className="text-amber-600">{s.accrued} {s.currency} owed</span>
+                  <span className="text-xs text-slate-400">{s.paid} paid</span>
+                  {Number(s.accrued) > 0 && <button onClick={() => payout(s.referrer_customer_id)} className="rounded-md border border-slate-200 px-2 py-0.5 text-xs hover:bg-slate-50">Pay</button>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {rows.length > 0 && (
         <ul className="divide-y divide-slate-100 text-sm">
           {rows.slice(0, 8).map((r) => (
