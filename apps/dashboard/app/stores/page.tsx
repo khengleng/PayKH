@@ -367,6 +367,7 @@ function RewardsCard({ storeId }: { storeId: string }) {
 
 interface Referral { id: string; referrer: string; referee: string; code: string; status: string; reward_referrer: number; reward_referee: number; flagged?: boolean; risk_flags?: string[] }
 interface CommissionSummary { referrer: string; referrer_customer_id: string; currency: string; accrued: string; paid: string; count: number }
+interface ReferralReport { funnel: { total: number; pending: number; qualified: number; rewarded: number; flagged: number }; conversion_rate: number; commission: Record<string, Record<string, string>> }
 
 function ReferralsCard({ storeId }: { storeId: string }) {
   const [active, setActive] = useState(false);
@@ -377,6 +378,7 @@ function ReferralsCard({ storeId }: { storeId: string }) {
   const [rows, setRows] = useState<Referral[]>([]);
   const [flagged, setFlagged] = useState<Referral[]>([]);
   const [summary, setSummary] = useState<CommissionSummary[]>([]);
+  const [report, setReport] = useState<ReferralReport | null>(null);
   const [msg, setMsg] = useState('');
 
   const load = async () => {
@@ -387,6 +389,7 @@ function ReferralsCard({ storeId }: { storeId: string }) {
     setRows(await api<Referral[]>(`/dashboard/stores/${storeId}/referrals`));
     setFlagged(await api<Referral[]>(`/dashboard/stores/${storeId}/referrals/flagged`));
     setSummary(await api<CommissionSummary[]>(`/dashboard/stores/${storeId}/commissions/summary`));
+    setReport(await api<ReferralReport>(`/dashboard/stores/${storeId}/referrals/report`));
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
 
@@ -423,6 +426,32 @@ function ReferralsCard({ storeId }: { storeId: string }) {
         <Button onClick={save}>Save</Button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
       </div>
+      {report && report.funnel.total > 0 && (
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {[
+            ['Referrals', report.funnel.total],
+            ['Rewarded', report.funnel.rewarded],
+            ['Pending', report.funnel.pending],
+            ['Conversion', `${Math.round(report.conversion_rate * 100)}%`],
+            ['Flagged', report.funnel.flagged],
+          ].map(([label, val]) => (
+            <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
+              <div className="text-xs text-slate-500">{label}</div>
+              <div className="text-lg font-semibold">{val}</div>
+            </div>
+          ))}
+          {report.commission.paid && (
+            <div className="col-span-2 rounded-lg bg-slate-50 px-3 py-2 sm:col-span-5">
+              <div className="text-xs text-slate-500">Commission</div>
+              <div className="text-sm">
+                {Object.entries(report.commission).map(([status, cur]) => (
+                  <span key={status} className="mr-3"><span className="text-slate-500">{status}:</span> {Object.entries(cur).map(([c, a]) => `${a} ${c}`).join(', ')}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {flagged.length > 0 && (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <div className="mb-2 text-sm font-medium text-amber-800">⚠ Fraud review — {flagged.length} flagged referral{flagged.length > 1 ? 's' : ''}</div>

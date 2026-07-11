@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Referral & Affiliate → Reports** (Domain 8): a referral analytics report
+  (`GET /dashboard/stores/:id/referrals/report`) — the funnel (pending →
+  rewarded), **conversion rate**, fraud-flagged count, **commission totals by
+  status/currency** (accrued/held/paid/void), and a **top-referrers**
+  leaderboard (successful referrals + commission earned). Surfaced as a stats
+  strip on the dashboard. **Domain 8 complete.**
 - **Referral & Affiliate → QR** (Domain 8): server-side referral QR codes —
   `GET /v1/customers/:id/referral-qr` (API key) and a dashboard variant return
   the share URL plus a **PNG data URL** and inline **SVG** for the customer's

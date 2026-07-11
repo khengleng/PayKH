@@ -376,6 +376,69 @@ export class ReferralsService {
     };
   }
 
+  // ------------------------------------------------------------- reports
+  /**
+   * Referral program analytics: the referral funnel (pending → rewarded),
+   * conversion rate, fraud counts, commission totals by status/currency, and
+   * a top-referrers leaderboard (successful referrals + commission earned).
+   */
+  async report(user: AuthUser, storeId: string) {
+    await this.assertStore(user, storeId, 'payment:read');
+
+    const [byStatus, flaggedCount, commByStatus, commByReferrer, refByReferrer] = await Promise.all([
+      this.prisma.referral.groupBy({ by: ['status'], where: { storeId }, _count: { _all: true } }),
+      this.prisma.referral.count({ where: { storeId, flagged: true } }),
+      this.prisma.referralCommission.groupBy({ by: ['status', 'currency'], where: { storeId }, _sum: { amount: true }, _count: { _all: true } }),
+      this.prisma.referralCommission.groupBy({ by: ['referrerCustomerId', 'currency'], where: { storeId, status: { in: ['ACCRUED', 'HELD', 'PAID'] } }, _sum: { amount: true } }),
+      this.prisma.referral.groupBy({ by: ['referrerCustomerId'], where: { storeId }, _count: { _all: true } }),
+    ]);
+
+    const statusCount = (s: string) => byStatus.find((r) => r.status === s)?._count._all ?? 0;
+    const total = byStatus.reduce((a, r) => a + r._count._all, 0);
+    const rewarded = statusCount('REWARDED');
+
+    // Commission totals by status → { currency: amount }.
+    const commission: Record<string, Record<string, string>> = {};
+    for (const c of commByStatus) {
+      const key = c.status.toLowerCase();
+      (commission[key] ??= {})[c.currency] = (c._sum.amount ?? new Prisma.Decimal(0)).toFixed(2);
+    }
+
+    // Leaderboard: fold successful-referral counts + earned commission per referrer.
+    const earned = new Map<string, Map<string, Prisma.Decimal>>();
+    for (const c of commByReferrer) {
+      const m = earned.get(c.referrerCustomerId) ?? new Map();
+      m.set(c.currency, (m.get(c.currency) ?? new Prisma.Decimal(0)).add(c._sum.amount ?? 0));
+      earned.set(c.referrerCustomerId, m);
+    }
+    const referralCounts = new Map(refByReferrer.map((r) => [r.referrerCustomerId, r._count._all]));
+    const referrerIds = [...new Set([...earned.keys(), ...referralCounts.keys()])];
+    const nameOf = await this.nameMap(referrerIds);
+    const topReferrers = referrerIds
+      .map((id) => ({
+        referrer: nameOf.get(id) ?? id,
+        referrer_customer_id: id,
+        referrals: referralCounts.get(id) ?? 0,
+        commission_earned: [...(earned.get(id)?.entries() ?? [])].map(([currency, amount]) => ({ currency, amount: amount.toFixed(2) })),
+      }))
+      .sort((a, b) => b.referrals - a.referrals)
+      .slice(0, 10);
+
+    return {
+      store_id: storeId,
+      funnel: {
+        total,
+        pending: statusCount('PENDING'),
+        qualified: statusCount('QUALIFIED'),
+        rewarded,
+        flagged: flaggedCount,
+      },
+      conversion_rate: total > 0 ? Number((rewarded / total).toFixed(4)) : 0,
+      commission,
+      top_referrers: topReferrers,
+    };
+  }
+
   // --------------------------------------------------------- fraud review
   /** List referrals flagged by fraud screening and awaiting review. */
   async listFlagged(user: AuthUser, storeId: string) {

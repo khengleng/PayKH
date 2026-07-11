@@ -57,6 +57,12 @@ export class ReferralsDashboardController {
     return this.referrals.getReferralQrForDashboard(user, customerId);
   }
 
+  @Get('stores/:storeId/referrals/report')
+  @ApiOperation({ summary: 'Referral funnel + commission analytics' })
+  report(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.referrals.report(user, storeId);
+  }
+
   @Get('stores/:storeId/referrals/flagged')
   @ApiOperation({ summary: 'List fraud-flagged referrals awaiting review' })
   flagged(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
