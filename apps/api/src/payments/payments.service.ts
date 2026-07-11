@@ -30,6 +30,7 @@ import { CustomersService } from '../customers/customers.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { GamesService } from '../games/games.service';
+import { RiskService } from '../risk/risk.service';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -56,6 +57,7 @@ export class PaymentsService {
     private readonly loyalty: LoyaltyService,
     private readonly referrals: ReferralsService,
     private readonly games: GamesService,
+    private readonly risk: RiskService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -527,6 +529,7 @@ export class PaymentsService {
         await this.referrals.onPaidPayment(result); // reward pending referral
         await this.referrals.accrueCommission(result); // affiliate commission
         await this.games.issueForPayment(result); // auto-issue scratch cards
+        await this.risk.scorePayment(result); // fraud/risk scoring
       }
       this.events.publish({ paymentId, status: to, at: new Date().toISOString() });
       if (STATUS_TO_EVENT[to]) {

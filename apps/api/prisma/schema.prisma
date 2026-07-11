@@ -140,6 +140,13 @@ enum NotificationChannelType {
   SIGNAL
 }
 
+enum RiskCaseStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  ESCALATED
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -265,6 +272,7 @@ model Store {
   notificationChannels NotificationChannel[]
   games                Game[]
   revenueShares        RevenueShareAgreement[]
+  riskCases            RiskCase[]
 
   @@index([organizationId])
 }
@@ -727,6 +735,25 @@ model Refund {
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
+  @@index([paymentId])
+}
+
+/// A risk/fraud review case raised by the risk-scoring engine or manually.
+model RiskCase {
+  id         String         @id
+  storeId    String
+  paymentId  String?
+  customerId String?
+  score      Int // 0-100
+  reasons    String[]       @default([])
+  status     RiskCaseStatus @default(OPEN)
+  resolution String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status])
   @@index([paymentId])
 }
 

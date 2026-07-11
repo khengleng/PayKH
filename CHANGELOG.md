@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Risk & Compliance → Scoring & Case management** (Domain 14): a heuristic
+  fraud/risk score (0-100) on every paid payment (transaction size, customer
+  velocity, account age, anonymity, repeated-amount card-testing) that
+  auto-opens a **RiskCase** past a threshold (idempotent per payment). A
+  dashboard **Risk** page to triage cases (open → investigating → escalated →
+  resolved, with resolution notes) and a status summary.
 - **Ops → Support console & Queue monitor** (Domain 12): a platform-admin
   **universal support lookup** (`/admin/support/search`) across payments,
   customers, stores, and orgs by id/reference/email/phone/name, and a **queue
