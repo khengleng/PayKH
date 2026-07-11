@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Prisma, Payment, Referral } from '@prisma/client';
+import * as QRCode from 'qrcode';
 import { prefixedId, randomBase58 } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
@@ -103,8 +104,35 @@ export class ReferralsService {
     throw ApiError.internal('Could not allocate a referral code');
   }
 
+  private shareUrl(code: string) {
+    return `${process.env.CHECKOUT_BASE_URL ?? ''}/?ref=${encodeURIComponent(code)}`;
+  }
+
   private codeResponse(code: string) {
-    return { referral_code: code, share_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/?ref=${encodeURIComponent(code)}` };
+    return { referral_code: code, share_url: this.shareUrl(code) };
+  }
+
+  /**
+   * A scannable QR for a customer's referral link. Returns the share URL plus
+   * a PNG data URL (easy to `<img src>` or attach) and inline SVG markup.
+   * Called via API key; lazily allocates the code if absent.
+   */
+  async getReferralQr(storeId: string, customerId: string) {
+    const { referral_code } = await this.getOrCreateCode(storeId, customerId);
+    const url = this.shareUrl(referral_code);
+    const [pngDataUrl, svg] = await Promise.all([
+      QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 2, width: 320 }),
+      QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 2 }),
+    ]);
+    return { referral_code, share_url: url, qr_png_data_url: pngDataUrl, qr_svg: svg };
+  }
+
+  /** Dashboard (JWT) variant — resolves the customer's store + checks permission. */
+  async getReferralQrForDashboard(user: AuthUser, customerId: string) {
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) throw ApiError.paymentNotFound('Customer not found');
+    await this.assertStore(user, customer.storeId, 'payment:read');
+    return this.getReferralQr(customer.storeId, customerId);
   }
 
   // --------------------------------------------------------------- linking

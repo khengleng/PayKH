@@ -26,7 +26,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Promotion builder · 🟡 Budget · 🟡 Scheduling · ✅ Approval · ✅ Simulation
 
 ## 8. Referral & Affiliate
-✅ Referral links · 🟡 QR · ✅ Commission · ✅ Fraud checks · 🟡 Reports
+✅ Referral links · ✅ QR · ✅ Commission · ✅ Fraud checks · 🟡 Reports
 
 ## 9. Promotional Games
 ⬜ Scratch cards · ⬜ Spin wheel · ⬜ Lucky draw · ⬜ Prize engine · ⬜ Inventory

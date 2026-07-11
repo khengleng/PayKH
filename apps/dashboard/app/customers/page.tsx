@@ -61,10 +61,16 @@ function Content({ storeId }: { storeId: string }) {
 
 function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
   const [data, setData] = useState<any>(null);
+  const [qr, setQr] = useState<any>(null);
   useEffect(() => {
     fetch(`${API_BASE}/dashboard/customers/${id}`, { headers: { Authorization: `Bearer ${tokenStore.get()}` } })
       .then((r) => r.json()).then(setData);
   }, [id]);
+
+  const loadQr = async () => {
+    const r = await fetch(`${API_BASE}/dashboard/customers/${id}/referral-qr`, { headers: { Authorization: `Bearer ${tokenStore.get()}` } });
+    setQr(await r.json());
+  };
 
   return (
     <div className="fixed inset-0 z-20 flex justify-end bg-black/30" onClick={onClose}>
@@ -102,6 +108,23 @@ function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
                 ))}
                 {(!data.recent_payments || data.recent_payments.length === 0) && <li className="py-2 text-slate-400">No payments yet.</li>}
               </ul>
+            </div>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-medium text-slate-700">Referral QR</span>
+                {!qr && <button onClick={loadQr} className="rounded-md border border-slate-200 px-2 py-0.5 text-xs hover:bg-slate-50">Generate</button>}
+              </div>
+              {qr && (
+                <div className="flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qr.qr_png_data_url} alt="Referral QR" className="h-28 w-28 rounded-lg border border-slate-100" />
+                  <div className="min-w-0 text-xs">
+                    <div className="font-mono text-slate-700">{qr.referral_code}</div>
+                    <a href={qr.share_url} target="_blank" rel="noreferrer" className="break-all text-blue-600 hover:underline">{qr.share_url}</a>
+                    <div className="mt-1"><a href={qr.qr_png_data_url} download={`${qr.referral_code}.png`} className="text-slate-500 hover:underline">Download PNG</a></div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

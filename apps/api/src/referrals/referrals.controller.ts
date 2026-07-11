@@ -51,6 +51,12 @@ export class ReferralsDashboardController {
     return this.referrals.payoutCommissions(user, storeId, dto);
   }
 
+  @Get('customers/:customerId/referral-qr')
+  @ApiOperation({ summary: 'Referral QR (PNG + SVG) for a customer' })
+  customerQr(@CurrentUser() user: AuthUser, @Param('customerId') customerId: string) {
+    return this.referrals.getReferralQrForDashboard(user, customerId);
+  }
+
   @Get('stores/:storeId/referrals/flagged')
   @ApiOperation({ summary: 'List fraud-flagged referrals awaiting review' })
   flagged(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
@@ -77,5 +83,11 @@ export class ReferralsController {
   @ApiOperation({ summary: 'Get or create a customer’s referral code + share URL' })
   code(@Req() req: Request, @Param('id') id: string) {
     return this.referrals.getOrCreateCode(getApiKeyContext(req).storeId, id);
+  }
+
+  @Get(':id/referral-qr')
+  @ApiOperation({ summary: 'Get a scannable QR (PNG data URL + SVG) for the referral link' })
+  qr(@Req() req: Request, @Param('id') id: string) {
+    return this.referrals.getReferralQr(getApiKeyContext(req).storeId, id);
   }
 }

@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Referral & Affiliate → QR** (Domain 8): server-side referral QR codes —
+  `GET /v1/customers/:id/referral-qr` (API key) and a dashboard variant return
+  the share URL plus a **PNG data URL** and inline **SVG** for the customer's
+  referral link (lazily allocating the code). Rendered + downloadable in
+  Customer 360.
 - **Referral & Affiliate → Fraud checks** (Domain 8): referrals are screened at
   link time for **shared contact** (same email/phone as the referrer → likely a
   self-referral via a second account) and **velocity** (a referrer creating >10
