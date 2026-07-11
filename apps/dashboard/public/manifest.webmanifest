@@ -1,0 +1,12 @@
+{
+  "name": "Merchant PayKH",
+  "short_name": "PayKH",
+  "description": "Manage KHQR payments, loyalty, campaigns and more.",
+  "start_url": "/overview",
+  "display": "standalone",
+  "background_color": "#0a1f44",
+  "theme_color": "#1e5bd6",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

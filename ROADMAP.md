@@ -50,7 +50,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Dashboards · ✅ KPIs · ✅ Forecasting · ✅ Exports (CSV) · ✅ Executive reports
 
 ## 16. Mobile & Mini Apps
-⬜ Telegram Mini App · ⬜ Merchant app · ⬜ Customer app · ⬜ Offline · ⬜ Push
+🟡 Telegram Mini App · ✅ Merchant app (PWA) · ✅ Customer app · 🟡 Offline · ⬜ Push
 
 ## 17. Marketplace
 ⬜ Plugin framework · 🟡 Partner APIs · ✅ App marketplace · ✅ Connectors · ✅ SDKs

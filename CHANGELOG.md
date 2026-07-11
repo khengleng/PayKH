@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Mobile & Apps → Customer wallet + Merchant PWA** (Domain 16): a public
+  customer **loyalty wallet** pass (`/wallet/:customerId` on checkout — points,
+  tier, referral QR, unrevealed scratch cards), and the dashboard is now an
+  installable **PWA** ("Merchant PayKH") with a web manifest, brand icon, and an
+  offline-first service worker (app shell + network-first navigations).
 - **Ecosystem → Connectors & App Marketplace** (Domain 17): install third-party
   **connectors** (Slack, Zapier, custom webhook) that receive payment events
   (fire-and-forget, per-event selection, 5s timeout, secret-masked URLs) plus a
