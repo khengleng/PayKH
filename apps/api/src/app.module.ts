@@ -22,6 +22,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { MonetizationModule } from './monetization/monetization.module';
 import { RiskModule } from './risk/risk.module';
 import { AiModule } from './ai/ai.module';
+import { ConnectorsModule } from './connectors/connectors.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -59,6 +60,7 @@ import { RequestIdMiddleware } from './common/request-context';
     MonetizationModule,
     RiskModule,
     AiModule,
+    ConnectorsModule,
     NotificationsModule,
     ApiKeysModule,
     PaymentsModule,

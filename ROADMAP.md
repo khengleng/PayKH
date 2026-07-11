@@ -53,7 +53,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ⬜ Telegram Mini App · ⬜ Merchant app · ⬜ Customer app · ⬜ Offline · ⬜ Push
 
 ## 17. Marketplace
-⬜ Plugin framework · ⬜ Partner APIs · ⬜ App marketplace · ⬜ Connectors · ✅ SDKs
+⬜ Plugin framework · 🟡 Partner APIs · ✅ App marketplace · ✅ Connectors · ✅ SDKs
 
 ## 18. DevSecOps
 ✅ Threat model · ⬜ Pen testing · 🟡 Monitoring · ✅ Disaster recovery · ✅ Production readiness

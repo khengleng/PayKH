@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Ecosystem → Connectors & App Marketplace** (Domain 17): install third-party
+  **connectors** (Slack, Zapier, custom webhook) that receive payment events
+  (fire-and-forget, per-event selection, 5s timeout, secret-masked URLs) plus a
+  **marketplace** catalog and a dashboard to install/test/remove them. Wired into
+  the event fan-out alongside messaging channels.
 - **AI Governance** (Domain 19): every Copilot call now runs through governance —
   **guardrails** (prompt-injection detection, input caps, output secret-scrubbing),
   **usage & cost logging** (`AiUsageLog` with per-model token pricing), a

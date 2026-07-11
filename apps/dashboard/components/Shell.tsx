@@ -20,6 +20,7 @@ const NAV = [
   { href: '/settlements', label: 'Settlements', icon: '🏦' },
   { href: '/keys', label: 'API Keys', icon: '🔑' },
   { href: '/webhooks', label: 'Webhooks', icon: '🔔' },
+  { href: '/marketplace', label: 'Marketplace', icon: '🧩' },
   { href: '/team', label: 'Team', icon: '👥' },
   { href: '/billing', label: 'Billing', icon: '💠' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },

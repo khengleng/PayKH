@@ -147,6 +147,12 @@ enum RiskCaseStatus {
   ESCALATED
 }
 
+enum ConnectorType {
+  SLACK
+  ZAPIER
+  WEBHOOK
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -273,6 +279,7 @@ model Store {
   games                Game[]
   revenueShares        RevenueShareAgreement[]
   riskCases            RiskCase[]
+  connectors           Connector[]
 
   @@index([organizationId])
 }
@@ -753,6 +760,24 @@ model AiUsageLog {
 
   @@index([storeId, createdAt])
   @@index([feature])
+}
+
+/// An installed third-party connector (Slack / Zapier / generic webhook) that
+/// receives payment events. Distinct from developer webhooks (signed, retried)
+/// — these are simple fire-and-forget app integrations.
+model Connector {
+  id            String        @id
+  storeId       String
+  type          ConnectorType
+  targetUrl     String
+  enabled       Boolean       @default(true)
+  enabledEvents String[]      @default([])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
 }
 
 /// A risk/fraud review case raised by the risk-scoring engine or manually.
