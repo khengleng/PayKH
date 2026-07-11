@@ -84,6 +84,37 @@ export class LoyaltyService {
     return { store_id: storeId, active: p.active, points_per_unit: p.pointsPerUnit.toString() };
   }
 
+  /**
+   * Outstanding points liability: the accounting cost of unredeemed points.
+   * liability = Σ(customer balances) × pointValue (currency per point). Includes
+   * lifetime earned/redeemed context and the largest holders. No schema change —
+   * pointValue is supplied per query.
+   */
+  async liability(user: AuthUser, storeId: string, pointValue = 0.01) {
+    await this.assertStore(user, storeId, 'payment:read');
+    const [balAgg, holders, earned, redeemed, topHolders] = await Promise.all([
+      this.prisma.customer.aggregate({ where: { storeId }, _sum: { pointsBalance: true } }),
+      this.prisma.customer.count({ where: { storeId, pointsBalance: { gt: 0 } } }),
+      this.prisma.pointsTransaction.aggregate({ where: { storeId, type: 'EARN' }, _sum: { points: true } }),
+      this.prisma.pointsTransaction.aggregate({ where: { storeId, type: 'REDEEM' }, _sum: { points: true } }),
+      this.prisma.customer.findMany({ where: { storeId, pointsBalance: { gt: 0 } }, orderBy: { pointsBalance: 'desc' }, take: 10, select: { id: true, name: true, email: true, pointsBalance: true } }),
+    ]);
+    const outstanding = balAgg._sum.pointsBalance ?? 0;
+    const totalEarned = earned._sum.points ?? 0;
+    const totalRedeemed = Math.abs(redeemed._sum.points ?? 0); // REDEEM points are negative
+    return {
+      store_id: storeId,
+      point_value: pointValue,
+      outstanding_points: outstanding,
+      estimated_liability: (outstanding * pointValue).toFixed(2),
+      customers_with_balance: holders,
+      lifetime_earned: totalEarned,
+      lifetime_redeemed: totalRedeemed,
+      redemption_rate: totalEarned > 0 ? Number((totalRedeemed / totalEarned).toFixed(4)) : 0,
+      top_holders: topHolders.map((c) => ({ id: c.id, name: c.name ?? c.email ?? c.id, points: c.pointsBalance, value: (c.pointsBalance * pointValue).toFixed(2) })),
+    };
+  }
+
   // -------------------------------------------------------------- earning
   /** Award points for a paid payment (idempotent per payment). Called on paid.
    *  Applies the customer's tier earn-multiplier, updates lifetime points, and

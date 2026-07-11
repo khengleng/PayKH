@@ -20,7 +20,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Customer 360 · ✅ CRM · ✅ Segmentation · ✅ Preferences · ✅ Consent
 
 ## 6. Loyalty
-✅ Points · ✅ Tiers · ✅ Rewards · ✅ Redemption · ⬜ Liability
+✅ Points · ✅ Tiers · ✅ Rewards · ✅ Redemption · ✅ Liability
 
 ## 7. Campaign Engine
 ✅ Promotion builder · 🟡 Budget · 🟡 Scheduling · ✅ Approval · ✅ Simulation

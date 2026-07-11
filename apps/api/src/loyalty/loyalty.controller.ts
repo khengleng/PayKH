@@ -52,6 +52,12 @@ export class LoyaltyDashboardController {
     return this.loyalty.ledger(user, id);
   }
 
+  @Get('stores/:storeId/loyalty/liability')
+  @ApiOperation({ summary: 'Outstanding points liability (pointValue = currency per point)' })
+  liability(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Query('point_value') pointValue?: string) {
+    return this.loyalty.liability(user, storeId, pointValue ? Number(pointValue) : undefined);
+  }
+
   @Post('customers/:id/loyalty/adjust')
   @ApiOperation({ summary: 'Manually adjust a customer’s points (+/-)' })
   async adjust(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AdjustDto, @Req() req: Request) {

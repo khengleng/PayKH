@@ -8,6 +8,10 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Loyalty → Liability** (Domain 6): an outstanding-points liability report
+  (`GET /dashboard/stores/:id/loyalty/liability?point_value=`) — Σ balances ×
+  point value, plus holders, lifetime earned/redeemed, redemption rate, and the
+  largest holders. Surfaced on the loyalty card. **Domain 6 complete.**
 - **Customer Preferences & Consent** (Domain 5): per-customer communication
   preferences (email/sms/whatsapp/telegram/push/marketing) via
   `GET/PUT /v1/customers/:id/preferences` (API key) and a Customer 360 toggle,

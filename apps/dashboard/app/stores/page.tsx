@@ -231,9 +231,13 @@ function LoyaltyCard({ storeId }: { storeId: string }) {
   const [active, setActive] = useState(false);
   const [ppu, setPpu] = useState('1');
   const [msg, setMsg] = useState('');
+  const [pointValue, setPointValue] = useState('0.01');
+  const [liab, setLiab] = useState<any>(null);
 
+  const loadLiab = async (pv: string) => setLiab(await api<any>(`/dashboard/stores/${storeId}/loyalty/liability?point_value=${pv}`));
   useEffect(() => {
     api<{ active: boolean; points_per_unit: string }>(`/dashboard/stores/${storeId}/loyalty`).then((p) => { setActive(p.active); setPpu(p.points_per_unit); });
+    loadLiab('0.01');
   }, [storeId]);
 
   const save = async () => {
@@ -256,8 +260,28 @@ function LoyaltyCard({ storeId }: { storeId: string }) {
         <Button onClick={save}>Save</Button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
       </div>
+      {liab && (
+        <div className="mt-4 rounded-lg border border-slate-100 p-3 text-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="font-medium">Points liability</span>
+            <span className="text-slate-500">@ $</span>
+            <input value={pointValue} onChange={(e) => { setPointValue(e.target.value); loadLiab(e.target.value || '0'); }} className="w-16 rounded border border-slate-200 px-2 py-0.5 text-xs" />
+            <span className="text-slate-500">/point</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Outstanding" value={liab.outstanding_points} />
+            <Stat label="Est. liability" value={`$${liab.estimated_liability}`} />
+            <Stat label="Holders" value={liab.customers_with_balance} />
+            <Stat label="Redemption rate" value={`${Math.round(liab.redemption_rate * 100)}%`} />
+          </div>
+        </div>
+      )}
     </Card>
   );
+}
+
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+  return <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-500">{label}</div><div className="text-lg font-semibold">{value}</div></div>;
 }
 
 interface Tier { id: string; name: string; threshold: number; earn_multiplier: string }
