@@ -56,7 +56,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ⬜ Plugin framework · 🟡 Partner APIs · ✅ App marketplace · ✅ Connectors · ✅ SDKs
 
 ## 18. DevSecOps
-✅ Threat model · ⬜ Pen testing · 🟡 Monitoring · ✅ Disaster recovery · ✅ Production readiness
+✅ Threat model · 🟡 Pen testing · ✅ Monitoring · ✅ Disaster recovery · ✅ Production readiness
 
 ## 19. AI Governance
 ✅ Model registry · ✅ Prompt governance · ✅ Guardrails · 🟡 Evaluation · ✅ Cost mgmt

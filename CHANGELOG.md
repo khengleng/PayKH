@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Security → Posture & Monitoring** (Domain 18): an automated **security-posture
+  self-assessment** (`/admin/security/posture` — transport, key strength, metrics
+  protection, rate limiting, webhook signing, SSRF, key hashing, MFA → a score),
+  a **synthetic monitoring** endpoint (`/admin/security/monitoring` — DB latency,
+  queue backlog, 1h throughput), and a penetration-testing scope/checklist
+  (`docs/SECURITY-TESTING.md`).
 - **Mobile & Apps → Customer wallet + Merchant PWA** (Domain 16): a public
   customer **loyalty wallet** pass (`/wallet/:customerId` on checkout — points,
   tier, referral QR, unrevealed scratch cards), and the dashboard is now an

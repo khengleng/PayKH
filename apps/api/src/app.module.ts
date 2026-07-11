@@ -24,6 +24,7 @@ import { RiskModule } from './risk/risk.module';
 import { AiModule } from './ai/ai.module';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { WalletModule } from './wallet/wallet.module';
+import { SecurityModule } from './security/security.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -63,6 +64,7 @@ import { RequestIdMiddleware } from './common/request-context';
     AiModule,
     ConnectorsModule,
     WalletModule,
+    SecurityModule,
     NotificationsModule,
     ApiKeysModule,
     PaymentsModule,
