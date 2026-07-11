@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Analytics → Dashboards, Forecasting & Executive reports** (Domain 15): a daily
+  revenue/count **time-series**, a **7-day revenue forecast** (OLS linear trend
+  blended with a 7-day moving average over a dense 30-day vector), and an
+  **org-level executive summary** (30-day revenue + growth-vs-prior, success rate,
+  customers, points liability, referral commissions, game plays, top stores). New
+  dashboard **Analytics** page with an inline chart. **Domain 15 complete.**
 - **Promotional Games → Hosted play (Spin wheel / Lucky draw / Scratch)** (Domain
   9): a customer-facing hosted play experience on the checkout app — a spin-wheel
   / lucky-draw page (`/play/game/:id`) and a scratch-card reveal page

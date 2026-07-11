@@ -14,6 +14,7 @@ const NAV = [
   { href: '/campaigns', label: 'Campaigns', icon: '📣' },
   { href: '/games', label: 'Games', icon: '🎰' },
   { href: '/reports', label: 'Reports', icon: '📈' },
+  { href: '/analytics', label: 'Analytics', icon: '🔮' },
   { href: '/settlements', label: 'Settlements', icon: '🏦' },
   { href: '/keys', label: 'API Keys', icon: '🔑' },
   { href: '/webhooks', label: 'Webhooks', icon: '🔔' },

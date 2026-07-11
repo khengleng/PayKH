@@ -47,7 +47,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ⬜ Risk scoring · ⬜ Case mgmt · ⬜ Retention · ⬜ Compliance review · ⬜ Export controls
 
 ## 15. Analytics
-🟡 Dashboards · ✅ KPIs · ⬜ Forecasting · ✅ Exports (CSV) · ⬜ Executive reports
+✅ Dashboards · ✅ KPIs · ✅ Forecasting · ✅ Exports (CSV) · ✅ Executive reports
 
 ## 16. Mobile & Mini Apps
 ⬜ Telegram Mini App · ⬜ Merchant app · ⬜ Customer app · ⬜ Offline · ⬜ Push

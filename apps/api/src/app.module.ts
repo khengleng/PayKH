@@ -18,6 +18,7 @@ import { SegmentsModule } from './segments/segments.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { GamesModule } from './games/games.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -51,6 +52,7 @@ import { RequestIdMiddleware } from './common/request-context';
     CampaignsModule,
     ReferralsModule,
     GamesModule,
+    AnalyticsModule,
     NotificationsModule,
     ApiKeysModule,
     PaymentsModule,
