@@ -5,7 +5,7 @@ import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle, StatusBadge } from '@/components/ui';
 import { api } from '@/lib/api';
 
-interface Promo { id: string; name: string; type: string; status: string; segment_id: string | null; config: any; budget_points: number | null; spent_points: number; start_at: string | null; end_at: string | null }
+interface Promo { id: string; name: string; type: string; status: string; segment_id: string | null; config: any; budget_points: number | null; spent_points: number; start_at: string | null; end_at: string | null; submitted_for_approval: boolean; approved: boolean }
 interface Segment { id: string; name: string }
 
 export default function CampaignsPage() {
@@ -42,6 +42,10 @@ function Content({ storeId }: { storeId: string }) {
   };
   const act = async (id: string, action: string) => { await api(`/dashboard/promotions/${id}/${action}`, { method: 'POST' }); await load(); };
   const del = async (id: string) => { if (!confirm('Delete promotion?')) return; await api(`/dashboard/promotions/${id}`, { method: 'DELETE' }); await load(); };
+  const simulate = async (id: string) => {
+    const r = await api<any>(`/dashboard/promotions/${id}/simulate`);
+    alert(`Simulation (last 30d):\n\nTarget customers: ${r.target_customers}\nQualifying payments: ${r.qualifying_payments_30d}\nEstimated cost: ${r.estimated_cost_points} pts${r.budget_points ? ` (budget ${r.budget_points}, ${r.within_budget ? 'within' : 'OVER'} budget)` : ''}`);
+  };
 
   return (
     <>
@@ -85,8 +89,11 @@ function Content({ storeId }: { storeId: string }) {
                 <td className="px-4 py-3 text-slate-500">{p.budget_points ? `${p.spent_points}/${p.budget_points}` : '∞'}</td>
                 <td className="px-4 py-3"><StatusBadge status={p.status === 'active' ? 'paid' : p.status === 'ended' ? 'failed' : p.status === 'paused' ? 'pending' : 'scanned'} /></td>
                 <td className="px-4 py-3 text-right">
-                  <div className="flex justify-end gap-2">
-                    {p.status !== 'active' && p.status !== 'ended' && <button onClick={() => act(p.id, 'activate')} className="text-emerald-600 hover:underline">Activate</button>}
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button onClick={() => simulate(p.id)} className="text-slate-500 hover:underline">Simulate</button>
+                    {!p.approved && !p.submitted_for_approval && p.status !== 'ended' && <button onClick={() => act(p.id, 'submit')} className="text-brand-600 hover:underline">Submit</button>}
+                    {!p.approved && p.submitted_for_approval && <><button onClick={() => act(p.id, 'approve')} className="text-emerald-600 hover:underline">Approve</button><button onClick={() => act(p.id, 'reject')} className="text-red-600 hover:underline">Reject</button></>}
+                    {p.approved && p.status !== 'active' && p.status !== 'ended' && <button onClick={() => act(p.id, 'activate')} className="text-emerald-600 hover:underline">Activate</button>}
                     {p.status === 'active' && <button onClick={() => act(p.id, 'pause')} className="text-amber-600 hover:underline">Pause</button>}
                     {p.status !== 'ended' && <button onClick={() => act(p.id, 'end')} className="text-slate-600 hover:underline">End</button>}
                     <button onClick={() => del(p.id)} className="text-red-600 hover:underline">Delete</button>

@@ -23,7 +23,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Points · ✅ Tiers · ✅ Rewards · ✅ Redemption · ⬜ Liability
 
 ## 7. Campaign Engine
-✅ Promotion builder · 🟡 Budget · 🟡 Scheduling · ⬜ Approval · ⬜ Simulation
+✅ Promotion builder · 🟡 Budget · 🟡 Scheduling · ✅ Approval · ✅ Simulation
 
 ## 8. Referral & Affiliate
 ⬜ Referral links · ⬜ QR · ⬜ Commission · ⬜ Fraud checks · ⬜ Reports

@@ -352,6 +352,10 @@ model Promotion {
   spentPoints  Int             @default(0)
   startAt      DateTime?
   endAt        DateTime?
+  submittedForApproval Boolean  @default(false)
+  approved             Boolean  @default(false)
+  approvedByUserId     String?
+  approvalNote         String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 

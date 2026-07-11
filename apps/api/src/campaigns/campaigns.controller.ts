@@ -1,7 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 import { Request } from 'express';
 import { CampaignsService, CreatePromotionDto, UpdatePromotionDto } from './campaigns.service';
+
+class RejectDto {
+  @IsOptional() @IsString() note?: string;
+}
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { AuditService } from '../audit/audit.service';
@@ -37,8 +42,36 @@ export class CampaignsController {
     return this.campaigns.update(user, id, dto);
   }
 
+  @Get('promotions/:id/simulate')
+  @ApiOperation({ summary: 'Dry-run: estimate reach + bonus-point cost (last 30d)' })
+  simulate(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.simulate(user, id);
+  }
+
+  @Post('promotions/:id/submit')
+  @ApiOperation({ summary: 'Submit a promotion for approval' })
+  submit(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.submit(user, id);
+  }
+
+  @Post('promotions/:id/approve')
+  @ApiOperation({ summary: 'Approve a promotion (owner)' })
+  async approve(@CurrentUser() user: AuthUser, @Param('id') id: string, @Req() req: Request) {
+    const result = await this.campaigns.approve(user, id);
+    await this.audit.record({ actorUserId: user.userId, action: 'promotion.approve', entity: `promo:${id}`, ipAddress: req.ip, userAgent: req.header('user-agent'), requestId: getRequestId(req) });
+    return result;
+  }
+
+  @Post('promotions/:id/reject')
+  @ApiOperation({ summary: 'Reject a promotion (owner)' })
+  async reject(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: RejectDto, @Req() req: Request) {
+    const result = await this.campaigns.reject(user, id, dto.note);
+    await this.audit.record({ actorUserId: user.userId, action: 'promotion.reject', entity: `promo:${id}`, afterValue: { note: dto.note }, ipAddress: req.ip, userAgent: req.header('user-agent'), requestId: getRequestId(req) });
+    return result;
+  }
+
   @Post('promotions/:id/activate')
-  @ApiOperation({ summary: 'Activate a promotion' })
+  @ApiOperation({ summary: 'Activate a promotion (requires approval)' })
   async activate(@CurrentUser() user: AuthUser, @Param('id') id: string, @Req() req: Request) {
     const result = await this.campaigns.setStatus(user, id, 'ACTIVE');
     await this.audit.record({ actorUserId: user.userId, action: 'promotion.activate', entity: `promo:${id}`, ipAddress: req.ip, userAgent: req.header('user-agent'), requestId: getRequestId(req) });

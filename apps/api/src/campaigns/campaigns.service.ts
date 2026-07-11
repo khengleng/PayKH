@@ -41,7 +41,7 @@ export class CampaignsService {
     private readonly segments: SegmentsService,
   ) {}
 
-  private async assertStore(user: AuthUser, storeId: string, perm: 'payment:read' | 'store:write') {
+  private async assertStore(user: AuthUser, storeId: string, perm: 'payment:read' | 'store:write' | 'billing:manage') {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
     if (!store) throw ApiError.paymentNotFound('Store not found');
     requirePermission(user, store.organizationId, perm);
@@ -95,8 +95,94 @@ export class CampaignsService {
   async setStatus(user: AuthUser, id: string, status: 'ACTIVE' | 'PAUSED' | 'ENDED') {
     const promo = await this.load(id);
     await this.assertStore(user, promo.storeId, 'store:write');
+    // Separation of duties: a promotion must be approved before it can go live.
+    if (status === 'ACTIVE' && !promo.approved) {
+      throw ApiError.forbidden('Promotion must be approved before activation');
+    }
     const updated = await this.prisma.promotion.update({ where: { id }, data: { status } });
     return this.serialize(updated);
+  }
+
+  // ---------------------------------------------------------- approval flow
+  async submit(user: AuthUser, id: string) {
+    const promo = await this.load(id);
+    await this.assertStore(user, promo.storeId, 'store:write');
+    const updated = await this.prisma.promotion.update({ where: { id }, data: { submittedForApproval: true } });
+    return this.serialize(updated);
+  }
+
+  /** Approve (owner-level). Approval is a distinct authority from building. */
+  async approve(user: AuthUser, id: string) {
+    const promo = await this.load(id);
+    await this.assertStore(user, promo.storeId, 'billing:manage');
+    const updated = await this.prisma.promotion.update({
+      where: { id },
+      data: { approved: true, approvedByUserId: user.userId, approvalNote: null },
+    });
+    return this.serialize(updated);
+  }
+
+  async reject(user: AuthUser, id: string, note?: string) {
+    const promo = await this.load(id);
+    await this.assertStore(user, promo.storeId, 'billing:manage');
+    const updated = await this.prisma.promotion.update({
+      where: { id },
+      data: { approved: false, submittedForApproval: false, approvalNote: note ?? 'Rejected', approvedByUserId: user.userId },
+    });
+    return this.serialize(updated);
+  }
+
+  // -------------------------------------------------------------- simulation
+  /**
+   * Dry-run: estimate a promotion's reach (target customers) and cost by
+   * replaying the last 30 days of the targets' paid payments against the
+   * promo's effect. No state is changed.
+   */
+  async simulate(user: AuthUser, id: string) {
+    const promo = await this.load(id);
+    await this.assertStore(user, promo.storeId, 'payment:read');
+    const config = (promo.config as { multiplier?: number; bonusPoints?: number; minAmount?: number | string }) ?? {};
+
+    // Target customer ids.
+    let targetIds: string[];
+    if (promo.segmentId) {
+      targetIds = await this.segments.evaluate(promo.storeId, (await this.prisma.segment.findUnique({ where: { id: promo.segmentId } }))?.rules as never);
+    } else {
+      const all = await this.prisma.customer.findMany({ where: { storeId: promo.storeId }, select: { id: true }, take: 10_000 });
+      targetIds = all.map((c) => c.id);
+    }
+
+    const program = await this.prisma.loyaltyProgram.findUnique({ where: { storeId: promo.storeId } });
+    const ppu = program ? Number(program.pointsPerUnit) : 0;
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+
+    let qualifying = 0;
+    let rawCost = 0;
+    if (targetIds.length > 0 && ppu > 0) {
+      const payments = await this.prisma.payment.findMany({
+        where: { storeId: promo.storeId, status: 'PAID', customerId: { in: targetIds }, paidAt: { gte: since } },
+        select: { amount: true },
+        take: 20_000,
+      });
+      for (const p of payments) {
+        if (config.minAmount != null && p.amount.lessThan(config.minAmount)) continue;
+        const base = Math.floor(Number(p.amount) * ppu);
+        const bonus = promo.type === 'POINTS_MULTIPLIER' ? Math.floor(base * ((config.multiplier ?? 1) - 1)) : Math.floor(config.bonusPoints ?? 0);
+        if (bonus <= 0) continue;
+        qualifying++;
+        rawCost += bonus;
+      }
+    }
+    const estimated = promo.budgetPoints != null ? Math.min(rawCost, promo.budgetPoints) : rawCost;
+    return {
+      promotion_id: id,
+      target_customers: targetIds.length,
+      qualifying_payments_30d: qualifying,
+      estimated_cost_points: estimated,
+      raw_cost_points: rawCost,
+      budget_points: promo.budgetPoints,
+      within_budget: promo.budgetPoints == null || rawCost <= promo.budgetPoints,
+    };
   }
 
   async remove(user: AuthUser, id: string) {
@@ -173,6 +259,9 @@ export class CampaignsService {
       spent_points: p.spentPoints,
       start_at: p.startAt?.toISOString() ?? null,
       end_at: p.endAt?.toISOString() ?? null,
+      submitted_for_approval: p.submittedForApproval,
+      approved: p.approved,
+      approval_note: p.approvalNote,
       created_at: p.createdAt.toISOString(),
     };
   }

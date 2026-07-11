@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Campaign Engine → Approval & Simulation** (Domain 7): promotions now require
+  **owner approval** before activation (separation of duties — build vs.
+  approve). A **dry-run simulation** estimates a promo's **reach** (target
+  customers) and **bonus-point cost** by replaying the last 30 days of the
+  targets' paid payments, flagging whether it fits the budget.
 - **Campaign Engine → Promotion builder** (Domain 7): promotions that award
   bonus loyalty points on paid payments — `POINTS_MULTIPLIER` (×N of base earn)
   or flat `BONUS_POINTS`, optionally gated by min payment amount, **targeted to a
