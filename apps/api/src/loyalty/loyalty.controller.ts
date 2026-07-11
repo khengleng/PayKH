@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, Use
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Request } from 'express';
-import { LoyaltyService, AdjustDto, CreateRewardDto, RedeemDto, UpdateProgramDto, UpdateRewardDto } from './loyalty.service';
+import { LoyaltyService, AdjustDto, CreateRewardDto, CreateTierDto, RedeemDto, UpdateProgramDto, UpdateRewardDto, UpdateTierDto } from './loyalty.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { ApiKeyGuard, getApiKeyContext } from '../auth/api-key.guard';
@@ -58,6 +58,31 @@ export class LoyaltyDashboardController {
     const result = await this.loyalty.adjust(user, id, dto.points, dto.reason);
     await this.audit.record({ actorUserId: user.userId, action: 'loyalty.adjust', entity: `customer:${id}`, afterValue: { points: dto.points, reason: dto.reason }, ipAddress: req.ip, userAgent: req.header('user-agent'), requestId: getRequestId(req) });
     return result;
+  }
+
+  // --- tiers ---
+  @Get('stores/:storeId/tiers')
+  @ApiOperation({ summary: 'List loyalty tiers' })
+  tiers(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.loyalty.listTiers(user, storeId);
+  }
+
+  @Post('stores/:storeId/tiers')
+  @ApiOperation({ summary: 'Create a tier (threshold + earn multiplier)' })
+  createTier(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: CreateTierDto) {
+    return this.loyalty.createTier(user, storeId, dto);
+  }
+
+  @Patch('tiers/:id')
+  @ApiOperation({ summary: 'Update a tier' })
+  updateTier(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateTierDto) {
+    return this.loyalty.updateTier(user, id, dto);
+  }
+
+  @Delete('tiers/:id')
+  @ApiOperation({ summary: 'Delete a tier' })
+  deleteTier(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.loyalty.deleteTier(user, id);
   }
 
   // --- rewards catalog ---

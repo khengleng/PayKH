@@ -8,6 +8,10 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Loyalty → Tiers** (Domain 6): per-store tiers with a lifetime-points
+  threshold and an **earn multiplier**. Customers are auto-assigned the highest
+  tier they qualify for as they earn; the multiplier boosts future earnings
+  (`floor(base × multiplier)`). Tier + lifetime points surface in Customer 360.
 - **Loyalty → Rewards & Redemption** (Domain 6): a per-store rewards catalog
   (points cost, optional stock). Customers redeem points for a reward via
   `POST /v1/loyalty/redemptions` → a voucher code, deducting points + stock

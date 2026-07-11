@@ -213,6 +213,7 @@ model Store {
   branches            Branch[]
   customers           Customer[]
   loyaltyProgram      LoyaltyProgram?
+  loyaltyTiers        LoyaltyTier[]
   rewards             Reward[]
   redemptions         Redemption[]
 
@@ -242,16 +243,19 @@ model Customer {
   name          String?
   email         String?
   phone         String?
-  externalId    String? // the merchant's own customer id
-  metadata      Json     @default("{}")
-  pointsBalance Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  externalId     String? // the merchant's own customer id
+  metadata       Json     @default("{}")
+  pointsBalance  Int      @default(0)
+  lifetimePoints Int      @default(0) // cumulative earned; drives tier (never decremented)
+  tierId         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   store        Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
   payments     Payment[]
   pointsLedger PointsTransaction[]
   redemptions  Redemption[]
+  tier         LoyaltyTier?        @relation(fields: [tierId], references: [id])
 
   @@unique([storeId, externalId])
   @@index([storeId, email])
@@ -291,6 +295,21 @@ model Redemption {
 
   @@index([customerId])
   @@index([storeId, status])
+}
+
+model LoyaltyTier {
+  id             String   @id
+  storeId        String
+  name           String
+  threshold      Int // lifetime points required to reach this tier
+  earnMultiplier Decimal  @default(1) @db.Decimal(6, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customers Customer[]
+
+  @@index([storeId, threshold])
 }
 
 model LoyaltyProgram {

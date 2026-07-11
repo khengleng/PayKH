@@ -76,9 +76,13 @@ function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
         {!data ? <p className="mt-6 text-slate-400">Loading…</p> : (
           <div className="mt-4 space-y-4 text-sm">
             <div>
-              <div className="text-lg font-medium">{data.name ?? '—'}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-medium">{data.name ?? '—'}</span>
+                {data.tier && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">{data.tier.name} · ×{data.tier.earn_multiplier}</span>}
+              </div>
               <div className="text-slate-500">{data.email ?? ''} {data.phone ? `· ${data.phone}` : ''}</div>
               {data.external_id && <div className="text-xs text-slate-400">external: {data.external_id}</div>}
+              <div className="text-xs text-slate-400">lifetime points: {data.lifetime_points ?? 0}</div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Stat label="Lifetime value" value={`$${data.metrics.lifetime_value}`} />

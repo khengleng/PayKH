@@ -94,7 +94,7 @@ export class CustomersService {
 
   /** Customer 360: profile + lifetime aggregates + recent payments. */
   async customer360(user: AuthUser, customerId: string) {
-    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId }, include: { tier: true } });
     if (!customer) throw ApiError.paymentNotFound('Customer not found');
     await this.assertStoreAccess(user, customer.storeId);
 
@@ -108,6 +108,7 @@ export class CustomersService {
 
     return {
       ...this.serialize(customer),
+      tier: customer.tier ? { id: customer.tier.id, name: customer.tier.name, earn_multiplier: customer.tier.earnMultiplier.toString() } : null,
       metrics: {
         total_payments: allCount,
         paid_count: paidAgg._count._all,
@@ -150,6 +151,8 @@ export class CustomersService {
       external_id: c.externalId,
       metadata: (c.metadata as Record<string, unknown>) ?? {},
       points_balance: c.pointsBalance,
+      lifetime_points: c.lifetimePoints,
+      tier_id: c.tierId,
       created_at: c.createdAt.toISOString(),
     };
   }

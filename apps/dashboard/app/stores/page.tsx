@@ -153,6 +153,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
 
       <BranchesCard storeId={store.id} />
       <LoyaltyCard storeId={store.id} />
+      <TiersCard storeId={store.id} />
       <RewardsCard storeId={store.id} />
 
       <Card>
@@ -252,6 +253,47 @@ function LoyaltyCard({ storeId }: { storeId: string }) {
         <Button onClick={save}>Save</Button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
       </div>
+    </Card>
+  );
+}
+
+interface Tier { id: string; name: string; threshold: number; earn_multiplier: string }
+
+function TiersCard({ storeId }: { storeId: string }) {
+  const [tiers, setTiers] = useState<Tier[]>([]);
+  const [name, setName] = useState('');
+  const [threshold, setThreshold] = useState('0');
+  const [mult, setMult] = useState('1');
+
+  const load = async () => setTiers(await api<Tier[]>(`/dashboard/stores/${storeId}/tiers`));
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
+
+  const add = async () => {
+    await api(`/dashboard/stores/${storeId}/tiers`, { method: 'POST', body: { name, threshold: Number(threshold), earnMultiplier: mult } });
+    setName(''); await load();
+  };
+  const del = async (id: string) => { if (!confirm('Delete tier?')) return; await api(`/dashboard/tiers/${id}`, { method: 'DELETE' }); await load(); };
+
+  return (
+    <Card>
+      <h3 className="mb-1 font-semibold">Loyalty tiers</h3>
+      <p className="mb-3 text-sm text-slate-500">Auto-assigned by lifetime points; higher tiers earn a multiplier.</p>
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <label className="text-sm"><div className="mb-1 text-slate-600">Tier name</div><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Gold" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Lifetime pts</div><input value={threshold} onChange={(e) => setThreshold(e.target.value)} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Earn ×</div><input value={mult} onChange={(e) => setMult(e.target.value)} className="w-20 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <Button onClick={add} disabled={!name}>Add tier</Button>
+      </div>
+      {tiers.length > 0 && (
+        <ul className="divide-y divide-slate-100 text-sm">
+          {tiers.map((t) => (
+            <li key={t.id} className="flex items-center justify-between py-2">
+              <span>{t.name} <span className="text-slate-400">· ≥{t.threshold} pts · ×{t.earn_multiplier}</span></span>
+              <button onClick={() => del(t.id)} className="text-red-600 hover:underline">Delete</button>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

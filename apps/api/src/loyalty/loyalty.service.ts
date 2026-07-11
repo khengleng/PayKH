@@ -22,6 +22,18 @@ export class RedeemDto {
   @IsOptional() @IsString() reason?: string;
 }
 
+export class CreateTierDto {
+  @IsString() @MaxLength(60) name!: string;
+  @IsInt() @Min(0) threshold!: number;
+  @IsOptional() @IsString() earnMultiplier?: string; // decimal string, e.g. "1.5"
+}
+
+export class UpdateTierDto {
+  @IsOptional() @IsString() @MaxLength(60) name?: string;
+  @IsOptional() @IsInt() @Min(0) threshold?: number;
+  @IsOptional() @IsString() earnMultiplier?: string;
+}
+
 export class CreateRewardDto {
   @IsString() @MaxLength(120) name!: string;
   @IsOptional() @IsString() @MaxLength(300) description?: string;
@@ -69,39 +81,49 @@ export class LoyaltyService {
   }
 
   // -------------------------------------------------------------- earning
-  /** Award points for a paid payment (idempotent per payment). Called on paid. */
+  /** Award points for a paid payment (idempotent per payment). Called on paid.
+   *  Applies the customer's tier earn-multiplier, updates lifetime points, and
+   *  re-assigns their tier if they cross a threshold. */
   async awardForPayment(payment: Payment): Promise<void> {
     if (!payment.customerId) return;
     const program = await this.prisma.loyaltyProgram.findUnique({ where: { storeId: payment.storeId } });
     if (!program?.active) return;
 
-    const points = Math.floor(Number(payment.amount) * Number(program.pointsPerUnit));
-    if (points <= 0) return;
+    const base = Math.floor(Number(payment.amount) * Number(program.pointsPerUnit));
+    if (base <= 0) return;
 
     // Idempotency: never award twice for the same payment.
-    const existing = await this.prisma.pointsTransaction.findFirst({
-      where: { paymentId: payment.id, type: 'EARN' },
-    });
+    const existing = await this.prisma.pointsTransaction.findFirst({ where: { paymentId: payment.id, type: 'EARN' } });
     if (existing) return;
+
+    const customer = await this.prisma.customer.findUnique({ where: { id: payment.customerId }, include: { tier: true } });
+    if (!customer) return;
+
+    const multiplier = customer.tier ? Number(customer.tier.earnMultiplier) : 1;
+    const earned = Math.floor(base * multiplier);
+    if (earned <= 0) return;
+    const newLifetime = customer.lifetimePoints + earned;
+    const newTierId = await this.computeTierId(payment.storeId, newLifetime);
 
     await this.prisma.$transaction([
       this.prisma.pointsTransaction.create({
-        data: {
-          id: prefixedId('pts'),
-          storeId: payment.storeId,
-          customerId: payment.customerId,
-          type: 'EARN',
-          points,
-          paymentId: payment.id,
-          reason: 'payment',
-        },
+        data: { id: prefixedId('pts'), storeId: payment.storeId, customerId: payment.customerId, type: 'EARN', points: earned, paymentId: payment.id, reason: multiplier !== 1 ? `payment (x${multiplier})` : 'payment' },
       }),
       this.prisma.customer.update({
         where: { id: payment.customerId },
-        data: { pointsBalance: { increment: points } },
+        data: { pointsBalance: { increment: earned }, lifetimePoints: newLifetime, tierId: newTierId },
       }),
     ]);
-    this.logger.log(`awarded ${points} pts to ${payment.customerId} for ${payment.id}`);
+    this.logger.log(`awarded ${earned} pts (base ${base} x${multiplier}) to ${payment.customerId}; lifetime ${newLifetime}`);
+  }
+
+  /** Highest tier whose threshold the lifetime points satisfy (or null). */
+  private async computeTierId(storeId: string, lifetimePoints: number): Promise<string | null> {
+    const tier = await this.prisma.loyaltyTier.findFirst({
+      where: { storeId, threshold: { lte: lifetimePoints } },
+      orderBy: { threshold: 'desc' },
+    });
+    return tier?.id ?? null;
   }
 
   // ---------------------------------------------------- redeem / adjust
@@ -159,6 +181,46 @@ export class LoyaltyService {
     if (!store) throw ApiError.paymentNotFound('Store not found');
     requirePermission(user, store.organizationId, perm);
     return store;
+  }
+
+  // ============================================================== tiers
+  async listTiers(user: AuthUser, storeId: string) {
+    await this.assertStore(user, storeId, 'store:read');
+    const tiers = await this.prisma.loyaltyTier.findMany({ where: { storeId }, orderBy: { threshold: 'asc' } });
+    return tiers.map((t) => this.serializeTier(t));
+  }
+
+  async createTier(user: AuthUser, storeId: string, dto: CreateTierDto) {
+    await this.assertStore(user, storeId, 'store:write');
+    const tier = await this.prisma.loyaltyTier.create({
+      data: { id: prefixedId('tier'), storeId, name: dto.name, threshold: dto.threshold, earnMultiplier: new Prisma.Decimal(dto.earnMultiplier ?? '1') },
+    });
+    return this.serializeTier(tier);
+  }
+
+  async updateTier(user: AuthUser, tierId: string, dto: UpdateTierDto) {
+    const tier = await this.prisma.loyaltyTier.findUnique({ where: { id: tierId } });
+    if (!tier) throw ApiError.paymentNotFound('Tier not found');
+    await this.assertStore(user, tier.storeId, 'store:write');
+    const updated = await this.prisma.loyaltyTier.update({
+      where: { id: tierId },
+      data: { name: dto.name, threshold: dto.threshold, earnMultiplier: dto.earnMultiplier ? new Prisma.Decimal(dto.earnMultiplier) : undefined },
+    });
+    return this.serializeTier(updated);
+  }
+
+  async deleteTier(user: AuthUser, tierId: string) {
+    const tier = await this.prisma.loyaltyTier.findUnique({ where: { id: tierId } });
+    if (!tier) throw ApiError.paymentNotFound('Tier not found');
+    await this.assertStore(user, tier.storeId, 'store:write');
+    // Detach customers currently on this tier (recompute lazily on next earn).
+    await this.prisma.customer.updateMany({ where: { tierId }, data: { tierId: null } });
+    await this.prisma.loyaltyTier.delete({ where: { id: tierId } });
+    return { id: tierId, deleted: true };
+  }
+
+  private serializeTier(t: { id: string; name: string; threshold: number; earnMultiplier: Prisma.Decimal }) {
+    return { id: t.id, name: t.name, threshold: t.threshold, earn_multiplier: t.earnMultiplier.toString() };
   }
 
   // ============================================================ rewards
