@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Segmentation** (Domain 5): rule-based customer segments (min lifetime
+  points, min points balance, tier, has-email, min paid count/volume, last
+  payment within N days). Live **preview size**, saved segments with an
+  **Evaluate** count + sample. Dashboard Segments page; feeds the Campaign
+  Engine. (Safe structured rules — no free-form SQL.)
 - **Loyalty → Tiers** (Domain 6): per-store tiers with a lifetime-points
   threshold and an **earn multiplier**. Customers are auto-assigned the highest
   tier they qualify for as they earn; the multiplier boosts future earnings

@@ -216,6 +216,7 @@ model Store {
   loyaltyTiers        LoyaltyTier[]
   rewards             Reward[]
   redemptions         Redemption[]
+  segments            Segment[]
 
   @@index([organizationId])
 }
@@ -310,6 +311,20 @@ model LoyaltyTier {
   customers Customer[]
 
   @@index([storeId, threshold])
+}
+
+model Segment {
+  id          String   @id
+  storeId     String
+  name        String
+  description String?
+  rules       Json     @default("{}") // structured filter (see SegmentRules)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
 }
 
 model LoyaltyProgram {

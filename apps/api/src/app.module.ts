@@ -14,6 +14,7 @@ import { StoresModule } from './stores/stores.module';
 import { BranchesModule } from './branches/branches.module';
 import { CustomersModule } from './customers/customers.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
+import { SegmentsModule } from './segments/segments.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -42,6 +43,7 @@ import { RequestIdMiddleware } from './common/request-context';
     BranchesModule,
     CustomersModule,
     LoyaltyModule,
+    SegmentsModule,
     ApiKeysModule,
     PaymentsModule,
     WebhooksModule,
