@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Promotional Games → Scratch Cards** (Domain 9): a play-issuance layer on the
+  prize engine. A game can **auto-issue a scratch card on each qualifying paid
+  payment** (optional min amount, idempotent per payment) or be granted manually.
+  The customer holds an **ISSUED** card and later **reveals** it
+  (`POST /v1/plays/:id/reveal`) — drawing the prize and crediting points
+  (idempotent). `GET /v1/customers/:id/plays` lists a customer's cards by status.
 - **Promotional Games → Prize Engine & Inventory** (Domain 9): a weighted-draw
   prize engine. Merchants create a **game** (scratch card / spin wheel / lucky
   draw) with **prizes** (points / reward / custom / no-win), each with a

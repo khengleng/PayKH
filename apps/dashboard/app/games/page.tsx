@@ -97,10 +97,20 @@ function GameRow({ game, open, onToggle, onChange }: { game: Game; storeId: stri
 
       {open && detail && (
         <div className="mt-4 border-t border-slate-100 pt-4">
-          <label className="mb-3 flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={detail.auto_issue} onChange={(e) => setAutoIssue(e.target.checked)} />
-            Auto-issue a play on each paid payment (scratch card)
-          </label>
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={detail.auto_issue} onChange={(e) => setAutoIssue(e.target.checked)} />
+              Auto-issue a scratch card on each paid payment
+            </label>
+            {detail.auto_issue && (
+              <label className="flex items-center gap-2">
+                <span className="text-slate-600">Min payment $</span>
+                <input defaultValue={detail.min_payment_amount ?? ''} placeholder="any"
+                  onBlur={async (e) => { await api(`/dashboard/games/${game.id}`, { method: 'PUT', body: { minPaymentAmount: e.target.value || '' } }); await loadDetail(); }}
+                  className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-sm" />
+              </label>
+            )}
+          </div>
 
           <div className="mb-3 overflow-x-auto">
             <table className="w-full text-sm">

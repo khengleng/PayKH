@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IsBoolean, IsEnum, IsInt, IsNumberString, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
-import { GameType, Prize, PrizeType } from '@prisma/client';
+import { GamePlay, GameType, Payment, Prisma, Prize, PrizeType } from '@prisma/client';
 import { prefixedId } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
@@ -200,14 +200,85 @@ export class GamesService {
       },
     });
 
-    if (prize && prize.type === 'POINTS' && prize.pointsValue > 0 && customerId) {
-      await this.prisma.$transaction([
-        this.prisma.pointsTransaction.create({ data: { id: prefixedId('pts'), storeId, customerId, type: 'EARN', points: prize.pointsValue, reason: `game prize: ${prize.label}` } }),
-        this.prisma.customer.update({ where: { id: customerId }, data: { pointsBalance: { increment: prize.pointsValue }, lifetimePoints: { increment: prize.pointsValue } } }),
-      ]);
-    }
+    await this.creditPrize(storeId, customerId, prize);
     this.logger.log(`play ${play.id} on game ${gameId}: ${prize ? prize.label : 'no prize'}${won ? ' (WON)' : ''}`);
     return { play, prize };
+  }
+
+  /** Credit loyalty points for a POINTS prize (best-effort; no-op otherwise). */
+  private async creditPrize(storeId: string, customerId: string | null, prize: Prize | null) {
+    if (!prize || prize.type !== 'POINTS' || prize.pointsValue <= 0 || !customerId) return;
+    await this.prisma.$transaction([
+      this.prisma.pointsTransaction.create({ data: { id: prefixedId('pts'), storeId, customerId, type: 'EARN', points: prize.pointsValue, reason: `game prize: ${prize.label}` } }),
+      this.prisma.customer.update({ where: { id: customerId }, data: { pointsBalance: { increment: prize.pointsValue }, lifetimePoints: { increment: prize.pointsValue } } }),
+    ]);
+  }
+
+  // -------------------------------------------------- scratch-card lifecycle
+  /**
+   * Auto-issue a scratch-card play for each active auto-issue game in the store
+   * when a qualifying paid payment lands. The play is ISSUED (a card the
+   * customer holds) — the prize is drawn later on reveal. Idempotent per
+   * payment (unique gameId+paymentId). Best-effort; never blocks the payment.
+   */
+  async issueForPayment(payment: Payment): Promise<void> {
+    if (!payment.customerId) return; // need a customer to hold + reveal the card
+    const games = await this.prisma.game.findMany({ where: { storeId: payment.storeId, active: true, autoIssue: true } });
+    for (const game of games) {
+      if (game.minPaymentAmount && Number(payment.amount) < Number(game.minPaymentAmount)) continue;
+      try {
+        await this.prisma.gamePlay.create({
+          data: { id: prefixedId('play'), gameId: game.id, storeId: payment.storeId, customerId: payment.customerId, status: 'ISSUED', paymentId: payment.id },
+        });
+        this.logger.log(`scratch card issued: game ${game.id} to ${payment.customerId} (payment ${payment.id})`);
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') continue; // already issued
+        this.logger.warn(`scratch-card issue failed for ${payment.id}: ${String(e)}`);
+      }
+    }
+  }
+
+  /** Manually grant a play (scratch card) to a customer (dashboard). */
+  async issuePlay(user: AuthUser, gameId: string, customerId: string) {
+    const game = await this.assertGame(user, gameId, 'store:write');
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer || customer.storeId !== game.storeId) throw ApiError.invalidRequest('Unknown customer');
+    const play = await this.prisma.gamePlay.create({
+      data: { id: prefixedId('play'), gameId, storeId: game.storeId, customerId, status: 'ISSUED' },
+    });
+    return this.serializePlay(play, null);
+  }
+
+  /** A customer's scratch cards (API key). `status` filters ISSUED (unrevealed) / REVEALED. */
+  async listCustomerPlays(storeId: string, customerId: string, status?: string) {
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer || customer.storeId !== storeId) throw ApiError.paymentNotFound('Customer not found');
+    const where: Prisma.GamePlayWhereInput = { storeId, customerId };
+    const s = status?.toUpperCase();
+    if (s === 'ISSUED' || s === 'REVEALED') where.status = s;
+    const plays = await this.prisma.gamePlay.findMany({ where, orderBy: { createdAt: 'desc' }, take: 100, include: { prize: true } });
+    return plays.map((p) => this.serializePlay(p, p.prize ?? null));
+  }
+
+  /**
+   * Reveal (scratch) an ISSUED play: draw a weighted prize honoring inventory,
+   * transition to REVEALED, and credit points. Idempotent — revealing an
+   * already-revealed play returns its stored outcome.
+   */
+  async reveal(storeId: string, playId: string) {
+    const play = await this.prisma.gamePlay.findUnique({ where: { id: playId }, include: { prize: true } });
+    if (!play || play.storeId !== storeId) throw ApiError.paymentNotFound('Play not found');
+    if (play.status === 'REVEALED') return this.serializePlay(play, play.prize ?? null);
+
+    const prize = await this.claimPrize(play.gameId);
+    const won = !!prize && prize.type !== 'NONE';
+    const updated = await this.prisma.gamePlay.update({
+      where: { id: playId },
+      data: { status: 'REVEALED', won, prizeId: prize?.id ?? null, revealedAt: new Date() },
+    });
+    await this.creditPrize(storeId, play.customerId, prize);
+    this.logger.log(`play ${playId} revealed: ${prize ? prize.label : 'no prize'}${won ? ' (WON)' : ''}`);
+    return this.serializePlay(updated, prize);
   }
 
   private prizeAvailable(p: Prize) {
@@ -284,7 +355,7 @@ export class GamesService {
     };
   }
 
-  private serializePlay(play: { id: string; customerId: string | null; won: boolean; status: string; createdAt: Date }, prize: Prize | null) {
+  private serializePlay(play: GamePlay, prize: Prize | null) {
     return {
       id: play.id,
       customer_id: play.customerId,

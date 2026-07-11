@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { IsOptional, IsString } from 'class-validator';
@@ -7,6 +7,14 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { ApiKeyGuard, getApiKeyContext } from '../auth/api-key.guard';
 import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
+
+class PlayDto {
+  @IsOptional() @IsString() customer_id?: string;
+}
+
+class IssuePlayDto {
+  @IsString() customerId!: string;
+}
 
 /** Dashboard game & prize management (JWT). */
 @ApiTags('games')
@@ -75,10 +83,12 @@ export class GamesDashboardController {
   stats(@CurrentUser() user: AuthUser, @Param('gameId') gameId: string) {
     return this.games.stats(user, gameId);
   }
-}
 
-class PlayDto {
-  @IsOptional() @IsString() customer_id?: string;
+  @Post('games/:gameId/issue')
+  @ApiOperation({ summary: 'Manually grant a play (scratch card) to a customer' })
+  issue(@CurrentUser() user: AuthUser, @Param('gameId') gameId: string, @Body() dto: IssuePlayDto) {
+    return this.games.issuePlay(user, gameId, dto.customerId);
+  }
 }
 
 /** Public play API (API key). */
@@ -94,5 +104,27 @@ export class GamesController {
   @ApiOperation({ summary: 'Play a game once — draws a weighted prize honoring inventory' })
   play(@Req() req: Request, @Param('id') id: string, @Body() dto: PlayDto) {
     return this.games.play(getApiKeyContext(req).storeId, id, dto?.customer_id);
+  }
+}
+
+/** Public scratch-card API (API key): reveal a play, list a customer's cards. */
+@ApiTags('games')
+@ApiBearerAuth()
+@UseGuards(ApiKeyGuard, RateLimitGuard)
+@RateLimit({ limit: 60, windowSec: 10, by: 'apiKey' })
+@Controller({ version: '1' })
+export class PlaysController {
+  constructor(private readonly games: GamesService) {}
+
+  @Post('plays/:id/reveal')
+  @ApiOperation({ summary: 'Reveal (scratch) an issued play — draws the prize' })
+  reveal(@Req() req: Request, @Param('id') id: string) {
+    return this.games.reveal(getApiKeyContext(req).storeId, id);
+  }
+
+  @Get('customers/:id/plays')
+  @ApiOperation({ summary: 'List a customer’s plays / scratch cards (filter by status)' })
+  customerPlays(@Req() req: Request, @Param('id') id: string, @Query('status') status?: string) {
+    return this.games.listCustomerPlays(getApiKeyContext(req).storeId, id, status);
   }
 }
