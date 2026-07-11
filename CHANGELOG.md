@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Referral & Affiliate → Referral links** (Domain 8): a per-store referral
+  program (referrer + referee point rewards). Customers get a referral code +
+  share URL (`POST /v1/customers/:id/referral-code`); a new customer created
+  with `referral_code` is linked; **both parties are rewarded loyalty points on
+  the referee's first paid payment** (idempotent). Dashboard referral config +
+  list.
 - **Campaign Engine → Approval & Simulation** (Domain 7): promotions now require
   **owner approval** before activation (separation of duties — build vs.
   approve). A **dry-run simulation** estimates a promo's **reach** (target

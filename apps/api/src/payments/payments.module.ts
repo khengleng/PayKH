@@ -9,9 +9,10 @@ import { BillingModule } from '../billing/billing.module';
 import { BranchesModule } from '../branches/branches.module';
 import { CustomersModule } from '../customers/customers.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 
 @Module({
-  imports: [WebhooksModule, BillingModule, BranchesModule, CustomersModule, LoyaltyModule],
+  imports: [WebhooksModule, BillingModule, BranchesModule, CustomersModule, LoyaltyModule, ReferralsModule],
   controllers: [PaymentsController, CheckoutController],
   providers: [PaymentsService, PaymentEventsService, ApiKeyGuard],
   exports: [PaymentsService],

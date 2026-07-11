@@ -155,6 +155,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
       <LoyaltyCard storeId={store.id} />
       <TiersCard storeId={store.id} />
       <RewardsCard storeId={store.id} />
+      <ReferralsCard storeId={store.id} />
 
       <Card>
         <h3 className="mb-1 font-semibold">Run a test payment</h3>
@@ -358,6 +359,52 @@ function RewardsCard({ storeId }: { storeId: string }) {
             ))}
           </ul>
         </>
+      )}
+    </Card>
+  );
+}
+
+interface Referral { id: string; referrer: string; referee: string; code: string; status: string; reward_referrer: number; reward_referee: number }
+
+function ReferralsCard({ storeId }: { storeId: string }) {
+  const [active, setActive] = useState(false);
+  const [referrer, setReferrer] = useState('50');
+  const [referee, setReferee] = useState('25');
+  const [rows, setRows] = useState<Referral[]>([]);
+  const [msg, setMsg] = useState('');
+
+  const load = async () => {
+    const p = await api<any>(`/dashboard/stores/${storeId}/referral-program`);
+    setActive(p.active); setReferrer(String(p.referrer_points)); setReferee(String(p.referee_points));
+    setRows(await api<Referral[]>(`/dashboard/stores/${storeId}/referrals`));
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
+
+  const save = async () => {
+    await api(`/dashboard/stores/${storeId}/referral-program`, { method: 'PUT', body: { active, referrerPoints: Number(referrer), refereePoints: Number(referee) } });
+    setMsg('Saved'); setTimeout(() => setMsg(''), 1500); await load();
+  };
+
+  return (
+    <Card>
+      <h3 className="mb-1 font-semibold">Referrals</h3>
+      <p className="mb-3 text-sm text-slate-500">Customers get a referral code (<code>POST /v1/customers/:id/referral-code</code>); both are rewarded on the referee's first paid payment.</p>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active</label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Referrer points</div><input value={referrer} onChange={(e) => setReferrer(e.target.value)} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Referee points</div><input value={referee} onChange={(e) => setReferee(e.target.value)} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <Button onClick={save}>Save</Button>
+        {msg && <span className="text-sm text-emerald-600">{msg}</span>}
+      </div>
+      {rows.length > 0 && (
+        <ul className="divide-y divide-slate-100 text-sm">
+          {rows.slice(0, 8).map((r) => (
+            <li key={r.id} className="flex items-center justify-between py-2">
+              <span>{r.referrer} → {r.referee} <span className="font-mono text-xs text-slate-400">{r.code}</span></span>
+              <span className={r.status === 'rewarded' ? 'text-emerald-600' : 'text-amber-600'}>{r.status}{r.status === 'rewarded' ? ` (+${r.reward_referrer}/+${r.reward_referee})` : ''}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </Card>
   );

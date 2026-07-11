@@ -7,6 +7,7 @@ import { ApiError } from '../common/api-error';
 import { ApiKeyContext } from '../auth/api-key.guard';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
+import { ReferralsService } from '../referrals/referrals.service';
 
 export class CreateCustomerDto {
   @IsOptional() @IsString() @MaxLength(120) name?: string;
@@ -14,11 +15,15 @@ export class CreateCustomerDto {
   @IsOptional() @IsString() @MaxLength(40) phone?: string;
   @IsOptional() @IsString() @MaxLength(120) external_id?: string;
   @IsOptional() @IsObject() metadata?: Record<string, unknown>;
+  @IsOptional() @IsString() @MaxLength(40) referral_code?: string;
 }
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly referrals: ReferralsService,
+  ) {}
 
   // ------------------------------------------------------------- public API
   async create(ctx: ApiKeyContext, dto: CreateCustomerDto) {
@@ -34,6 +39,10 @@ export class CustomersService {
           metadata: (dto.metadata ?? {}) as Prisma.InputJsonValue,
         },
       });
+      // Link a referral if a code was supplied (best-effort).
+      if (dto.referral_code) {
+        await this.referrals.linkReferral(ctx.storeId, customer.id, dto.referral_code);
+      }
       return this.serialize(customer);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

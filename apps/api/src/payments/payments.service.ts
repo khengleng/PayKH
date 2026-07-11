@@ -28,6 +28,7 @@ import { AuditService } from '../audit/audit.service';
 import { BranchesService } from '../branches/branches.service';
 import { CustomersService } from '../customers/customers.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
+import { ReferralsService } from '../referrals/referrals.service';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -52,6 +53,7 @@ export class PaymentsService {
     private readonly branches: BranchesService,
     private readonly customers: CustomersService,
     private readonly loyalty: LoyaltyService,
+    private readonly referrals: ReferralsService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -520,6 +522,7 @@ export class PaymentsService {
       if (to === 'paid') {
         await this.quota.recordPaidForStore(result.storeId);
         await this.loyalty.awardForPayment(result); // earn loyalty points
+        await this.referrals.onPaidPayment(result); // reward pending referral
       }
       this.events.publish({ paymentId, status: to, at: new Date().toISOString() });
       if (STATUS_TO_EVENT[to]) {

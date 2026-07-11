@@ -110,6 +110,12 @@ enum PromotionStatus {
   ENDED
 }
 
+enum ReferralStatus {
+  PENDING
+  QUALIFIED
+  REWARDED
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -230,6 +236,7 @@ model Store {
   redemptions         Redemption[]
   segments            Segment[]
   promotions          Promotion[]
+  referralProgram     ReferralProgram?
 
   @@index([organizationId])
 }
@@ -262,6 +269,8 @@ model Customer {
   pointsBalance  Int      @default(0)
   lifetimePoints Int      @default(0) // cumulative earned; drives tier (never decremented)
   tierId         String?
+  referralCode   String? // this customer's own referral code
+  referredByCustomerId String? // who referred this customer
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -272,7 +281,36 @@ model Customer {
   tier         LoyaltyTier?        @relation(fields: [tierId], references: [id])
 
   @@unique([storeId, externalId])
+  @@unique([storeId, referralCode])
   @@index([storeId, email])
+}
+
+model ReferralProgram {
+  id             String   @id @default(cuid())
+  storeId        String   @unique
+  active         Boolean  @default(false)
+  referrerPoints Int      @default(0)
+  refereePoints  Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+model Referral {
+  id                   String         @id
+  storeId              String
+  referrerCustomerId   String
+  refereeCustomerId    String         @unique // a customer is referred at most once
+  code                 String
+  status               ReferralStatus @default(PENDING)
+  rewardPointsReferrer Int            @default(0)
+  rewardPointsReferee  Int            @default(0)
+  createdAt            DateTime       @default(now())
+  rewardedAt           DateTime?
+
+  @@index([storeId])
+  @@index([referrerCustomerId])
 }
 
 model Reward {
