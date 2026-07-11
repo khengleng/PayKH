@@ -134,6 +134,12 @@ enum GamePlayStatus {
   REVEALED // outcome drawn
 }
 
+enum NotificationChannelType {
+  WHATSAPP
+  SMS
+  SIGNAL
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -239,24 +245,25 @@ model Store {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  branding            StoreBranding?
-  apiKeys             ApiKey[]
-  payments            Payment[]
-  providerCredentials ProviderCredential[]
-  webhookEndpoints    WebhookEndpoint[]
-  settlements         Settlement[]
-  branches            Branch[]
-  customers           Customer[]
-  loyaltyProgram      LoyaltyProgram?
-  loyaltyTiers        LoyaltyTier[]
-  rewards             Reward[]
-  redemptions         Redemption[]
-  segments            Segment[]
-  promotions          Promotion[]
-  referralProgram     ReferralProgram?
-  telegramConfig      TelegramConfig?
-  games               Game[]
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branding             StoreBranding?
+  apiKeys              ApiKey[]
+  payments             Payment[]
+  providerCredentials  ProviderCredential[]
+  webhookEndpoints     WebhookEndpoint[]
+  settlements          Settlement[]
+  branches             Branch[]
+  customers            Customer[]
+  loyaltyProgram       LoyaltyProgram?
+  loyaltyTiers         LoyaltyTier[]
+  rewards              Reward[]
+  redemptions          Redemption[]
+  segments             Segment[]
+  promotions           Promotion[]
+  referralProgram      ReferralProgram?
+  telegramConfig       TelegramConfig?
+  notificationChannels NotificationChannel[]
+  games                Game[]
 
   @@index([organizationId])
 }
@@ -315,6 +322,23 @@ model TelegramConfig {
   updatedAt     DateTime @updatedAt
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+/// Outbound message channel (WhatsApp / SMS / Signal) mirroring payment events.
+model NotificationChannel {
+  id            String                  @id @default(cuid())
+  storeId       String
+  channel       NotificationChannelType
+  destination   String? // phone number / signal recipient
+  enabled       Boolean                 @default(false)
+  enabledEvents String[]                @default([]) // empty = all events
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, channel])
+  @@index([storeId])
 }
 
 model ReferralProgram {

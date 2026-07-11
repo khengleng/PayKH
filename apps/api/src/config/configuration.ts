@@ -17,6 +17,12 @@ export interface AppConfig {
   sentryDsn?: string;
   metricsToken?: string;
   telegramBotToken?: string;
+  twilioAccountSid?: string;
+  twilioAuthToken?: string;
+  whatsappFrom?: string;
+  smsFrom?: string;
+  signalCliUrl?: string;
+  signalFrom?: string;
 }
 
 function required(name: string): string {
@@ -47,6 +53,12 @@ export function loadConfig(): AppConfig {
     sentryDsn: process.env.SENTRY_DSN,
     metricsToken: process.env.METRICS_TOKEN,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+    twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
+    twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
+    whatsappFrom: process.env.WHATSAPP_FROM,
+    smsFrom: process.env.SMS_FROM,
+    signalCliUrl: process.env.SIGNAL_CLI_URL,
+    signalFrom: process.env.SIGNAL_FROM,
   };
 }
 

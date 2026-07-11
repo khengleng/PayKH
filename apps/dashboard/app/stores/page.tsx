@@ -157,6 +157,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
       <RewardsCard storeId={store.id} />
       <ReferralsCard storeId={store.id} />
       <TelegramCard storeId={store.id} />
+      <ChannelsCard storeId={store.id} />
 
       <Card>
         <h3 className="mb-1 font-semibold">Run a test payment</h3>
@@ -547,6 +548,51 @@ function TelegramCard({ storeId }: { storeId: string }) {
           return <button key={ev} onClick={() => setEvents((p) => on ? p.filter((e) => e !== ev) : [...p, ev])} className={`rounded-full border px-3 py-1 text-xs ${on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-500'}`}>{ev}</button>;
         })}
         <span className="self-center text-xs text-slate-400">{events.length === 0 ? '(none = all events)' : ''}</span>
+      </div>
+    </Card>
+  );
+}
+
+interface Channel { channel: string; enabled: boolean; destination: string | null; enabled_events: string[]; provider_configured: boolean }
+
+function ChannelsCard({ storeId }: { storeId: string }) {
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [msg, setMsg] = useState('');
+
+  const load = async () => { setChannels(await api<Channel[]>(`/dashboard/stores/${storeId}/channels`)); };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
+
+  const save = async (channel: string, patch: Partial<Channel>) => {
+    const cur = channels.find((c) => c.channel === channel)!;
+    await api(`/dashboard/stores/${storeId}/channels`, { method: 'PUT', body: {
+      channel: channel.toUpperCase(),
+      destination: (patch.destination ?? cur.destination) || undefined,
+      enabled: patch.enabled ?? cur.enabled,
+      enabledEvents: patch.enabled_events ?? cur.enabled_events,
+    } });
+    await load();
+  };
+  const test = async (channel: string) => {
+    try { const r = await api<{ sent: boolean }>(`/dashboard/stores/${storeId}/channels/${channel}/test`, { method: 'POST' }); setMsg(r.sent ? `${channel} test sent` : 'Failed'); }
+    catch (e: any) { setMsg(e.message); }
+    setTimeout(() => setMsg(''), 2500);
+  };
+
+  const LABEL: Record<string, string> = { whatsapp: 'WhatsApp', sms: 'SMS', signal: 'Signal' };
+  return (
+    <Card>
+      <h3 className="mb-1 font-semibold">Messaging channels</h3>
+      <p className="mb-3 text-sm text-slate-500">Mirror payment alerts to WhatsApp, SMS, or Signal. Messages are logged until provider credentials are configured. {msg && <span className="text-emerald-600">· {msg}</span>}</p>
+      <div className="space-y-3">
+        {channels.map((c) => (
+          <div key={c.channel} className="flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
+            <label className="flex items-center gap-2 text-sm w-24"><input type="checkbox" checked={c.enabled} onChange={(e) => save(c.channel, { enabled: e.target.checked })} /> {LABEL[c.channel]}</label>
+            <label className="text-sm"><div className="mb-1 text-slate-600">Destination</div>
+              <input defaultValue={c.destination ?? ''} placeholder={c.channel === 'signal' ? '+85512345678' : '+855…'} onBlur={(e) => save(c.channel, { destination: e.target.value })} className="w-48 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+            <Button variant="secondary" onClick={() => test(c.channel)}>Send test</Button>
+            <span className="self-center text-xs text-slate-400">{c.provider_configured ? 'provider ready' : 'log-only'}</span>
+          </div>
+        ))}
       </div>
     </Card>
   );

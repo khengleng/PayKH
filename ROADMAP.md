@@ -32,7 +32,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Scratch cards · 🟡 Spin wheel · 🟡 Lucky draw · ✅ Prize engine · ✅ Inventory
 
 ## 10. Notification Hub
-🟡 Email (Resend) · ✅ Telegram · ⬜ WhatsApp · ⬜ Signal · ⬜ SMS
+🟡 Email (Resend) · ✅ Telegram · ✅ WhatsApp · ✅ Signal · ✅ SMS
 
 ## 11. AI Services
 ⬜ Merchant assistant · ⬜ Campaign generator · ⬜ Fraud insights · ⬜ Marketing copy · ⬜ Analytics summary

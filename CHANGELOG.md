@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Notification Hub → WhatsApp / SMS / Signal** (Domain 10): per-store messaging
+  channels that mirror payment events (with per-channel event selection). WhatsApp
+  & SMS send via Twilio; Signal via a signal-cli REST bridge; each falls back to a
+  **log transport** when its credentials are unset. Dashboard config + test send
+  per channel. **Domain 10 channels complete.**
 - **Promotional Games → Scratch Cards** (Domain 9): a play-issuance layer on the
   prize engine. A game can **auto-issue a scratch card on each qualifying paid
   payment** (optional min amount, idempotent per payment) or be granted manually.
