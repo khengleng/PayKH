@@ -72,6 +72,15 @@ function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
     setQr(await r.json());
   };
 
+  const togglePref = async (channel: string, optedIn: boolean) => {
+    const r = await fetch(`${API_BASE}/dashboard/customers/${id}/preferences`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenStore.get()}` },
+      body: JSON.stringify({ preferences: { [channel]: optedIn } }),
+    });
+    const d = await r.json();
+    setData((prev: any) => ({ ...prev, preferences: d.preferences }));
+  };
+
   return (
     <div className="fixed inset-0 z-20 flex justify-end bg-black/30" onClick={onClose}>
       <div className="h-full w-full max-w-md overflow-y-auto bg-white p-6" onClick={(e) => e.stopPropagation()}>
@@ -109,6 +118,20 @@ function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
                 {(!data.recent_payments || data.recent_payments.length === 0) && <li className="py-2 text-slate-400">No payments yet.</li>}
               </ul>
             </div>
+            {data.preferences && (
+              <div>
+                <div className="mb-2 font-medium text-slate-700">Communication preferences</div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(data.preferences as Record<string, boolean>).map(([ch, on]) => (
+                    <button key={ch} onClick={() => togglePref(ch, !on)}
+                      className={`rounded-full border px-3 py-1 text-xs ${on ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-400 line-through'}`}>
+                      {ch}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-slate-400">Click to opt in/out. Changes are recorded in the consent log.</p>
+              </div>
+            )}
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <span className="font-medium text-slate-700">Referral QR</span>

@@ -301,15 +301,44 @@ model Customer {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  store        Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store        Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
   payments     Payment[]
   pointsLedger PointsTransaction[]
   redemptions  Redemption[]
-  tier         LoyaltyTier?        @relation(fields: [tierId], references: [id])
+  tier         LoyaltyTier?         @relation(fields: [tierId], references: [id])
+  preferences  CustomerPreference[]
+  consentLogs  ConsentLog[]
 
   @@unique([storeId, externalId])
   @@unique([storeId, referralCode])
   @@index([storeId, email])
+}
+
+/// A customer's current opt-in state per communication channel.
+model CustomerPreference {
+  id         String   @id
+  customerId String
+  channel    String // email | sms | whatsapp | telegram | push | marketing
+  optedIn    Boolean
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, channel])
+}
+
+/// Immutable audit trail of consent changes (who/when/how).
+model ConsentLog {
+  id         String   @id
+  customerId String
+  channel    String
+  optedIn    Boolean
+  source     String? // checkout | dashboard | api | import
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
 }
 
 model TelegramConfig {

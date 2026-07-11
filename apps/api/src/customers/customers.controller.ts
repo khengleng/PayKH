@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
-import { CustomersService, CreateCustomerDto } from './customers.service';
+import { CustomersService, CreateCustomerDto, SetPreferencesDto } from './customers.service';
 import { ApiKeyGuard, getApiKeyContext } from '../auth/api-key.guard';
 import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -40,6 +40,18 @@ export class CustomersController {
   retrieve(@Req() req: Request, @Param('id') id: string) {
     return this.customers.retrieve(getApiKeyContext(req), id);
   }
+
+  @Get(':id/preferences')
+  @ApiOperation({ summary: 'Get a customer’s communication preferences' })
+  getPrefs(@Req() req: Request, @Param('id') id: string) {
+    return this.customers.getPreferences(getApiKeyContext(req).storeId, id);
+  }
+
+  @Put(':id/preferences')
+  @ApiOperation({ summary: 'Update a customer’s preferences (records consent)' })
+  setPrefs(@Req() req: Request, @Param('id') id: string, @Body() dto: SetPreferencesDto) {
+    return this.customers.setPreferences(getApiKeyContext(req).storeId, id, dto.preferences, 'api');
+  }
 }
 
 /** Dashboard customer views incl. Customer 360 (JWT authenticated). */
@@ -61,5 +73,17 @@ export class CustomersDashboardController {
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     if (!id) throw ApiError.invalidRequest('customer id required');
     return this.customers.customer360(user, id);
+  }
+
+  @Put('customers/:id/preferences')
+  @ApiOperation({ summary: 'Update a customer’s preferences (records consent)' })
+  setPrefs(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: SetPreferencesDto) {
+    return this.customers.setPreferencesDashboard(user, id, dto.preferences);
+  }
+
+  @Get('customers/:id/consent-log')
+  @ApiOperation({ summary: 'Consent change history' })
+  consentLog(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.customers.consentHistory(user, id);
   }
 }

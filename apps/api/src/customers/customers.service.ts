@@ -18,6 +18,10 @@ export class CreateCustomerDto {
   @IsOptional() @IsString() @MaxLength(40) referral_code?: string;
 }
 
+export class SetPreferencesDto {
+  @IsObject() preferences!: Record<string, boolean>;
+}
+
 @Injectable()
 export class CustomersService {
   constructor(
@@ -114,9 +118,11 @@ export class CustomersService {
     ]);
     const paidVolume = paidAgg._sum.amount ?? new Prisma.Decimal(0);
     const refunded = paidAgg._sum.refundedAmount ?? new Prisma.Decimal(0);
+    const preferences = await this.currentPreferences(customerId);
 
     return {
       ...this.serialize(customer),
+      preferences,
       tier: customer.tier ? { id: customer.tier.id, name: customer.tier.name, earn_multiplier: customer.tier.earnMultiplier.toString() } : null,
       metrics: {
         total_payments: allCount,
@@ -134,6 +140,68 @@ export class CustomersService {
         created_at: p.createdAt.toISOString(),
       })),
     };
+  }
+
+  // ------------------------------------------------- preferences & consent
+  /** Communication channels a customer can opt in/out of. */
+  static readonly CONSENT_CHANNELS = ['email', 'sms', 'whatsapp', 'telegram', 'push', 'marketing'];
+
+  private async currentPreferences(customerId: string): Promise<Record<string, boolean>> {
+    const rows = await this.prisma.customerPreference.findMany({ where: { customerId } });
+    const byChannel = new Map(rows.map((r) => [r.channel, r.optedIn]));
+    // Default opt-in true (merchant sends transactional by default); marketing defaults opt-in too but is the gate campaigns check.
+    return Object.fromEntries(CustomersService.CONSENT_CHANNELS.map((ch) => [ch, byChannel.get(ch) ?? true]));
+  }
+
+  /** Public (API key) read of a customer's preferences. */
+  async getPreferences(storeId: string, customerId: string) {
+    const c = await this.findScoped(storeId, customerId);
+    return { customer_id: c.id, preferences: await this.currentPreferences(c.id) };
+  }
+
+  /** Public (API key) update — upserts prefs and appends an immutable consent log. */
+  async setPreferences(storeId: string, customerId: string, prefs: Record<string, boolean>, source: string) {
+    const c = await this.findScoped(storeId, customerId);
+    await this.applyPreferences(c.id, prefs, source);
+    return { customer_id: c.id, preferences: await this.currentPreferences(c.id) };
+  }
+
+  /** Dashboard (JWT) update. */
+  async setPreferencesDashboard(user: AuthUser, customerId: string, prefs: Record<string, boolean>) {
+    const c = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!c) throw ApiError.paymentNotFound('Customer not found');
+    await this.assertStoreAccess(user, c.storeId);
+    await this.applyPreferences(c.id, prefs, 'dashboard');
+    return { customer_id: c.id, preferences: await this.currentPreferences(c.id) };
+  }
+
+  private async applyPreferences(customerId: string, prefs: Record<string, boolean>, source: string) {
+    const entries = Object.entries(prefs).filter(([ch]) => CustomersService.CONSENT_CHANNELS.includes(ch));
+    if (entries.length === 0) throw ApiError.invalidRequest('No valid channels; allowed: ' + CustomersService.CONSENT_CHANNELS.join(', '));
+    for (const [channel, optedIn] of entries) {
+      await this.prisma.$transaction([
+        this.prisma.customerPreference.upsert({
+          where: { customerId_channel: { customerId, channel } },
+          create: { id: prefixedId('pref'), customerId, channel, optedIn },
+          update: { optedIn },
+        }),
+        this.prisma.consentLog.create({ data: { id: prefixedId('cslog'), customerId, channel, optedIn, source } }),
+      ]);
+    }
+  }
+
+  /** Consent gate used by customer-facing messaging/campaigns. Defaults to opted-in. */
+  async hasConsent(customerId: string, channel: string): Promise<boolean> {
+    const pref = await this.prisma.customerPreference.findUnique({ where: { customerId_channel: { customerId, channel } } });
+    return pref?.optedIn ?? true;
+  }
+
+  async consentHistory(user: AuthUser, customerId: string) {
+    const c = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!c) throw ApiError.paymentNotFound('Customer not found');
+    await this.assertStoreAccess(user, c.storeId);
+    const logs = await this.prisma.consentLog.findMany({ where: { customerId }, orderBy: { createdAt: 'desc' }, take: 100 });
+    return logs.map((l) => ({ channel: l.channel, opted_in: l.optedIn, source: l.source, at: l.createdAt.toISOString() }));
   }
 
   // ------------------------------------------------------------- internals
