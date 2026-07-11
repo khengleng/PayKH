@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Ecosystem products & Shared services** (Domain 20): an ecosystem registry
+  (`GET /ecosystem/products`) mapping the suffixed product lines — **Merchant
+  PayKH** (dashboard PWA, live), **Fortune PayKH** (games, live), **Customer
+  PayKH** (wallet, live), Gold PayKH (planned), Learn PayKH (docs/SDKs) — onto
+  the 10 shared platform services they build on. Brand identity finalized (brand
+  blue `#1E5BD6` default, app icon/PWA).
 - **Security → Posture & Monitoring** (Domain 18): an automated **security-posture
   self-assessment** (`/admin/security/posture` — transport, key strength, metrics
   protection, rate limiting, webhook signing, SSRF, key hashing, MFA → a score),

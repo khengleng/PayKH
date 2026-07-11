@@ -62,7 +62,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Model registry · ✅ Prompt governance · ✅ Guardrails · 🟡 Evaluation · ✅ Cost mgmt
 
 ## 20. Ecosystem Vision
-⬜ Learn PayKH · ⬜ Merchant PayKH · ⬜ Gold PayKH · ⬜ Fortune PayKH · ⬜ Shared platform services
+🟡 Learn PayKH · ✅ Merchant PayKH · ⬜ Gold PayKH · ✅ Fortune PayKH · ✅ Shared platform services
 
 ---
 
