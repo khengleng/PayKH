@@ -281,6 +281,63 @@ export class GamesService {
     return this.serializePlay(updated, prize);
   }
 
+  // ---------------------------------------------------- public hosted play
+  /**
+   * Public (no API key) view of a play by its id, which acts as a bearer token
+   * (like the payment checkout page keyed by payment id). Used by the hosted
+   * play page. Does not reveal the prize until the play is revealed.
+   */
+  async publicGetPlay(playId: string) {
+    const play = await this.prisma.gamePlay.findUnique({ where: { id: playId }, include: { prize: true, game: true } });
+    if (!play) throw ApiError.paymentNotFound('Play not found');
+    return {
+      id: play.id,
+      status: play.status.toLowerCase(),
+      game: { name: play.game.name, type: play.game.type.toLowerCase() },
+      won: play.status === 'REVEALED' ? play.won : null,
+      prize: play.status === 'REVEALED' && play.prize ? { label: play.prize.label, type: play.prize.type.toLowerCase(), points_value: play.prize.pointsValue } : null,
+    };
+  }
+
+  /** Public reveal by play-id bearer token (hosted play page). */
+  async publicReveal(playId: string) {
+    const play = await this.prisma.gamePlay.findUnique({ where: { id: playId } });
+    if (!play) throw ApiError.paymentNotFound('Play not found');
+    await this.reveal(play.storeId, playId);
+    return this.publicGetPlay(playId);
+  }
+
+  /**
+   * Public instant play for a hosted spin-wheel / lucky-draw link: a merchant
+   * shares `<checkout>/play/game/:gameId?c=:customerId`. Requires the game to be
+   * active; anonymous plays are allowed (no points credited without a customer).
+   */
+  async publicInstantPlay(gameId: string, customerId?: string) {
+    const game = await this.prisma.game.findUnique({ where: { id: gameId } });
+    if (!game) throw ApiError.paymentNotFound('Game not found');
+    if (!game.active) throw ApiError.invalidRequest('Game is not active');
+    let cid: string | null = null;
+    if (customerId) {
+      const c = await this.prisma.customer.findUnique({ where: { id: customerId } });
+      if (c && c.storeId === game.storeId) cid = c.id;
+    }
+    const { play } = await this.drawAndRecord(game.id, game.storeId, cid, null);
+    return this.publicGetPlay(play.id);
+  }
+
+  /** Public game metadata for the hosted play page (prizes without odds/stock). */
+  async publicGetGame(gameId: string) {
+    const game = await this.prisma.game.findUnique({ where: { id: gameId }, include: { prizes: true } });
+    if (!game) throw ApiError.paymentNotFound('Game not found');
+    return {
+      id: game.id,
+      name: game.name,
+      type: game.type.toLowerCase(),
+      active: game.active,
+      prizes: game.prizes.map((p) => ({ label: p.label, type: p.type.toLowerCase() })),
+    };
+  }
+
   private prizeAvailable(p: Prize) {
     return p.weight > 0 && (p.stock === -1 || p.stock > 0);
   }

@@ -9,3 +9,8 @@
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
 }
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(1440deg); }
+}

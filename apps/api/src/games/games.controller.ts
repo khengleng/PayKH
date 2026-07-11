@@ -107,6 +107,39 @@ export class GamesController {
   }
 }
 
+/** Hosted play page API — NO auth; the play/game id is the bearer. IP rate-limited. */
+@ApiTags('games')
+@UseGuards(RateLimitGuard)
+@RateLimit({ limit: 30, windowSec: 10, by: 'ip' })
+@Controller('play')
+export class HostedPlayController {
+  constructor(private readonly games: GamesService) {}
+
+  @Get('game/:gameId')
+  @ApiOperation({ summary: 'Hosted game metadata (public)' })
+  game(@Param('gameId') gameId: string) {
+    return this.games.publicGetGame(gameId);
+  }
+
+  @Post('game/:gameId/play')
+  @ApiOperation({ summary: 'Instant play a spin/lucky-draw game (public)' })
+  instant(@Param('gameId') gameId: string, @Query('c') customerId?: string) {
+    return this.games.publicInstantPlay(gameId, customerId);
+  }
+
+  @Get(':playId')
+  @ApiOperation({ summary: 'Hosted play/scratch-card state (public)' })
+  play(@Param('playId') playId: string) {
+    return this.games.publicGetPlay(playId);
+  }
+
+  @Post(':playId/reveal')
+  @ApiOperation({ summary: 'Reveal a scratch card (public)' })
+  reveal(@Param('playId') playId: string) {
+    return this.games.publicReveal(playId);
+  }
+}
+
 /** Public scratch-card API (API key): reveal a play, list a customer's cards. */
 @ApiTags('games')
 @ApiBearerAuth()

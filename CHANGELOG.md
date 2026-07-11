@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Promotional Games → Hosted play (Spin wheel / Lucky draw / Scratch)** (Domain
+  9): a customer-facing hosted play experience on the checkout app — a spin-wheel
+  / lucky-draw page (`/play/game/:id`) and a scratch-card reveal page
+  (`/play/:playId`) with animations. Backed by public (no-API-key, IP
+  rate-limited) endpoints where the game/play id is the bearer token, mirroring
+  the payment checkout page. **Domain 9 complete.**
 - **Loyalty → Liability** (Domain 6): an outstanding-points liability report
   (`GET /dashboard/stores/:id/loyalty/liability?point_value=`) — Σ balances ×
   point value, plus holders, lifetime earned/redeemed, redemption rate, and the

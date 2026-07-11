@@ -29,7 +29,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Referral links · ✅ QR · ✅ Commission · ✅ Fraud checks · ✅ Reports
 
 ## 9. Promotional Games
-✅ Scratch cards · 🟡 Spin wheel · 🟡 Lucky draw · ✅ Prize engine · ✅ Inventory
+✅ Scratch cards · ✅ Spin wheel · ✅ Lucky draw · ✅ Prize engine · ✅ Inventory
 
 ## 10. Notification Hub
 🟡 Email (Resend) · ✅ Telegram · ✅ WhatsApp · ✅ Signal · ✅ SMS
