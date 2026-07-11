@@ -237,6 +237,7 @@ model Store {
   segments            Segment[]
   promotions          Promotion[]
   referralProgram     ReferralProgram?
+  telegramConfig      TelegramConfig?
 
   @@index([organizationId])
 }
@@ -283,6 +284,18 @@ model Customer {
   @@unique([storeId, externalId])
   @@unique([storeId, referralCode])
   @@index([storeId, email])
+}
+
+model TelegramConfig {
+  id            String   @id @default(cuid())
+  storeId       String   @unique
+  chatId        String?
+  enabled       Boolean  @default(false)
+  enabledEvents String[] @default([]) // empty = all events
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 }
 
 model ReferralProgram {

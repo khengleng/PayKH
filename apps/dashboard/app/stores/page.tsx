@@ -156,6 +156,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
       <TiersCard storeId={store.id} />
       <RewardsCard storeId={store.id} />
       <ReferralsCard storeId={store.id} />
+      <TelegramCard storeId={store.id} />
 
       <Card>
         <h3 className="mb-1 font-semibold">Run a test payment</h3>
@@ -406,6 +407,56 @@ function ReferralsCard({ storeId }: { storeId: string }) {
           ))}
         </ul>
       )}
+    </Card>
+  );
+}
+
+const TG_EVENTS = ['payment.completed', 'payment.refunded', 'payment.failed', 'payment.expired', 'payment.cancelled'];
+
+function TelegramCard({ storeId }: { storeId: string }) {
+  const [enabled, setEnabled] = useState(false);
+  const [chatId, setChatId] = useState('');
+  const [events, setEvents] = useState<string[]>([]);
+  const [botConfigured, setBotConfigured] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const load = async () => {
+    const c = await api<any>(`/dashboard/stores/${storeId}/telegram`);
+    setEnabled(c.enabled); setChatId(c.chat_id ?? ''); setEvents(c.enabled_events ?? []); setBotConfigured(c.bot_configured);
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
+
+  const save = async () => {
+    await api(`/dashboard/stores/${storeId}/telegram`, { method: 'PUT', body: { enabled, chatId: chatId || undefined, enabledEvents: events } });
+    setMsg('Saved'); setTimeout(() => setMsg(''), 1500); await load();
+  };
+  const test = async () => {
+    try { const r = await api<{ sent: boolean }>(`/dashboard/stores/${storeId}/telegram/test`, { method: 'POST' }); setMsg(r.sent ? 'Test sent' : 'Failed'); }
+    catch (e: any) { setMsg(e.message); }
+    setTimeout(() => setMsg(''), 2500);
+  };
+
+  return (
+    <Card>
+      <h3 className="mb-1 font-semibold">Telegram notifications</h3>
+      <p className="mb-3 text-sm text-slate-500">
+        Get payment alerts in Telegram. {botConfigured ? '' : 'A platform bot token is not set yet — messages are logged until then.'}
+        {' '}Add the bot to a chat, then paste the chat id.
+      </p>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled</label>
+        <label className="text-sm"><div className="mb-1 text-slate-600">Chat id</div><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="-1001234567890" className="w-48 rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+        <Button onClick={save}>Save</Button>
+        <Button variant="secondary" onClick={test}>Send test</Button>
+        {msg && <span className="text-sm text-emerald-600">{msg}</span>}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {TG_EVENTS.map((ev) => {
+          const on = events.includes(ev);
+          return <button key={ev} onClick={() => setEvents((p) => on ? p.filter((e) => e !== ev) : [...p, ev])} className={`rounded-full border px-3 py-1 text-xs ${on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-500'}`}>{ev}</button>;
+        })}
+        <span className="self-center text-xs text-slate-400">{events.length === 0 ? '(none = all events)' : ''}</span>
+      </div>
     </Card>
   );
 }

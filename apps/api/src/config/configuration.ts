@@ -16,6 +16,7 @@ export interface AppConfig {
   emailFrom: string;
   sentryDsn?: string;
   metricsToken?: string;
+  telegramBotToken?: string;
 }
 
 function required(name: string): string {
@@ -45,6 +46,7 @@ export function loadConfig(): AppConfig {
     emailFrom: process.env.EMAIL_FROM ?? 'PayKH <noreply@paykh.cambobia.com>',
     sentryDsn: process.env.SENTRY_DSN,
     metricsToken: process.env.METRICS_TOKEN,
+    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
   };
 }
 

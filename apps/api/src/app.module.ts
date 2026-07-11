@@ -17,6 +17,7 @@ import { LoyaltyModule } from './loyalty/loyalty.module';
 import { SegmentsModule } from './segments/segments.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { ReferralsModule } from './referrals/referrals.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -48,6 +49,7 @@ import { RequestIdMiddleware } from './common/request-context';
     SegmentsModule,
     CampaignsModule,
     ReferralsModule,
+    NotificationsModule,
     ApiKeysModule,
     PaymentsModule,
     WebhooksModule,

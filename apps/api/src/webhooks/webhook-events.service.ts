@@ -5,6 +5,7 @@ import { Payment, Prisma } from '@prisma/client';
 import { ids } from '@paykh/security';
 import { STATUS_TO_EVENT, WebhookEventType, PaymentStatus } from '@paykh/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   DeliverWebhookJob,
   JOB_DELIVER_WEBHOOK,
@@ -26,6 +27,7 @@ export class WebhookEventsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
     @InjectQueue(QUEUE_WEBHOOK) private readonly queue: Queue,
   ) {}
 
@@ -50,6 +52,9 @@ export class WebhookEventsService {
   }
 
   private async emit(payment: Payment, type: WebhookEventType): Promise<void> {
+    // Mirror the event to the Telegram channel (independent of webhook endpoints).
+    await this.notifications.onPaymentEvent(payment, type);
+
     const endpoints = await this.prisma.webhookEndpoint.findMany({
       where: { storeId: payment.storeId, disabled: false },
     });

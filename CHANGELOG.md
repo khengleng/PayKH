@@ -8,6 +8,11 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Notification Hub → Telegram** (Domain 10): per-store Telegram notifications
+  for payment events (mirrors the webhook fan-out — completed/refunded/failed/
+  expired/cancelled, with event selection). Pluggable `TelegramService` (Bot API
+  + log fallback when `TELEGRAM_BOT_TOKEN` is unset). Dashboard config + test
+  send.
 - **Referral & Affiliate → Referral links** (Domain 8): a per-store referral
   program (referrer + referee point rewards). Customers get a referral code +
   share URL (`POST /v1/customers/:id/referral-code`); a new customer created
