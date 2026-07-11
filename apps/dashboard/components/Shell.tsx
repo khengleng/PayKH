@@ -16,6 +16,7 @@ const NAV = [
   { href: '/reports', label: 'Reports', icon: '📈' },
   { href: '/analytics', label: 'Analytics', icon: '🔮' },
   { href: '/risk', label: 'Risk', icon: '🛡️' },
+  { href: '/copilot', label: 'Copilot', icon: '✨' },
   { href: '/settlements', label: 'Settlements', icon: '🏦' },
   { href: '/keys', label: 'API Keys', icon: '🔑' },
   { href: '/webhooks', label: 'Webhooks', icon: '🔔' },

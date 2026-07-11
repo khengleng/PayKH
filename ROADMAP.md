@@ -35,7 +35,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 🟡 Email (Resend) · ✅ Telegram · ✅ WhatsApp · ✅ Signal · ✅ SMS
 
 ## 11. AI Services
-⬜ Merchant assistant · ⬜ Campaign generator · ⬜ Fraud insights · ⬜ Marketing copy · ⬜ Analytics summary
+✅ Merchant assistant · ✅ Campaign generator · ✅ Fraud insights · ✅ Marketing copy · ✅ Analytics summary
 
 ## 12. Operations
 ✅ Support console (admin) · ✅ Queue monitor · ✅ Webhook retry · 🟡 Incident mgmt (runbooks) · ✅ Audit

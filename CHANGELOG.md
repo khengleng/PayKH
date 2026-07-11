@@ -8,6 +8,13 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **AI Copilot** (Domain 11): a merchant AI suite — **marketing copy** generator,
+  **campaign suggestion**, plain-English **analytics summary**, **fraud insights**
+  (narrated from open risk cases), and a **merchant assistant** grounded in the
+  store's own 30-day data. Backed by Claude (Anthropic Messages API) when
+  `ANTHROPIC_API_KEY` is set, with a **grounded computed fallback** otherwise
+  (responses are tagged `ai` vs `computed`). New dashboard **Copilot** page.
+  **Domain 11 complete.**
 - **Risk & Compliance → Scoring & Case management** (Domain 14): a heuristic
   fraud/risk score (0-100) on every paid payment (transaction size, customer
   velocity, account age, anonymity, repeated-amount card-testing) that
