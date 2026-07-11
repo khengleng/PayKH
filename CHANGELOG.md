@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **AI Governance** (Domain 19): every Copilot call now runs through governance —
+  **guardrails** (prompt-injection detection, input caps, output secret-scrubbing),
+  **usage & cost logging** (`AiUsageLog` with per-model token pricing), a
+  **model registry** (admin), and **spend dashboards** per-store and
+  platform-wide. Calls are tagged `ai`/`fallback`/`blocked`. **Domain 19
+  substantially complete.**
 - **AI Copilot** (Domain 11): a merchant AI suite — **marketing copy** generator,
   **campaign suggestion**, plain-English **analytics summary**, **fraud insights**
   (narrated from open risk cases), and a **merchant assistant** grounded in the

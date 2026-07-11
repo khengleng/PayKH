@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -22,7 +22,27 @@ function Content({ storeId }: { storeId: string }) {
         <InsightCard storeId={storeId} title="Analytics summary" path="ai/analytics-summary" cta="Summarize performance" />
         <InsightCard storeId={storeId} title="Fraud insights" path="ai/fraud-insights" cta="Analyze risk cases" />
       </div>
+      <UsageCard storeId={storeId} />
     </>
+  );
+}
+
+function UsageCard({ storeId }: { storeId: string }) {
+  const [u, setU] = useState<any>(null);
+  useEffect(() => { api<any>(`/dashboard/stores/${storeId}/ai/usage`).then(setU).catch(() => {}); }, [storeId]);
+  if (!u) return null;
+  return (
+    <Card className="mt-6">
+      <h3 className="mb-2 font-semibold">AI governance — last 30 days</h3>
+      <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+        <span>Calls <b>{u.total_calls}</b></span>
+        <span>Est. cost <b>{u.total_cost}</b></span>
+        <span>Blocked <b className={u.by_source?.blocked ? 'text-red-500' : ''}>{u.by_source?.blocked ?? 0}</b></span>
+        <span>Live AI <b>{u.by_source?.ai ?? 0}</b></span>
+        <span>Fallback <b>{u.by_source?.fallback ?? 0}</b></span>
+      </div>
+      <p className="mt-2 text-xs text-slate-400">Every call is screened by guardrails (prompt-injection/PII) and logged for cost management.</p>
+    </Card>
   );
 }
 

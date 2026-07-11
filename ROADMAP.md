@@ -59,7 +59,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Threat model · ⬜ Pen testing · 🟡 Monitoring · ✅ Disaster recovery · ✅ Production readiness
 
 ## 19. AI Governance
-⬜ Model registry · ⬜ Prompt governance · ⬜ Guardrails · ⬜ Evaluation · ⬜ Cost mgmt
+✅ Model registry · ✅ Prompt governance · ✅ Guardrails · 🟡 Evaluation · ✅ Cost mgmt
 
 ## 20. Ecosystem Vision
 ⬜ Learn PayKH · ⬜ Merchant PayKH · ⬜ Gold PayKH · ⬜ Fortune PayKH · ⬜ Shared platform services

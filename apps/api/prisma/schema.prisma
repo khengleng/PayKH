@@ -738,6 +738,23 @@ model Refund {
   @@index([paymentId])
 }
 
+/// One AI Copilot invocation — for cost management, evaluation, and audit.
+model AiUsageLog {
+  id           String   @id
+  storeId      String?
+  feature      String // marketing_copy | campaign | analytics_summary | fraud_insights | assistant
+  model        String
+  source       String // ai | fallback | blocked
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costCents    Int      @default(0) // estimated, in hundredths of a cent for precision
+  blockedFor   String? // guardrail reason when source = blocked
+  createdAt    DateTime @default(now())
+
+  @@index([storeId, createdAt])
+  @@index([feature])
+}
+
 /// A risk/fraud review case raised by the risk-scoring engine or manually.
 model RiskCase {
   id         String         @id

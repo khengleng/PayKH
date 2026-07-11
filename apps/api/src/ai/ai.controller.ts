@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AiService, AssistantDto, MarketingCopyDto } from './ai.service';
+import { GovernanceService } from './governance.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
@@ -41,5 +42,32 @@ export class AiController {
   @ApiOperation({ summary: 'Ask the merchant assistant a question' })
   assistant(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: AssistantDto) {
     return this.ai.assistant(user, storeId, dto);
+  }
+}
+
+/** AI governance — usage/cost per store (JWT) + platform registry (admin). */
+@ApiTags('ai')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('dashboard')
+export class AiGovernanceController {
+  constructor(private readonly governance: GovernanceService) {}
+
+  @Get('stores/:storeId/ai/usage')
+  @ApiOperation({ summary: 'AI usage & cost for a store (30 days)' })
+  storeUsage(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.governance.storeUsage(user, storeId);
+  }
+
+  @Get('admin/ai/registry')
+  @ApiOperation({ summary: 'AI model registry (platform admin)' })
+  registry(@CurrentUser() user: AuthUser) {
+    return this.governance.registry(user);
+  }
+
+  @Get('admin/ai/usage')
+  @ApiOperation({ summary: 'Platform-wide AI usage & cost (platform admin)' })
+  platformUsage(@CurrentUser() user: AuthUser) {
+    return this.governance.platformUsage(user);
   }
 }
