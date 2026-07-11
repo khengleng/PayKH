@@ -11,6 +11,7 @@ const NAV = [
   { href: '/payments', label: 'Payments', icon: '💳' },
   { href: '/customers', label: 'Customers', icon: '👤' },
   { href: '/segments', label: 'Segments', icon: '🎯' },
+  { href: '/campaigns', label: 'Campaigns', icon: '📣' },
   { href: '/reports', label: 'Reports', icon: '📈' },
   { href: '/settlements', label: 'Settlements', icon: '🏦' },
   { href: '/keys', label: 'API Keys', icon: '🔑' },

@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Campaign Engine → Promotion builder** (Domain 7): promotions that award
+  bonus loyalty points on paid payments — `POINTS_MULTIPLIER` (×N of base earn)
+  or flat `BONUS_POINTS`, optionally gated by min payment amount, **targeted to a
+  segment**, with a **points budget** cap (auto-ends when exhausted) and an
+  optional **schedule** window. Draft → activate/pause/end lifecycle. Applied
+  automatically in the loyalty earn path. Dashboard Campaigns page.
 - **Segmentation** (Domain 5): rule-based customer segments (min lifetime
   points, min points balance, tier, has-email, min paid count/volume, last
   payment within N days). Live **preview size**, saved segments with an

@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
+import { CampaignsService } from '../campaigns/campaigns.service';
 
 export class UpdateProgramDto {
   @IsOptional() @IsBoolean() active?: boolean;
@@ -53,7 +54,10 @@ export class UpdateRewardDto {
 export class LoyaltyService {
   private readonly logger = new Logger('Loyalty');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly campaigns: CampaignsService,
+  ) {}
 
   // ------------------------------------------------------------- program
   async getProgram(user: AuthUser, storeId: string) {
@@ -115,6 +119,9 @@ export class LoyaltyService {
       }),
     ]);
     this.logger.log(`awarded ${earned} pts (base ${base} x${multiplier}) to ${payment.customerId}; lifetime ${newLifetime}`);
+
+    // Apply any active campaign promotions (bonus points on top of base earn).
+    await this.campaigns.applyToPayment(payment, base);
   }
 
   /** Highest tier whose threshold the lifetime points satisfy (or null). */

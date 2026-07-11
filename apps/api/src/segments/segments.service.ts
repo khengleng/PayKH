@@ -112,6 +112,33 @@ export class SegmentsService {
     return ids;
   }
 
+  /** Does a single customer match a segment's rules? (used by campaigns.) */
+  async customerMatches(segmentId: string, customerId: string): Promise<boolean> {
+    const seg = await this.prisma.segment.findUnique({ where: { id: segmentId } });
+    if (!seg) return false;
+    const rules = seg.rules as SegmentRules;
+
+    const where: Prisma.CustomerWhereInput = { id: customerId, storeId: seg.storeId };
+    if (rules.min_lifetime_points != null) where.lifetimePoints = { gte: rules.min_lifetime_points };
+    if (rules.min_points_balance != null) where.pointsBalance = { gte: rules.min_points_balance };
+    if (rules.tier_id) where.tierId = rules.tier_id;
+    if (rules.has_email) where.email = { not: null };
+    const direct = await this.prisma.customer.count({ where });
+    if (direct === 0) return false;
+    if (!needsPaymentAggregates(rules)) return true;
+
+    const grouped = await this.prisma.payment.groupBy({
+      by: ['customerId'],
+      where: { storeId: seg.storeId, status: 'PAID', customerId },
+      _count: { _all: true },
+      _sum: { amount: true },
+      _max: { paidAt: true },
+    });
+    const g = grouped[0];
+    const agg = g ? { count: g._count._all, volume: g._sum.amount ?? new Prisma.Decimal(0), lastPaidAt: g._max.paidAt ?? null } : undefined;
+    return matchesAggregates(agg, rules, new Date());
+  }
+
   private serialize(s: Segment) {
     return { id: s.id, store_id: s.storeId, name: s.name, description: s.description, rules: s.rules, created_at: s.createdAt.toISOString() };
   }
