@@ -69,7 +69,59 @@ function Content({ storeId, orgId }: { storeId: string; orgId: string }) {
           )}
         </Card>
       )}
+
+      <MonetizationCard storeId={storeId} />
     </>
+  );
+}
+
+interface Ledger { fee_bps: number; paid_count: number; net_earnings: string; entries: { account: string; type: string; amount: string }[]; revenue_share_breakdown: { partner: string; share_bps: number; amount: string }[] }
+interface Share { id: string; partner_name: string; share_bps: number; active: boolean }
+
+function MonetizationCard({ storeId }: { storeId: string }) {
+  const [ledger, setLedger] = useState<Ledger | null>(null);
+  const [shares, setShares] = useState<Share[]>([]);
+  const [name, setName] = useState('');
+  const [pct, setPct] = useState('10');
+
+  const load = useCallback(async () => {
+    setLedger(await api<Ledger>(`/dashboard/stores/${storeId}/ledger`));
+    setShares(await api<Share[]>(`/dashboard/stores/${storeId}/revenue-shares`));
+  }, [storeId]);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => { if (!name) return; await api(`/dashboard/stores/${storeId}/revenue-shares`, { method: 'POST', body: { partnerName: name, shareBps: Math.round(Number(pct) * 100) } }); setName(''); await load(); };
+  const del = async (id: string) => { await api(`/dashboard/revenue-shares/${id}`, { method: 'DELETE' }); await load(); };
+
+  return (
+    <Card className="mb-6">
+      <h3 className="mb-1 font-semibold">Accounting & revenue share</h3>
+      <p className="mb-3 text-sm text-slate-500">Derived P&amp;L over the last 30 days (fee {ledger ? (ledger.fee_bps / 100) : 0}%).</p>
+      {ledger && (
+        <>
+          <table className="mb-3 w-full text-sm">
+            <tbody>
+              {ledger.entries.map((e) => (
+                <tr key={e.account} className="border-b border-slate-50">
+                  <td className="py-1.5">{e.account}</td>
+                  <td className={`py-1.5 text-right ${e.type === 'credit' ? 'text-emerald-600' : 'text-red-500'}`}>{e.type === 'credit' ? '+' : '−'}${e.amount}</td>
+                </tr>
+              ))}
+              <tr className="font-semibold"><td className="py-2">Net earnings</td><td className="py-2 text-right">${ledger.net_earnings}</td></tr>
+            </tbody>
+          </table>
+          {ledger.revenue_share_breakdown.length > 0 && (
+            <div className="mb-3 text-xs text-slate-500">Revenue share: {ledger.revenue_share_breakdown.map((r) => `${r.partner} $${r.amount}`).join(' · ')}</div>
+          )}
+        </>
+      )}
+      <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+        <label className="text-sm"><div className="mb-1 text-xs text-slate-600">Partner</div><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Partners" className="w-40 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" /></label>
+        <label className="text-sm"><div className="mb-1 text-xs text-slate-600">% of fees</div><input value={pct} onChange={(e) => setPct(e.target.value)} className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" /></label>
+        <button onClick={add} className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm text-white">Add partner</button>
+        {shares.map((s) => <span key={s.id} className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs">{s.partner_name} {s.share_bps / 100}% <button onClick={() => del(s.id)} className="text-red-500">×</button></span>)}
+      </div>
+    </Card>
   );
 }
 

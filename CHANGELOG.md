@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Monetization → Revenue share & Accounting ledger** (Domain 13): partner
+  **revenue-share agreements** (a partner earns N bps of a store's processing
+  fees) with CRUD, and a **derived accounting ledger** — a read-only P&L over a
+  window (gross revenue, refunds, processing fees, affiliate commissions, partner
+  revenue share → net earnings) computed from source tables so it can't drift.
+  Surfaced on the Analytics page. **Domain 13 complete.**
 - **Analytics → Dashboards, Forecasting & Executive reports** (Domain 15): a daily
   revenue/count **time-series**, a **7-day revenue forecast** (OLS linear trend
   blended with a 7-day moving average over a dense 30-day vector), and an

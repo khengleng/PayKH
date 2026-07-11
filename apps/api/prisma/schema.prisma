@@ -245,7 +245,7 @@ model Store {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization         Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   branding             StoreBranding?
   apiKeys              ApiKey[]
   payments             Payment[]
@@ -264,6 +264,7 @@ model Store {
   telegramConfig       TelegramConfig?
   notificationChannels NotificationChannel[]
   games                Game[]
+  revenueShares        RevenueShareAgreement[]
 
   @@index([organizationId])
 }
@@ -727,6 +728,21 @@ model Refund {
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@index([paymentId])
+}
+
+/// A partner's revenue-share on a store's platform processing fees.
+model RevenueShareAgreement {
+  id          String   @id
+  storeId     String
+  partnerName String
+  shareBps    Int // basis points of the store's processing fees the partner earns
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
 }
 
 model Settlement {
