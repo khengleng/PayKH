@@ -8,6 +8,14 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Promotional Games → Prize Engine & Inventory** (Domain 9): a weighted-draw
+  prize engine. Merchants create a **game** (scratch card / spin wheel / lucky
+  draw) with **prizes** (points / reward / custom / no-win), each with a
+  **weight** (probability) and **stock** (inventory, −1 = unlimited). A play
+  (`POST /v1/games/:id/play`, API key) draws a prize honoring inventory with an
+  **atomic stock claim** (no over-award under concurrency) and credits loyalty
+  points for POINTS prizes. Dashboard game/prize builder with live odds, stock
+  and win/award stats.
 - **Referral & Affiliate → Reports** (Domain 8): a referral analytics report
   (`GET /dashboard/stores/:id/referrals/report`) — the funnel (pending →
   rewarded), **conversion rate**, fraud-flagged count, **commission totals by

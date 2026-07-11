@@ -116,6 +116,24 @@ enum ReferralStatus {
   REWARDED
 }
 
+enum GameType {
+  SCRATCH_CARD
+  SPIN_WHEEL
+  LUCKY_DRAW
+}
+
+enum PrizeType {
+  NONE // "better luck next time"
+  POINTS
+  REWARD // grants a loyalty Reward (voucher)
+  CUSTOM // merchant fulfils out-of-band
+}
+
+enum GamePlayStatus {
+  ISSUED // entitlement granted, not yet revealed (scratch cards)
+  REVEALED // outcome drawn
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -238,6 +256,7 @@ model Store {
   promotions          Promotion[]
   referralProgram     ReferralProgram?
   telegramConfig      TelegramConfig?
+  games               Game[]
 
   @@index([organizationId])
 }
@@ -341,6 +360,69 @@ model ReferralCommission {
   @@index([storeId, status])
   @@index([referrerCustomerId])
   @@index([referralId])
+}
+
+// ---------------------------------------------------------------------------
+// Promotional games (Domain 9): a prize engine with weighted draws + inventory.
+// ---------------------------------------------------------------------------
+
+model Game {
+  id               String   @id
+  storeId          String
+  name             String
+  type             GameType
+  active           Boolean  @default(false)
+  // Auto-issue a play when a paid payment meets the threshold (scratch cards).
+  autoIssue        Boolean  @default(false)
+  minPaymentAmount Decimal? @db.Decimal(18, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  store  Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  prizes Prize[]
+  plays  GamePlay[]
+
+  @@index([storeId])
+}
+
+model Prize {
+  id          String    @id
+  gameId      String
+  label       String
+  type        PrizeType @default(NONE)
+  pointsValue Int       @default(0) // when type = POINTS
+  rewardId    String? // when type = REWARD (a loyalty Reward)
+  weight      Int       @default(1) // relative probability weight (>=0)
+  stock       Int       @default(-1) // -1 = unlimited
+  awarded     Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  game  Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  plays GamePlay[]
+
+  @@index([gameId])
+}
+
+model GamePlay {
+  id         String         @id
+  gameId     String
+  storeId    String
+  customerId String?
+  prizeId    String?
+  status     GamePlayStatus @default(REVEALED)
+  won        Boolean        @default(false)
+  paymentId  String? // the payment that earned this play (auto-issue idempotency)
+  createdAt  DateTime       @default(now())
+  revealedAt DateTime?
+
+  game  Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  prize Prize? @relation(fields: [prizeId], references: [id])
+
+  @@unique([gameId, paymentId]) // one auto-issued play per payment per game
+  @@index([gameId])
+  @@index([customerId])
+  @@index([storeId, status])
 }
 
 model Referral {
