@@ -153,6 +153,19 @@ enum ConnectorType {
   WEBHOOK
 }
 
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  REVENUE
+  EXPENSE
+  EQUITY
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -760,6 +773,52 @@ model AiUsageLog {
 
   @@index([storeId, createdAt])
   @@index([feature])
+}
+
+// ---------------------------------------------------------------------------
+// Double-entry ledger (Domain 13 — financial assurance). Append-only: journals
+// and entries are never updated or deleted; corrections are new balancing
+// journals. Every JournalEntry's lines sum to zero (debits == credits).
+// ---------------------------------------------------------------------------
+
+model LedgerAccount {
+  code    String            @id // e.g. settlement_clearing, merchant_payable, fee_revenue
+  name    String
+  type    LedgerAccountType
+  entries LedgerEntry[]
+}
+
+/// A balanced financial transaction (its lines sum debits == credits).
+model JournalEntry {
+  id        String        @id
+  storeId   String?
+  event     String // payment.captured | payment.refunded | commission.accrued | commission.paid
+  reference String? // paymentId / commissionId — with `event` gives idempotency
+  currency  String
+  createdAt DateTime      @default(now())
+  lines     LedgerEntry[]
+
+  @@unique([event, reference])
+  @@index([storeId, createdAt])
+}
+
+/// A single debit or credit line within a journal.
+model LedgerEntry {
+  id          String          @id
+  journalId   String
+  accountCode String
+  storeId     String?
+  direction   LedgerDirection
+  amount      Decimal         @db.Decimal(20, 4)
+  currency    String
+  createdAt   DateTime        @default(now())
+
+  journal JournalEntry  @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  account LedgerAccount @relation(fields: [accountCode], references: [code])
+
+  @@index([accountCode, currency])
+  @@index([storeId])
+  @@index([journalId])
 }
 
 /// An installed third-party connector (Slack / Zapier / generic webhook) that

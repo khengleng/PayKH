@@ -18,6 +18,7 @@ const NAV = [
   { href: '/risk', label: 'Risk', icon: '🛡️' },
   { href: '/copilot', label: 'Copilot', icon: '✨' },
   { href: '/settlements', label: 'Settlements', icon: '🏦' },
+  { href: '/ledger', label: 'Ledger', icon: '📒' },
   { href: '/keys', label: 'API Keys', icon: '🔑' },
   { href: '/webhooks', label: 'Webhooks', icon: '🔔' },
   { href: '/marketplace', label: 'Marketplace', icon: '🧩' },

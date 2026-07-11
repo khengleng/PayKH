@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
+import { LedgerService } from '../ledger/ledger.service';
 
 export class UpdateReferralProgramDto {
   @IsOptional() @IsBoolean() active?: boolean;
@@ -34,7 +35,7 @@ export class ReviewReferralDto {
 export class ReferralsService {
   private readonly logger = new Logger('Referrals');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly ledger: LedgerService) {}
 
   private async assertStore(user: AuthUser, storeId: string, perm: 'payment:read' | 'store:write') {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
@@ -249,9 +250,10 @@ export class ReferralsService {
     if (amount.lte(0)) return;
 
     try {
+      const commissionId = prefixedId('rc');
       await this.prisma.referralCommission.create({
         data: {
-          id: prefixedId('rc'),
+          id: commissionId,
           storeId: payment.storeId,
           referralId: referral.id,
           referrerCustomerId: referral.referrerCustomerId,
@@ -263,6 +265,8 @@ export class ReferralsService {
           status: referral.flagged ? 'HELD' : 'ACCRUED',
         },
       });
+      // Double-entry ledger: accrue the commission liability + expense.
+      await this.ledger.postCommissionAccrued(commissionId, payment.storeId, payment.currency, amount);
       this.logger.log(`commission accrued: referral ${referral.id} +${amount.toFixed(2)} ${payment.currency} on ${payment.id}`);
     } catch (e) {
       // Unique violation on paymentId => already accrued (idempotent replay).
@@ -338,6 +342,8 @@ export class ReferralsService {
       where: { id: { in: pending.map((p) => p.id) } },
       data: { status: 'PAID', paidAt, payoutRef: dto.payoutRef ?? null },
     });
+    // Double-entry ledger: post the payout (DR commission payable, CR clearing).
+    for (const p of pending) await this.ledger.postCommissionPaid(p.id, p.storeId, p.currency, p.amount);
     const totals = new Map<string, Prisma.Decimal>();
     for (const p of pending) totals.set(p.currency, (totals.get(p.currency) ?? new Prisma.Decimal(0)).add(p.amount));
     this.logger.log(`commissions paid: ${pending.length} entries in store ${storeId}`);

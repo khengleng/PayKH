@@ -12,9 +12,10 @@ import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { GamesModule } from '../games/games.module';
 import { RiskModule } from '../risk/risk.module';
+import { LedgerModule } from '../ledger/ledger.module';
 
 @Module({
-  imports: [WebhooksModule, BillingModule, BranchesModule, CustomersModule, LoyaltyModule, ReferralsModule, GamesModule, RiskModule],
+  imports: [WebhooksModule, BillingModule, BranchesModule, CustomersModule, LoyaltyModule, ReferralsModule, GamesModule, RiskModule, LedgerModule],
   controllers: [PaymentsController, CheckoutController],
   providers: [PaymentsService, PaymentEventsService, ApiKeyGuard],
   exports: [PaymentsService],

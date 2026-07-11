@@ -8,6 +8,18 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Persisted double-entry ledger & reconciliation** (Domain 13 — financial
+  assurance): an **append-only** journal (`LedgerAccount`/`JournalEntry`/
+  `LedgerEntry`) where every journal's debits equal its credits. Money events post
+  balanced journals automatically — **payment captured** (Dr clearing / Cr
+  merchant-payable + fee-revenue), **refunds** (proportional reversal), and
+  **affiliate commission** accrual/payout — each idempotent per event+reference.
+  A **reconciliation engine** runs five checks (journal integrity, trial-balance
+  zero-sum per currency, paid-payment coverage, fee-revenue tie-out, merchant-
+  payable tie-out) and reports breaks; an idempotent **backfill** posts historical
+  records. Dashboard **Ledger** page (trial balance, recon status, journals) +
+  admin platform-wide recon. This replaces the earlier *derived* ledger view for
+  audit-grade balances.
 - **Ecosystem products & Shared services** (Domain 20): an ecosystem registry
   (`GET /ecosystem/products`) mapping the suffixed product lines — **Merchant
   PayKH** (dashboard PWA, live), **Fortune PayKH** (games, live), **Customer

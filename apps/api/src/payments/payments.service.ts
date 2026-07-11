@@ -31,6 +31,7 @@ import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { GamesService } from '../games/games.service';
 import { RiskService } from '../risk/risk.service';
+import { LedgerService } from '../ledger/ledger.service';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -58,6 +59,7 @@ export class PaymentsService {
     private readonly referrals: ReferralsService,
     private readonly games: GamesService,
     private readonly risk: RiskService,
+    private readonly ledger: LedgerService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -376,6 +378,14 @@ export class PaymentsService {
       return created;
     });
 
+    // Double-entry ledger: post this refund slice (best-effort, idempotent by refundId).
+    try {
+      const store = await this.prisma.store.findUnique({ where: { id: payment.storeId }, select: { feeBps: true } });
+      await this.ledger.postRefund(payment, refundAmount, store?.feeBps ?? 0, refundId);
+    } catch (e) {
+      this.logger.warn(`ledger postRefund failed for ${paymentId}: ${e}`);
+    }
+
     // Full refund → transition to refunded (emits payment.refunded). Partial →
     // status stays paid, so emit the refund event directly.
     if (fullyRefunded) {
@@ -530,6 +540,13 @@ export class PaymentsService {
         await this.referrals.accrueCommission(result); // affiliate commission
         await this.games.issueForPayment(result); // auto-issue scratch cards
         await this.risk.scorePayment(result); // fraud/risk scoring
+        // Double-entry ledger: post the captured payment (best-effort).
+        try {
+          const store = await this.prisma.store.findUnique({ where: { id: result.storeId }, select: { feeBps: true } });
+          await this.ledger.postPaymentCaptured(result, store?.feeBps ?? 0);
+        } catch (e) {
+          this.logger.warn(`ledger postPaymentCaptured failed for ${result.id}: ${e}`);
+        }
       }
       this.events.publish({ paymentId, status: to, at: new Date().toISOString() });
       if (STATUS_TO_EVENT[to]) {
