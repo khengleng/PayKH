@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Prisma, Payment, Referral } from '@prisma/client';
 import { prefixedId, randomBase58 } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,6 +22,11 @@ export class PayoutCommissionsDto {
   @IsOptional() @IsString() referrerCustomerId?: string;
   /** Optional external reference (bank transfer id, etc.) recorded on payout. */
   @IsOptional() @IsString() payoutRef?: string;
+}
+
+export class ReviewReferralDto {
+  /** clear = release held commissions; void = cancel them. */
+  @IsIn(['clear', 'void']) action!: 'clear' | 'void';
 }
 
 @Injectable()
@@ -111,13 +116,50 @@ export class ReferralsService {
     if (!referrer || referrer.id === refereeId) return; // unknown code or self-referral
     const existing = await this.prisma.referral.findUnique({ where: { refereeCustomerId: refereeId } });
     if (existing) return; // already referred
+    const referee = await this.prisma.customer.findUnique({ where: { id: refereeId } });
+
+    const riskFlags = await this.screenReferral(storeId, referrer, referee);
+    const flagged = riskFlags.length > 0;
+
     await this.prisma.$transaction([
       this.prisma.referral.create({
-        data: { id: prefixedId('ref'), storeId, referrerCustomerId: referrer.id, refereeCustomerId: refereeId, code, status: 'PENDING' },
+        data: { id: prefixedId('ref'), storeId, referrerCustomerId: referrer.id, refereeCustomerId: refereeId, code, status: 'PENDING', flagged, riskFlags },
       }),
       this.prisma.customer.update({ where: { id: refereeId }, data: { referredByCustomerId: referrer.id } }),
     ]);
-    this.logger.log(`referral linked: ${referrer.id} -> ${refereeId}`);
+    this.logger.log(`referral linked: ${referrer.id} -> ${refereeId}${flagged ? ` [FLAGGED: ${riskFlags.join(',')}]` : ''}`);
+  }
+
+  // --------------------------------------------------------- fraud screening
+  private static normEmail(e?: string | null) { return e ? e.trim().toLowerCase() : ''; }
+  private static normPhone(p?: string | null) { return p ? p.replace(/\D/g, '') : ''; }
+  /** Max referrals a single referrer may create within 24h before being flagged. */
+  private static readonly VELOCITY_24H = 10;
+
+  /**
+   * Screen a prospective referral for fraud signals, returning risk flags
+   * (empty = clean). Checks shared contact details (self-referral via a second
+   * account) and referrer velocity. Cheap, synchronous heuristics — no external
+   * calls; runs at link time.
+   */
+  private async screenReferral(
+    storeId: string,
+    referrer: { id: string; email: string | null; phone: string | null },
+    referee: { id: string; email: string | null; phone: string | null } | null,
+  ): Promise<string[]> {
+    const flags: string[] = [];
+    if (referee) {
+      const re = ReferralsService.normEmail(referrer.email);
+      const ee = ReferralsService.normEmail(referee.email);
+      if (re && ee && re === ee) flags.push('shared_email');
+      const rp = ReferralsService.normPhone(referrer.phone);
+      const ep = ReferralsService.normPhone(referee.phone);
+      if (rp && ep && rp === ep) flags.push('shared_phone');
+    }
+    const since = new Date(Date.now() - 86_400_000);
+    const recent = await this.prisma.referral.count({ where: { storeId, referrerCustomerId: referrer.id, createdAt: { gte: since } } });
+    if (recent >= ReferralsService.VELOCITY_24H) flags.push('velocity');
+    return flags;
   }
 
   // ---------------------------------------------------- reward on first pay
@@ -129,6 +171,7 @@ export class ReferralsService {
     if (!payment.customerId) return;
     const referral = await this.prisma.referral.findUnique({ where: { refereeCustomerId: payment.customerId } });
     if (!referral || referral.status === 'REWARDED') return;
+    if (referral.flagged) return; // held for fraud review — reward once cleared
     const program = await this.prisma.referralProgram.findUnique({ where: { storeId: payment.storeId } });
     if (!program?.active) return;
 
@@ -188,7 +231,8 @@ export class ReferralsService {
           amount, // Decimal is stored at 2dp (schema @db.Decimal(18,2))
           currency: payment.currency,
           bps: program.commissionBps,
-          status: 'ACCRUED',
+          // Flagged referrals accrue as HELD — excluded from payout until review.
+          status: referral.flagged ? 'HELD' : 'ACCRUED',
         },
       });
       this.logger.log(`commission accrued: referral ${referral.id} +${amount.toFixed(2)} ${payment.currency} on ${payment.id}`);
@@ -296,8 +340,49 @@ export class ReferralsService {
       status: r.status.toLowerCase(),
       reward_referrer: r.rewardPointsReferrer,
       reward_referee: r.rewardPointsReferee,
+      flagged: r.flagged,
+      risk_flags: r.riskFlags,
+      reviewed_at: r.reviewedAt?.toISOString() ?? null,
       created_at: r.createdAt.toISOString(),
       rewarded_at: r.rewardedAt?.toISOString() ?? null,
     };
+  }
+
+  // --------------------------------------------------------- fraud review
+  /** List referrals flagged by fraud screening and awaiting review. */
+  async listFlagged(user: AuthUser, storeId: string) {
+    await this.assertStore(user, storeId, 'payment:read');
+    const rows = await this.prisma.referral.findMany({ where: { storeId, flagged: true }, orderBy: { createdAt: 'desc' }, take: 200 });
+    const nameOf = await this.nameMap(rows.flatMap((r) => [r.referrerCustomerId, r.refereeCustomerId]));
+    return rows.map((r) => this.serialize(r, nameOf));
+  }
+
+  /**
+   * Resolve a flagged referral. `clear` unflags it and releases any HELD
+   * commissions to ACCRUED (payable). `void` cancels its HELD commissions and
+   * keeps the referral flagged (rejected). Both stamp reviewedAt.
+   */
+  async reviewReferral(user: AuthUser, storeId: string, referralId: string, action: 'clear' | 'void') {
+    await this.assertStore(user, storeId, 'store:write');
+    const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
+    if (!referral || referral.storeId !== storeId) throw ApiError.paymentNotFound('Referral not found');
+
+    const reviewedAt = new Date();
+    if (action === 'clear') {
+      await this.prisma.$transaction([
+        this.prisma.referral.update({ where: { id: referralId }, data: { flagged: false, reviewedAt } }),
+        this.prisma.referralCommission.updateMany({ where: { referralId, status: 'HELD' }, data: { status: 'ACCRUED' } }),
+      ]);
+      this.logger.log(`referral ${referralId} cleared — held commissions released`);
+    } else {
+      await this.prisma.$transaction([
+        this.prisma.referral.update({ where: { id: referralId }, data: { reviewedAt } }),
+        this.prisma.referralCommission.updateMany({ where: { referralId, status: 'HELD' }, data: { status: 'VOID' } }),
+      ]);
+      this.logger.log(`referral ${referralId} voided — held commissions cancelled`);
+    }
+    const fresh = await this.prisma.referral.findUnique({ where: { id: referralId } });
+    const nameOf = await this.nameMap([referral.referrerCustomerId, referral.refereeCustomerId]);
+    return this.serialize(fresh as Referral, nameOf);
   }
 }

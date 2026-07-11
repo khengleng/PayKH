@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Referral & Affiliate → Fraud checks** (Domain 8): referrals are screened at
+  link time for **shared contact** (same email/phone as the referrer → likely a
+  self-referral via a second account) and **velocity** (a referrer creating >10
+  referrals in 24h). Flagged referrals **withhold the points reward** and accrue
+  commissions as **HELD** (excluded from payout). A dashboard review panel lets
+  the merchant **clear** (release held commissions) or **void** (cancel them).
 - **Referral & Affiliate → Commission** (Domain 8): affiliate commission — the
   referrer earns a configurable **% (basis points) of every paid payment** their
   referees make (not just the one-time points bonus), optionally limited to a

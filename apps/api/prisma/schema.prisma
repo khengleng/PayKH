@@ -318,6 +318,7 @@ model ReferralProgram {
 
 enum CommissionStatus {
   ACCRUED
+  HELD // accrued but withheld from payout (fraud review)
   PAID
   VOID
 }
@@ -351,11 +352,18 @@ model Referral {
   status               ReferralStatus @default(PENDING)
   rewardPointsReferrer Int            @default(0)
   rewardPointsReferee  Int            @default(0)
+  // Fraud screening: when riskFlags is non-empty the referral is held —
+  // points reward is withheld and commissions accrue as HELD (excluded from
+  // payout) until a merchant clears or voids it.
+  flagged              Boolean        @default(false)
+  riskFlags            String[]       @default([])
+  reviewedAt           DateTime?
   createdAt            DateTime       @default(now())
   rewardedAt           DateTime?
 
   @@index([storeId])
   @@index([referrerCustomerId])
+  @@index([storeId, flagged])
 }
 
 model Reward {

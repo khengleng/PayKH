@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
-import { PayoutCommissionsDto, ReferralsService, UpdateReferralProgramDto } from './referrals.service';
+import { PayoutCommissionsDto, ReferralsService, ReviewReferralDto, UpdateReferralProgramDto } from './referrals.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { ApiKeyGuard, getApiKeyContext } from '../auth/api-key.guard';
@@ -49,6 +49,18 @@ export class ReferralsDashboardController {
   @ApiOperation({ summary: 'Mark accrued commissions as paid (all or one referrer)' })
   payout(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: PayoutCommissionsDto) {
     return this.referrals.payoutCommissions(user, storeId, dto);
+  }
+
+  @Get('stores/:storeId/referrals/flagged')
+  @ApiOperation({ summary: 'List fraud-flagged referrals awaiting review' })
+  flagged(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.referrals.listFlagged(user, storeId);
+  }
+
+  @Post('stores/:storeId/referrals/:referralId/review')
+  @ApiOperation({ summary: 'Review a flagged referral: clear (release) or void (cancel) held commissions' })
+  review(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Param('referralId') referralId: string, @Body() dto: ReviewReferralDto) {
+    return this.referrals.reviewReferral(user, storeId, referralId, dto.action);
   }
 }
 

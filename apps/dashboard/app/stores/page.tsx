@@ -365,7 +365,7 @@ function RewardsCard({ storeId }: { storeId: string }) {
   );
 }
 
-interface Referral { id: string; referrer: string; referee: string; code: string; status: string; reward_referrer: number; reward_referee: number }
+interface Referral { id: string; referrer: string; referee: string; code: string; status: string; reward_referrer: number; reward_referee: number; flagged?: boolean; risk_flags?: string[] }
 interface CommissionSummary { referrer: string; referrer_customer_id: string; currency: string; accrued: string; paid: string; count: number }
 
 function ReferralsCard({ storeId }: { storeId: string }) {
@@ -375,6 +375,7 @@ function ReferralsCard({ storeId }: { storeId: string }) {
   const [commissionPct, setCommissionPct] = useState('0');
   const [durationDays, setDurationDays] = useState('');
   const [rows, setRows] = useState<Referral[]>([]);
+  const [flagged, setFlagged] = useState<Referral[]>([]);
   const [summary, setSummary] = useState<CommissionSummary[]>([]);
   const [msg, setMsg] = useState('');
 
@@ -384,9 +385,15 @@ function ReferralsCard({ storeId }: { storeId: string }) {
     setCommissionPct((p.commission_bps / 100).toString());
     setDurationDays(p.commission_duration_days ? String(p.commission_duration_days) : '');
     setRows(await api<Referral[]>(`/dashboard/stores/${storeId}/referrals`));
+    setFlagged(await api<Referral[]>(`/dashboard/stores/${storeId}/referrals/flagged`));
     setSummary(await api<CommissionSummary[]>(`/dashboard/stores/${storeId}/commissions/summary`));
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [storeId]);
+
+  const review = async (referralId: string, action: 'clear' | 'void') => {
+    await api(`/dashboard/stores/${storeId}/referrals/${referralId}/review`, { method: 'POST', body: { action } });
+    setMsg(action === 'clear' ? 'Cleared — commissions released' : 'Voided'); setTimeout(() => setMsg(''), 2000); await load();
+  };
 
   const save = async () => {
     await api(`/dashboard/stores/${storeId}/referral-program`, { method: 'PUT', body: {
@@ -416,6 +423,22 @@ function ReferralsCard({ storeId }: { storeId: string }) {
         <Button onClick={save}>Save</Button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
       </div>
+      {flagged.length > 0 && (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <div className="mb-2 text-sm font-medium text-amber-800">⚠ Fraud review — {flagged.length} flagged referral{flagged.length > 1 ? 's' : ''}</div>
+          <ul className="divide-y divide-amber-100 text-sm">
+            {flagged.map((r) => (
+              <li key={r.id} className="flex items-center justify-between py-2">
+                <span>{r.referrer} → {r.referee} <span className="ml-1 rounded bg-amber-200 px-1.5 py-0.5 text-xs text-amber-900">{(r.risk_flags ?? []).join(', ')}</span></span>
+                <span className="flex items-center gap-2">
+                  <button onClick={() => review(r.id, 'clear')} className="rounded-md border border-emerald-300 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50">Clear</button>
+                  <button onClick={() => review(r.id, 'void')} className="rounded-md border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50">Void</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {summary.length > 0 && (
         <div className="mb-3 rounded-lg border border-slate-100 p-3">
           <div className="mb-2 flex items-center justify-between">
