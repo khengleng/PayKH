@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { MfaService } from './mfa.service';
-import { ForgotPasswordDto, LoginDto, MfaCodeDto, RegisterDto, ResetPasswordDto } from './dto';
+import { ChangePasswordDto, ForgotPasswordDto, LoginDto, MfaCodeDto, RegisterDto, ResetPasswordDto } from './dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser, AuthUser } from './current-user';
 import { AuditService } from '../audit/audit.service';
@@ -76,6 +76,14 @@ export class AuthController {
   @ApiOperation({ summary: 'Get the current user + organizations' })
   async me(@CurrentUser() user: AuthUser) {
     return this.auth.me(user.userId);
+  }
+
+  @Post('change-password')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Change password (requires current password)' })
+  changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
+    return this.auth.changePassword(user.userId, dto.currentPassword, dto.newPassword);
   }
 
   @Post('mfa/setup')

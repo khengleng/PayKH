@@ -87,6 +87,7 @@ export default function AdminPage() {
 
       <SupportConsole />
       <SystemSettings />
+      <ChangePassword />
 
       {verifs.length > 0 && (
         <>
@@ -274,6 +275,44 @@ function SystemSettings() {
           </Card>
         ))}
       </div>
+    </>
+  );
+}
+
+function ChangePassword() {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg(null);
+    if (next.length < 8) { setMsg({ ok: false, text: 'New password must be at least 8 characters.' }); return; }
+    if (next !== confirm) { setMsg({ ok: false, text: 'Passwords do not match.' }); return; }
+    setBusy(true);
+    try {
+      await api('/auth/change-password', { method: 'POST', body: { currentPassword: current, newPassword: next } });
+      setMsg({ ok: true, text: 'Password changed ✓' }); setCurrent(''); setNext(''); setConfirm('');
+    } catch (err: any) { setMsg({ ok: false, text: err.message || 'Failed' }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <h2 className="mb-2 mt-6 text-lg font-semibold">Change password</h2>
+      <Card>
+        <form onSubmit={submit} className="flex max-w-md flex-col gap-3">
+          <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="Current password" required className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password (min 8 chars)" required className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Confirm new password" required className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Update password'}</Button>
+            {msg && <span className={`text-sm ${msg.ok ? 'text-emerald-600' : 'text-red-600'}`}>{msg.text}</span>}
+          </div>
+        </form>
+      </Card>
     </>
   );
 }

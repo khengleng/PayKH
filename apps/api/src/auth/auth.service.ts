@@ -76,6 +76,21 @@ export class AuthService {
     return { ok: true };
   }
 
+  /** Change password for a logged-in user (requires the current password). */
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ ok: true }> {
+    if (!newPassword || newPassword.length < 8) throw ApiError.invalidRequest('New password must be at least 8 characters');
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.passwordHash) throw ApiError.unauthorized();
+    const ok = await verifyPassword(currentPassword, user.passwordHash);
+    if (!ok) throw ApiError.invalidRequest('Current password is incorrect');
+    const passwordHash = await hashPassword(newPassword);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    // Invalidate any outstanding reset tokens after a change.
+    await this.prisma.passwordResetToken.deleteMany({ where: { userId, usedAt: null } });
+    this.logger.log(`password changed for user ${userId}`);
+    return { ok: true };
+  }
+
   /** Complete a password reset with a valid, unexpired, unused token. */
   async resetPassword(rawToken: string, newPassword: string): Promise<{ ok: true }> {
     if (!newPassword || newPassword.length < 8) throw ApiError.invalidRequest('Password must be at least 8 characters');
