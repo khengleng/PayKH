@@ -81,6 +81,28 @@ async function seedDemoMerchant() {
   console.log('  ---------------------------------------------\n');
 }
 
+/** Add developer + analyst teammates to the demo org so every role is testable. */
+async function seedDemoTeam() {
+  const owner = await prisma.user.findUnique({ where: { email: DEMO_EMAIL } });
+  if (!owner) return;
+  const membership = await prisma.organizationMember.findFirst({ where: { userId: owner.id }, select: { organizationId: true } });
+  if (!membership) return;
+  const orgId = membership.organizationId;
+
+  const teammates: { email: string; name: string; role: 'DEVELOPER' | 'ANALYST' }[] = [
+    { email: 'dev@demo.paykh.dev', name: 'Demo Developer', role: 'DEVELOPER' },
+    { email: 'analyst@demo.paykh.dev', name: 'Demo Analyst', role: 'ANALYST' },
+  ];
+  for (const t of teammates) {
+    const existing = await prisma.user.findUnique({ where: { email: t.email } });
+    if (existing) { console.log(`• ${t.role} already exists (${t.email}) — skipping`); continue; }
+    const passwordHash = await hashPassword(DEMO_PASSWORD);
+    const user = await prisma.user.create({ data: { email: t.email, passwordHash, name: t.name } });
+    await prisma.organizationMember.create({ data: { organizationId: orgId, userId: user.id, role: t.role } });
+    console.log(`✓ Seeded ${t.role}: ${t.email} / ${DEMO_PASSWORD}`);
+  }
+}
+
 async function seedPlatformAdmin() {
   const email = 'admin@paykh.dev';
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -102,6 +124,7 @@ async function seedPlatformAdmin() {
 async function main() {
   await seedPlans();
   await seedDemoMerchant();
+  await seedDemoTeam();
   await seedPlatformAdmin();
 }
 

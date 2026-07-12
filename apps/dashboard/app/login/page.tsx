@@ -31,7 +31,10 @@ export default function LoginPage() {
       tokenStore.set(result.token);
       if (result.organization?.id) orgStore.set(result.organization.id);
       const next = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
-      router.push(next || '/overview');
+      if (next) { router.push(next); return; }
+      // Platform admins land on the console (they have no merchant store).
+      const me = await api<{ is_platform_admin?: boolean; organizations: unknown[] }>('/auth/me').catch(() => null);
+      router.push(me?.is_platform_admin && me.organizations.length === 0 ? '/admin' : '/overview');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {

@@ -19,6 +19,7 @@ export interface Me {
   id: string;
   email: string;
   name: string | null;
+  is_platform_admin?: boolean;
   organizations: { id: string; name: string; role: string }[];
 }
 
