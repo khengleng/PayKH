@@ -86,6 +86,7 @@ export default function AdminPage() {
       )}
 
       <SupportConsole />
+      <SystemSettings />
 
       {verifs.length > 0 && (
         <>
@@ -215,6 +216,64 @@ function SupportConsole() {
           </div>
         )}
       </Card>
+    </>
+  );
+}
+
+interface Setting { key: string; label: string; group: string; secret: boolean; configured: boolean; source: string; preview: string | null }
+
+function SystemSettings() {
+  const [settings, setSettings] = useState<Setting[]>([]);
+  const [edit, setEdit] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState('');
+
+  const load = () => api<{ settings: Setting[] }>('/admin/settings').then((d) => setSettings(d.settings)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const save = async (key: string) => {
+    const value = edit[key];
+    if (!value) return;
+    await api(`/admin/settings/${key}`, { method: 'PUT', body: { value } });
+    setEdit((e) => ({ ...e, [key]: '' })); setMsg(`${key} saved`); setTimeout(() => setMsg(''), 2000); await load();
+  };
+  const clear = async (key: string) => { await api(`/admin/settings/${key}`, { method: 'DELETE' }); await load(); };
+
+  const groups = [...new Set(settings.map((s) => s.group))];
+  const badge = (src: string) => src === 'db' ? 'bg-emerald-50 text-emerald-700' : src === 'env' ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-700';
+
+  return (
+    <>
+      <h2 className="mb-2 mt-6 text-lg font-semibold">System settings</h2>
+      <p className="mb-3 text-sm text-slate-500">Integration keys, encrypted at rest. A saved value overrides the environment variable — no redeploy needed. {msg && <span className="text-emerald-600">· {msg}</span>}</p>
+      <div className="space-y-4">
+        {groups.map((g) => (
+          <Card key={g}>
+            <div className="mb-2 text-sm font-semibold text-slate-700">{g}</div>
+            <div className="space-y-3">
+              {settings.filter((s) => s.group === g).map((s) => (
+                <div key={s.key} className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-48 flex-1">
+                    <div className="text-sm font-medium">{s.label}</div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className={`rounded-full px-2 py-0.5 ${badge(s.source)}`}>{s.source}</span>
+                      {s.preview && <span className="font-mono text-slate-400">{s.preview}</span>}
+                    </div>
+                  </div>
+                  <input
+                    type={s.secret ? 'password' : 'text'}
+                    value={edit[s.key] ?? ''}
+                    onChange={(e) => setEdit((p) => ({ ...p, [s.key]: e.target.value }))}
+                    placeholder={s.configured ? 'Replace…' : 'Set value…'}
+                    className="w-56 rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+                  />
+                  <Button onClick={() => save(s.key)}>Save</Button>
+                  {s.source === 'db' && <button onClick={() => clear(s.key)} className="text-xs text-red-500 hover:underline">Clear</button>}
+                </div>
+              ))}
+            </div>
+          </Card>
+        ))}
+      </div>
     </>
   );
 }

@@ -827,6 +827,16 @@ model LedgerEntry {
   @@index([journalId])
 }
 
+/// Platform-level integration settings (AI/email/messaging keys) managed from
+/// the admin console instead of env vars. Values are AES-256-GCM encrypted at
+/// rest; a DB value takes precedence over the corresponding env var.
+model SystemSetting {
+  key             String   @id // anthropic_api_key | resend_api_key | email_from | ...
+  valueCiphertext String   @db.Text
+  updatedAt       DateTime @updatedAt
+  updatedByUserId String?
+}
+
 /// A no-code shareable payment link or invoice. Opening it mints a Payment for
 /// the store (no API key needed — the link id is the authorization) and hands
 /// off to the hosted checkout. `amount` null = the payer enters the amount.

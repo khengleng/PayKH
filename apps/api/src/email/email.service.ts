@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.module';
 
 export interface EmailMessage {
   to: string;
@@ -9,23 +10,22 @@ export interface EmailMessage {
 }
 
 /**
- * Transactional email via Resend (https://resend.com). When RESEND_API_KEY is
- * unset, falls back to a log transport so non-prod environments work without an
- * email provider. Sends are best-effort and never throw into the caller.
+ * Transactional email via Resend (https://resend.com). The API key + from
+ * address are resolved at send time from system settings (encrypted DB value →
+ * env fallback), so an admin can configure Resend in-app without a redeploy.
+ * When no key is configured it falls back to a log transport. Best-effort —
+ * never throws into the caller.
  */
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger('Email');
-  private readonly apiKey?: string;
-  private readonly from: string;
 
-  constructor(config: ConfigService) {
-    this.apiKey = config.get<string>('resendApiKey');
-    this.from = config.get<string>('emailFrom') as string;
-  }
+  constructor(private readonly config: ConfigService, private readonly settings: SettingsService) {}
 
   async send(message: EmailMessage): Promise<void> {
-    if (!this.apiKey) {
+    const apiKey = await this.settings.resolve('resend_api_key');
+    const from = (await this.settings.resolve('email_from')) ?? 'PayKH <noreply@paykh.cambobia.com>';
+    if (!apiKey) {
       this.logger.log(`[log-transport] email to=${message.to} subject="${message.subject}"`);
       return;
     }
@@ -33,11 +33,11 @@ export class EmailService {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: this.from,
+          from,
           to: message.to,
           subject: message.subject,
           html: message.html,

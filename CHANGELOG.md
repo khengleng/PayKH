@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **System Settings** (admin): manage platform integration keys — **Anthropic**
+  (AI Copilot), **Resend** (email + from-address) — from the admin console
+  instead of Railway env vars. Values are **AES-256-GCM encrypted at rest**
+  (`SystemSetting`), read at runtime with a short cache and **env-var fallback**,
+  and never returned raw (masked preview only). Changing a key takes effect with
+  **no redeploy**. `GET/PUT/DELETE /admin/settings/:key` (platform admin).
 - **Khmer localization (ខ្មែរ) + KHR-first money** (GTM — Cambodia): the entire
   **customer-facing checkout** (pay, payment-link, receipt pages) is now bilingual
   Khmer/English with a per-device language toggle, defaulting to **Khmer**; Riel
