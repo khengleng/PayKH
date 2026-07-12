@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Shell } from '@/components/Shell';
 import { Card, PageTitle } from '@/components/ui';
+import { AreaChart } from '@/components/Charts';
 import { api } from '@/lib/api';
 
 interface Series { total_revenue: string; total_count: number; avg_order_value: string; daily: { date: string; revenue: number; count: number }[] }
@@ -58,7 +59,10 @@ function Content({ storeId, orgId }: { storeId: string; orgId: string }) {
             <h3 className="font-semibold">Revenue — last 30 days + forecast</h3>
             <div className="text-sm text-slate-500">Total ${series.total_revenue} · AOV ${series.avg_order_value}</div>
           </div>
-          <Chart history={series.daily} forecast={forecast?.forecast ?? []} />
+          <AreaChart
+            data={series.daily.map((d) => ({ label: d.date.slice(5), value: d.revenue }))}
+            forecast={(forecast?.forecast ?? []).map((f) => ({ label: f.date.slice(5), value: Number(f.projected_revenue) }))}
+          />
           {forecast && (
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
               <Metric label="7d moving avg" value={`$${forecast.moving_avg_7d}`} />
@@ -132,20 +136,5 @@ function Metric({ label, value, sub, up }: { label: string; value: React.ReactNo
       <div className="text-lg font-semibold">{value}</div>
       {sub && <div className={`text-xs ${up ? 'text-emerald-600' : 'text-red-500'}`}>{sub}</div>}
     </div>
-  );
-}
-
-function Chart({ history, forecast }: { history: { date: string; revenue: number }[]; forecast: { date: string; projected_revenue: string }[] }) {
-  const points = [...history.map((h) => ({ v: h.revenue, f: false })), ...forecast.map((f) => ({ v: Number(f.projected_revenue), f: true }))];
-  if (points.length === 0) return <p className="text-sm text-slate-400">No data yet.</p>;
-  const max = Math.max(...points.map((p) => p.v), 1);
-  const W = 100, H = 40, bw = W / points.length;
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 160 }} preserveAspectRatio="none">
-      {points.map((p, i) => {
-        const h = (p.v / max) * (H - 2);
-        return <rect key={i} x={i * bw + 0.4} y={H - h} width={bw - 0.8} height={h} fill={p.f ? '#93c5fd' : '#1e5bd6'} opacity={p.f ? 0.7 : 1} rx={0.3} />;
-      })}
-    </svg>
   );
 }

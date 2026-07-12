@@ -27,6 +27,7 @@ import { WalletModule } from './wallet/wallet.module';
 import { SecurityModule } from './security/security.module';
 import { EcosystemModule } from './ecosystem/ecosystem.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { AccessModule } from './access/access.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -69,6 +70,7 @@ import { RequestIdMiddleware } from './common/request-context';
     SecurityModule,
     EcosystemModule,
     LedgerModule,
+    AccessModule,
     NotificationsModule,
     ApiKeysModule,
     PaymentsModule,

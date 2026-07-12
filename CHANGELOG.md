@@ -8,6 +8,17 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **ABAC policy layer** (Domain 2, on top of RBAC): attribute-based access control
+  — decisions from subject/resource/environment attributes. Policies: high-value
+  refunds (≥ $500) require **owner**; analysts can't write to **live** stores;
+  live API keys require **owner**; high-value refunds on a live store require
+  **MFA**. Enforced at dashboard refund + API-key creation. New `access` module
+  exposes the **RBAC role×permission matrix**, the ABAC policy catalogue, and a
+  decision-**simulator** (`/dashboard/orgs/:id/access/check`). Dashboard **Access
+  Control** page with the matrix + a live policy simulator. 8 unit tests.
+- **Portal visual polish v2**: replaced emoji nav with a bespoke **SVG line-icon
+  set**, and added dependency-free **charts** (gradient area chart with forecast
+  overlay) to Overview (30-day revenue) and Analytics.
 - **Automated E2E test suite + load harness** (go-live readiness): a booted-app
   integration suite (`npm run test:e2e`) covering the money paths — payment
   lifecycle, idempotency, illegal-transition guards, **balanced double-entry

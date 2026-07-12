@@ -6,50 +6,52 @@ import Link from 'next/link';
 import { api, tokenStore, storeStore } from '@/lib/api';
 import { Me, Store } from '@/lib/types';
 import { Logo, LogoMark } from '@/components/Logo';
+import { Icon } from '@/components/icons';
 
 const NAV_GROUPS: { title: string; items: { href: string; label: string; icon: string }[] }[] = [
   {
     title: 'Operate',
     items: [
-      { href: '/overview', label: 'Overview', icon: '📊' },
-      { href: '/payments', label: 'Payments', icon: '💳' },
-      { href: '/settlements', label: 'Settlements', icon: '🏦' },
-      { href: '/ledger', label: 'Ledger', icon: '📒' },
+      { href: '/overview', label: 'Overview', icon: 'overview' },
+      { href: '/payments', label: 'Payments', icon: 'payments' },
+      { href: '/settlements', label: 'Settlements', icon: 'settlements' },
+      { href: '/ledger', label: 'Ledger', icon: 'ledger' },
     ],
   },
   {
     title: 'Grow',
     items: [
-      { href: '/customers', label: 'Customers', icon: '👤' },
-      { href: '/segments', label: 'Segments', icon: '🎯' },
-      { href: '/campaigns', label: 'Campaigns', icon: '📣' },
-      { href: '/games', label: 'Games', icon: '🎰' },
-      { href: '/marketplace', label: 'Marketplace', icon: '🧩' },
+      { href: '/customers', label: 'Customers', icon: 'customers' },
+      { href: '/segments', label: 'Segments', icon: 'segments' },
+      { href: '/campaigns', label: 'Campaigns', icon: 'campaigns' },
+      { href: '/games', label: 'Games', icon: 'games' },
+      { href: '/marketplace', label: 'Marketplace', icon: 'marketplace' },
     ],
   },
   {
     title: 'Intelligence',
     items: [
-      { href: '/reports', label: 'Reports', icon: '📈' },
-      { href: '/analytics', label: 'Analytics', icon: '🔮' },
-      { href: '/risk', label: 'Risk', icon: '🛡️' },
-      { href: '/copilot', label: 'AI Copilot', icon: '✨' },
+      { href: '/reports', label: 'Reports', icon: 'reports' },
+      { href: '/analytics', label: 'Analytics', icon: 'analytics' },
+      { href: '/risk', label: 'Risk', icon: 'risk' },
+      { href: '/copilot', label: 'AI Copilot', icon: 'copilot' },
     ],
   },
   {
     title: 'Build',
     items: [
-      { href: '/keys', label: 'API Keys', icon: '🔑' },
-      { href: '/webhooks', label: 'Webhooks', icon: '🔔' },
+      { href: '/keys', label: 'API Keys', icon: 'keys' },
+      { href: '/webhooks', label: 'Webhooks', icon: 'webhooks' },
     ],
   },
   {
     title: 'Account',
     items: [
-      { href: '/stores', label: 'Stores', icon: '🏬' },
-      { href: '/team', label: 'Team', icon: '👥' },
-      { href: '/billing', label: 'Billing', icon: '💠' },
-      { href: '/settings', label: 'Settings', icon: '⚙️' },
+      { href: '/stores', label: 'Stores', icon: 'stores' },
+      { href: '/team', label: 'Team', icon: 'team' },
+      { href: '/access', label: 'Access', icon: 'access' },
+      { href: '/billing', label: 'Billing', icon: 'billing' },
+      { href: '/settings', label: 'Settings', icon: 'settings' },
     ],
   },
 ];
@@ -129,7 +131,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
                   }`}
                 >
                   {active && <span className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-brand-500" />}
-                  <span className="text-base">{item.icon}</span> {item.label}
+                  <Icon name={item.icon} className={active ? 'text-brand-600' : 'text-slate-400 group-hover:text-slate-600'} /> {item.label}
                 </Link>
               );
             })}

@@ -4,8 +4,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Shell } from '@/components/Shell';
 import { Card, Stat, StatSkeleton } from '@/components/ui';
+import { AreaChart } from '@/components/Charts';
 import { api } from '@/lib/api';
 import { Overview } from '@/lib/types';
+
+interface Series { total_revenue: string; daily: { date: string; revenue: number }[] }
 
 export default function OverviewPage() {
   return (
@@ -36,11 +39,13 @@ const QUICK_ACTIONS = [
 
 function OverviewContent({ storeId, live, storeName, email }: { storeId: string; live: boolean; storeName: string; email: string }) {
   const [data, setData] = useState<Overview | null>(null);
+  const [series, setSeries] = useState<Series | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setData(null); setError(null);
+    setData(null); setError(null); setSeries(null);
     api<Overview>(`/dashboard/stores/${storeId}/overview`).then(setData).catch((e) => setError(e.message));
+    api<Series>(`/dashboard/stores/${storeId}/analytics/timeseries`).then(setSeries).catch(() => {});
   }, [storeId]);
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; })();
@@ -73,6 +78,16 @@ function OverviewContent({ storeId, live, storeName, email }: { storeId: string;
             <Stat label="This month" value={data.month_paid_count} icon="📅" accent="brand" hint="paid" />
             <Stat label="Total payments" value={data.total_payments} icon="💳" accent="slate" />
           </div>
+
+          {series && series.daily.length > 0 && (
+            <Card className="mt-6">
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="font-semibold text-slate-900">Revenue — last 30 days</h2>
+                <span className="text-sm font-medium text-slate-500">${series.total_revenue}</span>
+              </div>
+              <AreaChart data={series.daily.map((d) => ({ label: d.date.slice(5), value: d.revenue }))} />
+            </Card>
+          )}
 
           <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">Payment status</h2>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

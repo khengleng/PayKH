@@ -7,21 +7,28 @@ import { AuthUser } from '../auth/current-user';
 import { requireMembership, requirePermission } from '../auth/rbac';
 import { formatAmount } from '../payments/amount.util';
 import { PaymentsService } from '../payments/payments.service';
+import { AccessService } from '../access/access.service';
 
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly payments: PaymentsService,
+    private readonly access: AccessService,
   ) {}
 
-  /** Refund a payment from the dashboard (requires payment:write). */
+  /** Refund a payment from the dashboard (requires payment:write + ABAC policies). */
   async refund(user: AuthUser, paymentId: string, dto: { amount?: string; reason?: string }) {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw ApiError.paymentNotFound();
     const store = await this.prisma.store.findUnique({ where: { id: payment.storeId } });
     if (!store) throw ApiError.paymentNotFound('Store not found');
     requirePermission(user, store.organizationId, 'payment:write');
+    // ABAC: high-value / live-store refunds may need a higher role or MFA.
+    const refundAmount = dto.amount ? Number(dto.amount) : Number(payment.amount) - Number(payment.refundedAmount);
+    await this.access.enforce(user, store.organizationId, 'payment:refund', {
+      type: 'payment', amount: refundAmount, currency: payment.currency, storeLiveMode: store.liveMode,
+    });
     const ctx = {
       apiKeyId: '',
       storeId: payment.storeId,

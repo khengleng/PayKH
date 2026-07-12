@@ -5,11 +5,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requireMembership, requirePermission } from '../auth/rbac';
+import { AccessService } from '../access/access.service';
 import { CreateApiKeyDto } from './dto';
 
 @Injectable()
 export class ApiKeysService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly access: AccessService) {}
 
   private async storeOrgId(storeId: string): Promise<string> {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
@@ -24,6 +25,8 @@ export class ApiKeysService {
   async create(user: AuthUser, dto: CreateApiKeyDto) {
     const orgId = await this.storeOrgId(dto.storeId);
     requirePermission(user, orgId, 'apikey:write');
+    // ABAC: minting a live-mode key (real money) requires the owner role.
+    await this.access.enforce(user, orgId, 'apikey:create', { type: 'api_key', mode: dto.mode === 'live' ? 'live' : 'test' });
 
     const generated = generateApiKey(dto.mode);
     const mode: KeyMode = dto.mode === 'live' ? 'LIVE' : 'TEST';
