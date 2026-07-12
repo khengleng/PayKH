@@ -290,8 +290,35 @@ function OpsTab() {
           <ul className="text-sm">{posture.checks?.map((c: any) => <li key={c.id} className="flex items-center gap-2 py-0.5"><span>{c.status === 'pass' ? '🟢' : c.status === 'warn' ? '🟡' : '🔴'}</span>{c.label} <span className="text-xs text-slate-400">— {c.detail}</span></li>)}</ul>
         </Card>
       )}
+      <AlertsCard />
       <SupportConsole />
     </>
+  );
+}
+
+function AlertsCard() {
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const test = async () => {
+    setBusy(true);
+    try {
+      const r = await api<any>('/admin/alerts/test', { method: 'POST', body: {} });
+      const ch = Object.entries(r.channels).filter(([, v]) => v).map(([k]) => k).join(', ');
+      setMsg(`Test alert dispatched → ${ch || 'log only (no channels configured)'}`);
+    } catch (e: any) { setMsg(`Failed: ${e.message}`); }
+    setBusy(false); setTimeout(() => setMsg(''), 5000);
+  };
+  return (
+    <Card className="mb-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold">Operational alerts</h3>
+          <p className="text-sm text-slate-500">5xx errors and failed payouts fan out to Sentry, Telegram, and email. Configure targets in Settings → integration keys (Alerts group).</p>
+        </div>
+        <button onClick={test} disabled={busy} className="shrink-0 rounded-md border border-brand-200 px-3 py-1.5 text-sm text-brand-700 hover:bg-brand-50 disabled:opacity-50">{busy ? 'Sending…' : 'Send test alert'}</button>
+      </div>
+      {msg && <p className="mt-2 text-sm text-emerald-600">{msg}</p>}
+    </Card>
   );
 }
 
@@ -332,22 +359,28 @@ function AiTab() {
 // --------------------------------------------------------------- Payouts
 function PayoutsTab() {
   const [rows, setRows] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
   const [msg, setMsg] = useState('');
-  const load = useCallback(async () => { setRows(await api<any[]>('/admin/payouts')); }, []);
+  const load = useCallback(async () => {
+    setRows(await api<any[]>('/admin/payouts'));
+    try { setHistory(await api<any[]>('/admin/payouts/history')); } catch { /* older api */ }
+  }, []);
   useEffect(() => { load(); }, [load]);
   const pay = async (r: any) => {
-    if (!confirm(`Record a payout of ${r.owed} ${r.currency} to ${r.merchant} (${r.store})?`)) return;
-    await api(`/admin/stores/${r.store_id}/payout`, { method: 'POST', body: { currency: r.currency, amount: r.owed } });
-    setMsg(`Paid ${r.owed} ${r.currency} to ${r.merchant}`); setTimeout(() => setMsg(''), 2500); await load();
+    if (!confirm(`Record a MANUAL payout of ${r.owed} ${r.currency} to ${r.merchant} (${r.store})?\n\nMark paid means you have transferred the funds out-of-band (bank/Bakong app).`)) return;
+    const res = await api<any>(`/admin/stores/${r.store_id}/payout`, { method: 'POST', body: { currency: r.currency, amount: r.owed, method: 'manual' } });
+    setMsg(res.status === 'paid' ? `Paid ${r.owed} ${r.currency} to ${r.merchant}` : `Payout ${res.status}: ${res.failure_reason ?? ''}`);
+    setTimeout(() => setMsg(''), 3000); await load();
   };
   const total = rows.reduce((a, r) => a + Number(r.owed), 0);
+  const statusColor = (s: string) => s === 'paid' ? 'text-emerald-600' : s === 'failed' ? 'text-rose-600' : 'text-amber-600';
   return (
     <>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Merchant payouts</h2>
         <span className="text-sm text-slate-500">Outstanding: <b>{total.toFixed(2)}</b></span>
       </div>
-      <p className="mb-3 text-sm text-slate-500">What you owe each merchant (their net after your fees). Recording a payout posts to the ledger and clears the balance.</p>
+      <p className="mb-3 text-sm text-slate-500">What you owe each merchant (their net after your fees). A <b>manual</b> payout records a transfer you made out-of-band and posts it to the ledger, clearing the balance. Automated Bakong disbursement activates once disbursement credentials are set.</p>
       {msg && <p className="mb-3 text-sm text-emerald-600">{msg}</p>}
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-sm">
@@ -367,6 +400,30 @@ function PayoutsTab() {
           </tbody>
         </table>
       </Card>
+
+      {history.length > 0 && (
+        <>
+          <h3 className="mb-2 mt-6 text-sm font-semibold text-slate-600">Payout history</h3>
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr><th className="px-4 py-3">When</th><th className="px-4 py-3">Merchant</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Method</th><th className="px-4 py-3">Status</th></tr>
+              </thead>
+              <tbody>
+                {history.map((p) => (
+                  <tr key={p.id} className="border-b border-slate-50">
+                    <td className="px-4 py-3 text-slate-500">{new Date(p.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3">{p.merchant} <span className="text-xs text-slate-400">/ {p.store}</span></td>
+                    <td className="px-4 py-3 text-right tabular-nums">{p.amount} <span className="text-xs text-slate-400">{p.currency}</span></td>
+                    <td className="px-4 py-3 capitalize text-slate-500">{p.method}</td>
+                    <td className={`px-4 py-3 font-medium capitalize ${statusColor(p.status)}`}>{p.status}{p.failure_reason ? <span className="block text-xs font-normal text-slate-400">{p.failure_reason}</span> : null}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </>
+      )}
     </>
   );
 }

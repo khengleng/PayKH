@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
@@ -8,6 +9,7 @@ import { QuotaService } from './quota.service';
 import { currentPeriodStart, nextPeriodStart } from './period.util';
 import { GRACE_DAYS, INVOICE_DUE_DAYS, PLATFORM_STORE_ID } from './billing.constants';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
+import { LedgerService } from '../ledger/ledger.service';
 
 @Injectable()
 export class BillingService {
@@ -17,6 +19,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly quota: QuotaService,
     private readonly config: ConfigService,
+    private readonly ledger: LedgerService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -118,6 +121,8 @@ export class BillingService {
       data: { status: 'paid', paidAt: new Date() },
     });
     await this.activatePlan(invoice.organizationId, invoice.planId, invoice.periodEnd);
+    // Recognize subscription revenue in the double-entry ledger (idempotent).
+    await this.ledger.postSubscriptionCollected(invoice.id, 'USD', new Prisma.Decimal(invoice.amountUsdCents).div(100));
     this.logger.log(`invoice ${invoiceId} paid -> plan ${invoice.planId} activated for ${invoice.organizationId}`);
     return true;
   }

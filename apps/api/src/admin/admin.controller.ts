@@ -8,6 +8,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { AuditService } from '../audit/audit.service';
 import { getRequestId } from '../common/request-context';
+import { AlertService } from '../observability/alert.service';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -18,6 +19,7 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly verification: VerificationService,
     private readonly audit: AuditService,
+    private readonly alerts: AlertService,
   ) {}
 
   @Get('me')
@@ -81,9 +83,22 @@ export class AdminController {
   }
 
   @Post('stores/:id/payout')
-  @ApiOperation({ summary: 'Record a payout to a merchant (posts to the ledger)' })
-  payout(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: { currency: string; amount: string; ref?: string }) {
-    return this.admin.payMerchant(user, id, dto.currency, dto.amount, dto.ref);
+  @ApiOperation({ summary: 'Execute a payout to a merchant (manual or Bakong; posts to the ledger on settle)' })
+  payout(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: { currency: string; amount: string; method?: string; note?: string }) {
+    return this.admin.payMerchant(user, id, dto.currency, dto.amount, dto.method, dto.note);
+  }
+
+  @Get('payouts/history')
+  @ApiOperation({ summary: 'Payout execution history (PENDING/PAID/FAILED)' })
+  payoutHistory(@CurrentUser() user: AuthUser) {
+    return this.admin.payoutHistory(user);
+  }
+
+  @Post('alerts/test')
+  @ApiOperation({ summary: 'Send a test operational alert to configured channels' })
+  async alertTest(@CurrentUser() user: AuthUser) {
+    await this.admin.assertAdmin(user.userId);
+    return this.alerts.test();
   }
 
   @Post('orgs/:id/suspend')

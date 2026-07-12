@@ -28,3 +28,12 @@ export function captureException(error: unknown, context?: Record<string, unknow
     /* never throw from telemetry */
   }
 }
+
+export function captureMessage(message: string, context?: Record<string, unknown>): void {
+  if (!sentry) return;
+  try {
+    sentry.captureMessage(message, { level: 'error', extra: context });
+  } catch {
+    /* never throw from telemetry */
+  }
+}

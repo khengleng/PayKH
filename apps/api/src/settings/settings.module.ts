@@ -11,7 +11,7 @@ import { AuthModule } from '../auth/auth.module';
 
 /** Known integration settings — DB value (encrypted) overrides the env fallback. */
 interface Def { key: string; env: keyof AppEnv; label: string; secret: boolean; group: string }
-type AppEnv = { anthropicApiKey: string; aiModel: string; resendApiKey: string; emailFrom: string; telegramBotToken: string; twilioAccountSid: string; twilioAuthToken: string; whatsappFrom: string; smsFrom: string; signalCliUrl: string; signalFrom: string };
+type AppEnv = { anthropicApiKey: string; aiModel: string; resendApiKey: string; emailFrom: string; telegramBotToken: string; twilioAccountSid: string; twilioAuthToken: string; whatsappFrom: string; smsFrom: string; signalCliUrl: string; signalFrom: string; alertTelegramChatId: string; alertEmail: string; bakongDisbursementToken: string };
 
 const DEFS: Def[] = [
   { key: 'anthropic_api_key', env: 'anthropicApiKey', label: 'Anthropic API key (AI Copilot)', secret: true, group: 'AI' },
@@ -25,6 +25,9 @@ const DEFS: Def[] = [
   { key: 'sms_from', env: 'smsFrom', label: 'SMS from number', secret: false, group: 'Messaging' },
   { key: 'signal_cli_url', env: 'signalCliUrl', label: 'Signal-cli REST URL', secret: false, group: 'Messaging' },
   { key: 'signal_from', env: 'signalFrom', label: 'Signal from number', secret: false, group: 'Messaging' },
+  { key: 'alert_telegram_chat_id', env: 'alertTelegramChatId', label: 'Ops alert Telegram chat id', secret: false, group: 'Alerts' },
+  { key: 'alert_email', env: 'alertEmail', label: 'Ops alert email address', secret: false, group: 'Alerts' },
+  { key: 'bakong_disbursement_token', env: 'bakongDisbursementToken', label: 'Bakong disbursement token (automated payouts)', secret: true, group: 'Payouts' },
 ];
 const DEF_BY_KEY = new Map(DEFS.map((d) => [d.key, d]));
 

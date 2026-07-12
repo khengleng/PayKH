@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import { ApiErrorBody, ApiErrorCode } from '@paykh/shared-types';
 import { getRequestId } from './request-context';
 import { captureException } from '../observability/sentry';
+import { emitAlert } from '../observability/alert-sink';
 
 /**
  * Converts every thrown error into the platform's structured error envelope:
@@ -55,6 +56,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         exception instanceof Error ? exception.stack : String(exception),
       );
       captureException(exception, { requestId, method: req.method, url: req.url });
+      emitAlert({
+        title: `API ${status} on ${req.method} ${req.url}`,
+        detail: exception instanceof Error ? exception.message : String(exception),
+        context: { requestId, method: req.method, url: req.url },
+      });
     } else {
       this.logger.warn(`${req.method} ${req.url} -> ${status} ${code} [${requestId}]`);
     }

@@ -25,6 +25,9 @@ export interface AppConfig {
   signalFrom?: string;
   anthropicApiKey?: string;
   aiModel: string;
+  alertTelegramChatId?: string;
+  alertEmail?: string;
+  bakongDisbursementToken?: string;
 }
 
 function required(name: string): string {
@@ -63,6 +66,9 @@ export function loadConfig(): AppConfig {
     signalFrom: process.env.SIGNAL_FROM,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     aiModel: process.env.AI_MODEL ?? 'claude-haiku-4-5-20251001',
+    alertTelegramChatId: process.env.ALERT_TELEGRAM_CHAT_ID,
+    alertEmail: process.env.ALERT_EMAIL,
+    bakongDisbursementToken: process.env.BAKONG_DISBURSEMENT_TOKEN,
   };
 }
 

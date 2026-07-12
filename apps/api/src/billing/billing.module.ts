@@ -3,9 +3,10 @@ import { BillingService } from './billing.service';
 import { BillingController } from './billing.controller';
 import { QuotaService } from './quota.service';
 import { AuthModule } from '../auth/auth.module';
+import { LedgerModule } from '../ledger/ledger.module';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, LedgerModule],
   controllers: [BillingController],
   providers: [BillingService, QuotaService],
   exports: [QuotaService, BillingService],

@@ -166,6 +166,17 @@ enum LedgerDirection {
   CREDIT
 }
 
+enum PayoutStatus {
+  PENDING // recorded, awaiting execution
+  PAID // funds sent to the merchant (ledger posted)
+  FAILED // execution failed; no ledger impact
+}
+
+enum PayoutMethod {
+  MANUAL // admin transferred out-of-band (bank/Bakong app) and recorded it
+  BAKONG // automated Bakong disbursement (requires disbursement credentials)
+}
+
 enum PaymentLinkType {
   LINK // reusable / one-off shareable payment link
   INVOICE // addressed to a customer, with line items + due date
@@ -315,6 +326,7 @@ model Store {
   riskCases            RiskCase[]
   connectors           Connector[]
   paymentLinks         PaymentLink[]
+  payouts              Payout[]
 
   @@index([organizationId])
 }
@@ -841,6 +853,30 @@ model LedgerEntry {
   @@index([accountCode, currency])
   @@index([storeId])
   @@index([journalId])
+}
+
+/// A payout to a merchant. Persists the execution lifecycle (PENDING → PAID |
+/// FAILED) separately from the ledger: the ledger is only posted once a payout
+/// actually settles (status PAID), so the books never claim money left that
+/// didn't.
+model Payout {
+  id                String       @id @default(cuid())
+  storeId           String
+  currency          String
+  amount            Decimal      @db.Decimal(20, 4)
+  status            PayoutStatus @default(PENDING)
+  method            PayoutMethod @default(MANUAL)
+  providerRef       String? // bank/Bakong disbursement reference
+  note              String?
+  failureReason     String?
+  initiatedByUserId String?
+  createdAt         DateTime     @default(now())
+  paidAt            DateTime?
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([status])
 }
 
 /// Platform-level integration settings (AI/email/messaging keys) managed from

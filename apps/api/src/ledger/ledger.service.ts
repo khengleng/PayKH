@@ -9,6 +9,7 @@ export const CHART_OF_ACCOUNTS: { code: string; name: string; type: LedgerAccoun
   { code: 'settlement_clearing', name: 'Settlement Clearing', type: 'ASSET' }, // funds received via rails, awaiting payout
   { code: 'merchant_payable', name: 'Merchant Payable', type: 'LIABILITY' }, // owed to merchants
   { code: 'fee_revenue', name: 'Platform Fee Revenue', type: 'REVENUE' },
+  { code: 'subscription_revenue', name: 'Platform Subscription Revenue', type: 'REVENUE' },
   { code: 'commission_expense', name: 'Affiliate Commission Expense', type: 'EXPENSE' },
   { code: 'commission_payable', name: 'Affiliate Commission Payable', type: 'LIABILITY' },
 ];
@@ -92,6 +93,18 @@ export class LedgerService implements OnModuleInit {
       { accountCode: 'merchant_payable', direction: 'DEBIT', amount: netPortion },
       { accountCode: 'fee_revenue', direction: 'DEBIT', amount: feePortion },
       { accountCode: 'settlement_clearing', direction: 'CREDIT', amount: r },
+    ]);
+  }
+
+  /**
+   * Subscription invoice collected: DR clearing (cash received via the platform
+   * KHQR); CR subscription revenue. Platform-level (no merchant store), keyed on
+   * the invoice id for idempotency.
+   */
+  async postSubscriptionCollected(invoiceId: string, currency: string, amount: Prisma.Decimal): Promise<void> {
+    await this.post('subscription.collected', invoiceId, null, currency, [
+      { accountCode: 'settlement_clearing', direction: 'DEBIT', amount: D(amount) },
+      { accountCode: 'subscription_revenue', direction: 'CREDIT', amount: D(amount) },
     ]);
   }
 

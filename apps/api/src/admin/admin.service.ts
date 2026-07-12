@@ -1,15 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { Prisma } from '@prisma/client';
-import { prefixedId } from '@paykh/security';
+import { PayoutMethod } from '@prisma/client';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { currentPeriodStart } from '../billing/period.util';
 import { QUEUE_MAINTENANCE, QUEUE_WEBHOOK } from '../queue/queue.constants';
-import { LedgerService } from '../ledger/ledger.service';
+import { PayoutService } from './payout.service';
 
 export class UpsertPlanDto {
   @IsString() id!: string;
@@ -32,7 +31,7 @@ export class AdminListQuery {
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly ledger: LedgerService,
+    private readonly payoutSvc: PayoutService,
     @InjectQueue(QUEUE_WEBHOOK) private readonly webhookQueue: Queue,
     @InjectQueue(QUEUE_MAINTENANCE) private readonly maintenanceQueue: Queue,
   ) {}
@@ -261,14 +260,20 @@ export class AdminService {
       .sort((a, b) => Number(b.owed) - Number(a.owed));
   }
 
-  /** Record a payout to a merchant — posts DR merchant_payable / CR clearing. */
-  async payMerchant(user: AuthUser, storeId: string, currency: string, amount: string, ref?: string) {
+  /**
+   * Execute a payout to a merchant via the payout rail. MANUAL settles
+   * immediately (admin transferred out-of-band); BAKONG runs the automated
+   * disbursement. Only a settled payout posts to the ledger.
+   */
+  async payMerchant(user: AuthUser, storeId: string, currency: string, amount: string, method?: string, note?: string) {
     await this.assertAdmin(user.userId);
-    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
-    if (!store) throw ApiError.paymentNotFound('Store not found');
-    const value = new Prisma.Decimal(amount);
-    if (value.lte(0)) throw ApiError.invalidRequest('Amount must be positive');
-    await this.ledger.postPayout(storeId, currency, value, ref ?? prefixedId('payout'));
-    return { store_id: storeId, currency, paid: value.toFixed(2) };
+    const m: PayoutMethod = method === 'bakong' || method === 'BAKONG' ? 'BAKONG' : 'MANUAL';
+    return this.payoutSvc.pay(user, storeId, currency, amount, m, note);
+  }
+
+  /** Payout execution history across all merchants. */
+  async payoutHistory(user: AuthUser) {
+    await this.assertAdmin(user.userId);
+    return this.payoutSvc.history();
   }
 }

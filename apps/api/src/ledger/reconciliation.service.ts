@@ -110,16 +110,19 @@ export class ReconciliationService {
       if (['ACCRUED', 'HELD', 'PAID'].includes(c.status)) { await this.ledger.postCommissionAccrued(c.id, c.storeId, c.currency, c.amount); commissions++; }
       if (c.status === 'PAID') await this.ledger.postCommissionPaid(c.id, c.storeId, c.currency, c.amount);
     }
-    this.logger.log(`ledger backfill: ${payments} payments, ${refunds} refunds, ${commissions} commissions`);
-    return { payments, refunds, commissions };
+    let subscriptions = 0;
+    const paidInvoices = await this.prisma.invoice.findMany({ where: { status: 'paid' }, select: { id: true, amountUsdCents: true } });
+    for (const inv of paidInvoices) { await this.ledger.postSubscriptionCollected(inv.id, 'USD', D(inv.amountUsdCents).div(100)); subscriptions++; }
+    this.logger.log(`ledger backfill: ${payments} payments, ${refunds} refunds, ${commissions} commissions, ${subscriptions} subscriptions`);
+    return { payments, refunds, commissions, subscriptions };
   }
 
   // --------------------------------------------------------- reconciliation
   /**
-   * Reconcile the ledger against source records. Runs five checks and returns
+   * Reconcile the ledger against source records. Runs four checks and returns
    * any breaks: (A) every journal balances, (B) the trial balance nets to zero
-   * per currency, (C) every paid payment has a captured journal, (D) fee revenue
-   * ties to expected fees, (E) merchant payable ties to expected net owed.
+   * per currency, (C) every paid payment has a captured journal, (D) captured
+   * gross ties to the source payment amounts (fee-independent).
    */
   async reconcile(user: AuthUser, storeId?: string) {
     if (storeId) await this.assertStore(user, storeId); else await this.assertAdmin(user.userId);
