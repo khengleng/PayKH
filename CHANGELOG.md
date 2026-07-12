@@ -8,6 +8,15 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Forgot / reset password**: `POST /auth/forgot-password` (no account
+  enumeration — always 200; emails a single-use, 1-hour reset link from the
+  configured sender) and `POST /auth/reset-password` (validates a hashed,
+  unexpired, unused token → sets the new password, invalidating outstanding
+  tokens). Dashboard **/forgot-password** + **/reset-password** pages and a
+  "Forgot password?" link on login. Only the SHA-256 hash of the token is stored.
+- **System Settings — messaging keys**: Telegram, Twilio (WhatsApp/SMS), and
+  Signal credentials can now be set in the admin console (encrypted) **or** via
+  env vars — resolved at send time, so provider status flips without a redeploy.
 - **System Settings** (admin): manage platform integration keys — **Anthropic**
   (AI Copilot), **Resend** (email + from-address) — from the admin console
   instead of Railway env vars. Values are **AES-256-GCM encrypted at rest**

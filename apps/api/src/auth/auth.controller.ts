@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { MfaService } from './mfa.service';
-import { LoginDto, MfaCodeDto, RegisterDto } from './dto';
+import { ForgotPasswordDto, LoginDto, MfaCodeDto, RegisterDto, ResetPasswordDto } from './dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser, AuthUser } from './current-user';
 import { AuditService } from '../audit/audit.service';
@@ -35,6 +35,22 @@ export class AuthController {
       requestId: getRequestId(req),
     });
     return result;
+  }
+
+  @Post('forgot-password')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 5, windowSec: 60, by: 'ip' })
+  @ApiOperation({ summary: 'Request a password-reset email (always 200)' })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 10, windowSec: 60, by: 'ip' })
+  @ApiOperation({ summary: 'Set a new password with a reset token' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.token, dto.password);
   }
 
   @Post('login')

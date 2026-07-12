@@ -1,65 +1,67 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { NotificationChannelType } from '@prisma/client';
+import { SettingsService } from '../settings/settings.module';
 
 /**
  * Outbound messaging transports for WhatsApp / SMS / Signal. WhatsApp & SMS use
- * Twilio's REST API; Signal uses a signal-cli REST bridge. When a channel's
- * credentials are unset it falls back to a log transport (mirrors TelegramService
- * / EmailService) so non-prod works without provider accounts. Best-effort —
- * sends never throw into the caller.
+ * Twilio's REST API; Signal uses a signal-cli REST bridge. Credentials are
+ * resolved at send time from system settings (encrypted DB value → env
+ * fallback), so they can be set in the admin console or via env. When a
+ * channel's credentials are unset it falls back to a log transport.
+ * Best-effort — sends never throw into the caller.
  */
 @Injectable()
 export class MessagingService {
   private readonly logger = new Logger('Messaging');
-  private readonly twilioSid?: string;
-  private readonly twilioToken?: string;
-  private readonly whatsappFrom?: string;
-  private readonly smsFrom?: string;
-  private readonly signalUrl?: string;
-  private readonly signalFrom?: string;
 
-  constructor(config: ConfigService) {
-    this.twilioSid = config.get<string>('twilioAccountSid');
-    this.twilioToken = config.get<string>('twilioAuthToken');
-    this.whatsappFrom = config.get<string>('whatsappFrom');
-    this.smsFrom = config.get<string>('smsFrom');
-    this.signalUrl = config.get<string>('signalCliUrl');
-    this.signalFrom = config.get<string>('signalFrom');
+  constructor(private readonly settings: SettingsService) {}
+
+  private async creds() {
+    const [twilioSid, twilioToken, whatsappFrom, smsFrom, signalUrl, signalFrom] = await Promise.all([
+      this.settings.resolve('twilio_account_sid'),
+      this.settings.resolve('twilio_auth_token'),
+      this.settings.resolve('whatsapp_from'),
+      this.settings.resolve('sms_from'),
+      this.settings.resolve('signal_cli_url'),
+      this.settings.resolve('signal_from'),
+    ]);
+    return { twilioSid, twilioToken, whatsappFrom, smsFrom, signalUrl, signalFrom };
   }
 
   /** Whether the given channel has real provider credentials configured. */
-  configured(channel: NotificationChannelType): boolean {
+  async configured(channel: NotificationChannelType): Promise<boolean> {
+    const c = await this.creds();
     switch (channel) {
-      case 'WHATSAPP':
-        return !!(this.twilioSid && this.twilioToken && this.whatsappFrom);
-      case 'SMS':
-        return !!(this.twilioSid && this.twilioToken && this.smsFrom);
-      case 'SIGNAL':
-        return !!(this.signalUrl && this.signalFrom);
+      case 'WHATSAPP': return !!(c.twilioSid && c.twilioToken && c.whatsappFrom);
+      case 'SMS': return !!(c.twilioSid && c.twilioToken && c.smsFrom);
+      case 'SIGNAL': return !!(c.signalUrl && c.signalFrom);
     }
   }
 
   async send(channel: NotificationChannelType, destination: string, text: string): Promise<boolean> {
-    if (!this.configured(channel)) {
+    const c = await this.creds();
+    const ok = channel === 'WHATSAPP' ? !!(c.twilioSid && c.twilioToken && c.whatsappFrom)
+      : channel === 'SMS' ? !!(c.twilioSid && c.twilioToken && c.smsFrom)
+      : !!(c.signalUrl && c.signalFrom);
+    if (!ok) {
       this.logger.log(`[log-transport] ${channel.toLowerCase()} to ${destination}: ${text.replace(/\n/g, ' ')}`);
       return true;
     }
     try {
-      if (channel === 'SIGNAL') return await this.sendSignal(destination, text);
-      return await this.sendTwilio(channel, destination, text);
+      if (channel === 'SIGNAL') return await this.sendSignal(c.signalUrl!, c.signalFrom!, destination, text);
+      return await this.sendTwilio(c, channel, destination, text);
     } catch (err) {
       this.logger.error(`${channel} send error: ${err}`);
       return false;
     }
   }
 
-  private async sendTwilio(channel: NotificationChannelType, destination: string, text: string): Promise<boolean> {
-    const from = channel === 'WHATSAPP' ? `whatsapp:${this.whatsappFrom}` : (this.smsFrom as string);
+  private async sendTwilio(c: { twilioSid?: string; twilioToken?: string; whatsappFrom?: string; smsFrom?: string }, channel: NotificationChannelType, destination: string, text: string): Promise<boolean> {
+    const from = channel === 'WHATSAPP' ? `whatsapp:${c.whatsappFrom}` : (c.smsFrom as string);
     const to = channel === 'WHATSAPP' ? `whatsapp:${destination}` : destination;
     const body = new URLSearchParams({ From: from, To: to, Body: text });
-    const auth = Buffer.from(`${this.twilioSid}:${this.twilioToken}`).toString('base64');
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${this.twilioSid}/Messages.json`, {
+    const auth = Buffer.from(`${c.twilioSid}:${c.twilioToken}`).toString('base64');
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${c.twilioSid}/Messages.json`, {
       method: 'POST',
       headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
@@ -71,11 +73,11 @@ export class MessagingService {
     return true;
   }
 
-  private async sendSignal(destination: string, text: string): Promise<boolean> {
-    const res = await fetch(`${this.signalUrl!.replace(/\/$/, '')}/v2/send`, {
+  private async sendSignal(signalUrl: string, signalFrom: string, destination: string, text: string): Promise<boolean> {
+    const res = await fetch(`${signalUrl.replace(/\/$/, '')}/v2/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, number: this.signalFrom, recipients: [destination] }),
+      body: JSON.stringify({ message: text, number: signalFrom, recipients: [destination] }),
     });
     if (!res.ok) {
       this.logger.error(`Signal send failed (${res.status}): ${await res.text()}`);

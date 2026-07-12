@@ -11,13 +11,20 @@ import { AuthModule } from '../auth/auth.module';
 
 /** Known integration settings — DB value (encrypted) overrides the env fallback. */
 interface Def { key: string; env: keyof AppEnv; label: string; secret: boolean; group: string }
-type AppEnv = { anthropicApiKey: string; aiModel: string; resendApiKey: string; emailFrom: string };
+type AppEnv = { anthropicApiKey: string; aiModel: string; resendApiKey: string; emailFrom: string; telegramBotToken: string; twilioAccountSid: string; twilioAuthToken: string; whatsappFrom: string; smsFrom: string; signalCliUrl: string; signalFrom: string };
 
 const DEFS: Def[] = [
   { key: 'anthropic_api_key', env: 'anthropicApiKey', label: 'Anthropic API key (AI Copilot)', secret: true, group: 'AI' },
   { key: 'ai_model', env: 'aiModel', label: 'AI model', secret: false, group: 'AI' },
   { key: 'resend_api_key', env: 'resendApiKey', label: 'Resend API key (email)', secret: true, group: 'Email' },
   { key: 'email_from', env: 'emailFrom', label: 'Email “from” address', secret: false, group: 'Email' },
+  { key: 'telegram_bot_token', env: 'telegramBotToken', label: 'Telegram bot token', secret: true, group: 'Messaging' },
+  { key: 'twilio_account_sid', env: 'twilioAccountSid', label: 'Twilio account SID (WhatsApp/SMS)', secret: true, group: 'Messaging' },
+  { key: 'twilio_auth_token', env: 'twilioAuthToken', label: 'Twilio auth token', secret: true, group: 'Messaging' },
+  { key: 'whatsapp_from', env: 'whatsappFrom', label: 'WhatsApp from number', secret: false, group: 'Messaging' },
+  { key: 'sms_from', env: 'smsFrom', label: 'SMS from number', secret: false, group: 'Messaging' },
+  { key: 'signal_cli_url', env: 'signalCliUrl', label: 'Signal-cli REST URL', secret: false, group: 'Messaging' },
+  { key: 'signal_from', env: 'signalFrom', label: 'Signal from number', secret: false, group: 'Messaging' },
 ];
 const DEF_BY_KEY = new Map(DEFS.map((d) => [d.key, d]));
 
@@ -120,11 +127,17 @@ export class SettingsController {
   }
 }
 
+// Core provider is @Global with NO auth dependency, so EmailService/LlmService
+// can resolve it without creating a cycle (SettingsController→AuthModule).
 @Global()
 @Module({
-  imports: [AuthModule],
-  controllers: [SettingsController],
   providers: [SettingsService],
   exports: [SettingsService],
+})
+export class SettingsCoreModule {}
+
+@Module({
+  imports: [AuthModule, SettingsCoreModule],
+  controllers: [SettingsController],
 })
 export class SettingsModule {}

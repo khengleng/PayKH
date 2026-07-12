@@ -92,6 +92,9 @@ export default function LoginPage() {
             )}
             <Field label={t('email')} type="email" value={email} onChange={setEmail} required />
             <Field label={t('password')} type="password" value={password} onChange={setPassword} required />
+            {mode === 'login' && (
+              <div className="text-right"><a href="/forgot-password" className="text-xs text-slate-500 hover:text-brand-600">Forgot password?</a></div>
+            )}
 
             {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-600/10">{error}</p>}
 

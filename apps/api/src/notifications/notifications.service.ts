@@ -60,7 +60,7 @@ export class NotificationsService {
       enabled: c?.enabled ?? false,
       chat_id: c?.chatId ?? null,
       enabled_events: c?.enabledEvents ?? [],
-      bot_configured: this.telegram.configured,
+      bot_configured: await this.telegram.configured(),
     };
   }
 
@@ -71,7 +71,7 @@ export class NotificationsService {
       create: { storeId, chatId: dto.chatId ?? null, enabled: dto.enabled ?? false, enabledEvents: dto.enabledEvents ?? [] },
       update: { chatId: dto.chatId, enabled: dto.enabled, enabledEvents: dto.enabledEvents },
     });
-    return { store_id: storeId, enabled: c.enabled, chat_id: c.chatId, enabled_events: c.enabledEvents, bot_configured: this.telegram.configured };
+    return { store_id: storeId, enabled: c.enabled, chat_id: c.chatId, enabled_events: c.enabledEvents, bot_configured: await this.telegram.configured() };
   }
 
   async sendTest(user: AuthUser, storeId: string) {
@@ -87,16 +87,16 @@ export class NotificationsService {
     await this.assertStore(user, storeId, 'store:read');
     const rows = await this.prisma.notificationChannel.findMany({ where: { storeId } });
     const byChannel = new Map(rows.map((r) => [r.channel, r]));
-    return CHANNELS.map((channel) => {
+    return Promise.all(CHANNELS.map(async (channel) => {
       const c = byChannel.get(channel);
       return {
         channel: channel.toLowerCase(),
         enabled: c?.enabled ?? false,
         destination: c?.destination ?? null,
         enabled_events: c?.enabledEvents ?? [],
-        provider_configured: this.messaging.configured(channel),
+        provider_configured: await this.messaging.configured(channel),
       };
-    });
+    }));
   }
 
   async updateChannel(user: AuthUser, storeId: string, dto: UpdateChannelDto) {
@@ -106,7 +106,7 @@ export class NotificationsService {
       create: { storeId, channel: dto.channel, destination: dto.destination ?? null, enabled: dto.enabled ?? false, enabledEvents: dto.enabledEvents ?? [] },
       update: { destination: dto.destination, enabled: dto.enabled, enabledEvents: dto.enabledEvents },
     });
-    return { channel: c.channel.toLowerCase(), enabled: c.enabled, destination: c.destination, enabled_events: c.enabledEvents, provider_configured: this.messaging.configured(c.channel) };
+    return { channel: c.channel.toLowerCase(), enabled: c.enabled, destination: c.destination, enabled_events: c.enabledEvents, provider_configured: await this.messaging.configured(c.channel) };
   }
 
   async sendTestChannel(user: AuthUser, storeId: string, channel: NotificationChannelType) {
