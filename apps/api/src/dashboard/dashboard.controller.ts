@@ -55,6 +55,18 @@ export class DashboardController {
     return this.dashboard.refund(user, id, dto);
   }
 
+  @Post('stores/:storeId/pos/charge')
+  @ApiOperation({ summary: 'POS: charge an amount and get a KHQR to display' })
+  posCharge(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: { amount: string; currency?: 'USD' | 'KHR'; reference?: string }) {
+    return this.dashboard.posCharge(user, storeId, dto);
+  }
+
+  @Get('stores/:storeId/pos/counter-qr')
+  @ApiOperation({ summary: 'Get the store’s durable counter QR (open-amount link)' })
+  counterQr(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.dashboard.counterQr(user, storeId);
+  }
+
   @Get('orgs/:orgId/audit-logs')
   @ApiOperation({ summary: 'Read-only audit log (owner/admin)' })
   auditLogs(

@@ -8,6 +8,10 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Point of Sale + Counter QR** (GTM): a cashier **POS** screen (amount keypad →
+  on-the-spot KHQR → live status polling → paid confirmation) and a durable
+  **counter QR** (printable open-amount link) so any shop can take payments with
+  no hardware. `POST /dashboard/stores/:id/pos/charge` + `GET …/pos/counter-qr`.
 - **Payment Links & Invoicing** (GTM — no-code get-paid): merchants create a
   shareable **payment link** (fixed or customer-entered amount, single-use or
   reusable) or an **invoice** (addressed customer, line items) with no code.

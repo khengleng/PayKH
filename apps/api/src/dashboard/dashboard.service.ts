@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requireMembership, requirePermission } from '../auth/rbac';
+import { prefixedId } from '@paykh/security';
 import { formatAmount } from '../payments/amount.util';
 import { PaymentsService } from '../payments/payments.service';
 import { AccessService } from '../access/access.service';
@@ -37,6 +38,30 @@ export class DashboardService {
     };
     const { resource } = await this.payments.refund(ctx, paymentId, dto, undefined, JSON.stringify(dto));
     return resource;
+  }
+
+  /** POS: a cashier charges an amount on the spot → returns a KHQR to display. */
+  async posCharge(user: AuthUser, storeId: string, dto: { amount: string; currency?: 'USD' | 'KHR'; reference?: string }) {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) throw ApiError.paymentNotFound('Store not found');
+    requirePermission(user, store.organizationId, 'payment:write');
+    if (!dto.amount || Number(dto.amount) <= 0) throw ApiError.invalidRequest('Amount must be positive');
+    const ctx = { apiKeyId: '', storeId, organizationId: store.organizationId, mode: (store.liveMode ? 'live' : 'test') as 'live' | 'test' };
+    const body = { amount: Number(dto.amount).toFixed(2), currency: dto.currency ?? 'USD', reference_id: dto.reference, description: 'POS charge', metadata: { source: 'pos' } };
+    const { resource } = await this.payments.create(ctx, body, undefined, JSON.stringify(body));
+    return { id: resource.id, status: resource.status, amount: resource.amount, currency: resource.currency, qr_string: resource.qr_string ?? null, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };
+  }
+
+  /** The store's durable counter QR — an open-amount reusable payment link (created once). */
+  async counterQr(user: AuthUser, storeId: string) {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) throw ApiError.paymentNotFound('Store not found');
+    requirePermission(user, store.organizationId, 'payment:read');
+    let link = await this.prisma.paymentLink.findFirst({ where: { storeId, amount: null, singleUse: false, title: `Pay ${store.name}` } });
+    if (!link) {
+      link = await this.prisma.paymentLink.create({ data: { id: prefixedId('plink'), storeId, type: 'LINK', title: `Pay ${store.name}`, amount: null, singleUse: false } });
+    }
+    return { url: `${process.env.CHECKOUT_BASE_URL ?? ''}/l/${link.id}`, link_id: link.id };
   }
 
   private async assertStoreAccess(user: AuthUser, storeId: string) {
