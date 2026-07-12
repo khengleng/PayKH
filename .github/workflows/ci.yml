@@ -34,8 +34,15 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U paykh"
           --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgresql://paykh:paykh@localhost:5432/paykh?schema=public
+      REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci_secret_at_least_16_chars_long_xyz
       ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
       PAYMENT_PROVIDER: mock
@@ -50,8 +57,12 @@ jobs:
         run: npx prisma validate --schema apps/api/prisma/schema.prisma
       - name: Apply migrations
         run: npm run prisma:migrate --workspace @paykh/api
-      - name: Test
+      - name: Test (unit)
         run: npm test
+      - name: Seed demo data
+        run: npm run db:seed --workspace @paykh/api
+      - name: Test (e2e — money flows, ledger, reconciliation)
+        run: npm run test:e2e --workspace @paykh/api
       - name: Build all workspaces
         run: npm run build
 

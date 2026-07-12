@@ -204,6 +204,37 @@ export class CustomersService {
     return logs.map((l) => ({ channel: l.channel, opted_in: l.optedIn, source: l.source, at: l.createdAt.toISOString() }));
   }
 
+  /**
+   * Right-to-erasure (GDPR Art.17 / Cambodia data-protection): irreversibly
+   * anonymize a customer's PII (name/email/phone/external id/metadata) while
+   * PRESERVING the immutable financial record — payments and ledger journals
+   * keep only the pseudonymous customer id. The customer row is retained (not
+   * deleted) so referential integrity and accounting history stay intact.
+   */
+  async erase(user: AuthUser, customerId: string) {
+    const c = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!c) throw ApiError.paymentNotFound('Customer not found');
+    await this.assertStoreAccess(user, c.storeId, 'store:write');
+
+    await this.prisma.$transaction([
+      this.prisma.customer.update({
+        where: { id: customerId },
+        data: {
+          name: '[erased]',
+          email: null,
+          phone: null,
+          externalId: null,
+          referralCode: null,
+          metadata: { erased: true, erasedAt: new Date().toISOString() } as Prisma.InputJsonValue,
+        },
+      }),
+      // Drop communication prefs + consent trail (contactability data).
+      this.prisma.customerPreference.deleteMany({ where: { customerId } }),
+      this.prisma.consentLog.deleteMany({ where: { customerId } }),
+    ]);
+    return { erased: true, customer_id: customerId, retained: 'payments + ledger (pseudonymous id only)' };
+  }
+
   // ------------------------------------------------------------- internals
   private async findScoped(storeId: string, id: string): Promise<Customer> {
     const c = await this.prisma.customer.findUnique({ where: { id } });
@@ -211,10 +242,10 @@ export class CustomersService {
     return c;
   }
 
-  private async assertStoreAccess(user: AuthUser, storeId: string) {
+  private async assertStoreAccess(user: AuthUser, storeId: string, perm: 'payment:read' | 'store:write' = 'payment:read') {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
     if (!store) throw ApiError.paymentNotFound('Store not found');
-    requirePermission(user, store.organizationId, 'payment:read');
+    requirePermission(user, store.organizationId, perm);
     return store;
   }
 

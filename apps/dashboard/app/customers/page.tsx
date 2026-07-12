@@ -81,12 +81,22 @@ function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
     setData((prev: any) => ({ ...prev, preferences: d.preferences }));
   };
 
+  const erasePii = async () => {
+    if (!confirm('Permanently anonymize this customer’s PII? Financial records (payments, ledger) are preserved. This cannot be undone.')) return;
+    await fetch(`${API_BASE}/dashboard/customers/${id}/pii`, { method: 'DELETE', headers: { Authorization: `Bearer ${tokenStore.get()}` } });
+    const r = await fetch(`${API_BASE}/dashboard/customers/${id}`, { headers: { Authorization: `Bearer ${tokenStore.get()}` } });
+    setData(await r.json());
+  };
+
   return (
     <div className="fixed inset-0 z-20 flex justify-end bg-black/30" onClick={onClose}>
       <div className="h-full w-full max-w-md overflow-y-auto bg-white p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Customer 360</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          <div className="flex items-center gap-3">
+            {data && data.name !== '[erased]' && <button onClick={erasePii} className="text-xs text-red-500 hover:underline">Erase PII</button>}
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          </div>
         </div>
         {!data ? <p className="mt-6 text-slate-400">Loading…</p> : (
           <div className="mt-4 space-y-4 text-sm">

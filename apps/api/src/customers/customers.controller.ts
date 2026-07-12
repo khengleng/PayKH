@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { CustomersService, CreateCustomerDto, SetPreferencesDto } from './customers.service';
@@ -85,5 +85,11 @@ export class CustomersDashboardController {
   @ApiOperation({ summary: 'Consent change history' })
   consentLog(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.customers.consentHistory(user, id);
+  }
+
+  @Delete('customers/:id/pii')
+  @ApiOperation({ summary: 'Right-to-erasure: anonymize PII, preserve financial records' })
+  erase(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.customers.erase(user, id);
   }
 }

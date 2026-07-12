@@ -44,7 +44,7 @@ time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
 ✅ Billing · ✅ Subscriptions · ✅ Revenue share · ✅ Invoices · ✅ Accounting ledger
 
 ## 14. Risk & Compliance
-✅ Risk scoring · ✅ Case mgmt · ⬜ Retention · 🟡 Compliance review · ⬜ Export controls
+✅ Risk scoring · ✅ Case mgmt · ✅ Retention (erasure) · 🟡 Compliance review · ⬜ Export controls
 
 ## 15. Analytics
 ✅ Dashboards · ✅ KPIs · ✅ Forecasting · ✅ Exports (CSV) · ✅ Executive reports

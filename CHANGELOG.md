@@ -8,6 +8,19 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Automated E2E test suite + load harness** (go-live readiness): a booted-app
+  integration suite (`npm run test:e2e`) covering the money paths — payment
+  lifecycle, idempotency, illegal-transition guards, **balanced double-entry
+  journal on capture**, refund + over-refund block, and **ledger reconciliation**
+  — now wired into CI (Postgres + Redis services + seed). A dependency-free
+  **load harness** (`npm run loadtest`) reports throughput + p50/p95/p99 latency
+  and separates graceful 429 throttling from real errors (verified: 0 real errors
+  under an 800-request burst, p99 ~57ms).
+- **Right-to-erasure / data retention** (Domain 14): `DELETE /dashboard/customers/
+  :id/pii` irreversibly anonymizes a customer's PII (name/email/phone/external
+  id/metadata) and drops preferences + consent trail, **while preserving the
+  immutable financial record** (payments + ledger keep only the pseudonymous id).
+  Customer 360 "Erase PII" action.
 - **Persisted double-entry ledger & reconciliation** (Domain 13 — financial
   assurance): an **append-only** journal (`LedgerAccount`/`JournalEntry`/
   `LedgerEntry`) where every journal's debits equal its credits. Money events post
