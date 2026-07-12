@@ -32,6 +32,7 @@ import { ReferralsService } from '../referrals/referrals.service';
 import { GamesService } from '../games/games.service';
 import { RiskService } from '../risk/risk.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { ReceiptsService } from '../receipts/receipts.module';
 
 const DEFAULT_EXPIRY_SECONDS = 300;
 
@@ -60,6 +61,7 @@ export class PaymentsService {
     private readonly games: GamesService,
     private readonly risk: RiskService,
     private readonly ledger: LedgerService,
+    private readonly receipts: ReceiptsService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -540,6 +542,7 @@ export class PaymentsService {
         await this.referrals.accrueCommission(result); // affiliate commission
         await this.games.issueForPayment(result); // auto-issue scratch cards
         await this.risk.scorePayment(result); // fraud/risk scoring
+        await this.receipts.onPaid(result); // email the payer a receipt
         // Double-entry ledger: post the captured payment (best-effort).
         try {
           const store = await this.prisma.store.findUnique({ where: { id: result.storeId }, select: { feeBps: true } });

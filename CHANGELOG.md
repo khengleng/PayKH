@@ -8,6 +8,10 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Customer receipts** (GTM): every paid payment emails the payer a branded
+  receipt (when an email is known) and exposes a public, printable receipt page
+  (`checkout/r/:id`, `GET /receipts/:id`) with a receipt number, amount, status,
+  reference, and merchant support contact.
 - **Point of Sale + Counter QR** (GTM): a cashier **POS** screen (amount keypad →
   on-the-spot KHQR → live status polling → paid confirmation) and a durable
   **counter QR** (printable open-amount link) so any shop can take payments with
