@@ -4,38 +4,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, tokenStore } from '@/lib/api';
 import { Button, Card, Stat, StatusBadge } from '@/components/ui';
+import { LogoMark } from '@/components/Logo';
 
-interface Org { id: string; name: string; status: string; plan: string; members: number; stores: number; month_paid: number }
 interface Metrics { organizations: number; suspended: number; stores: number; total_payments: number; paid_count: number; paid_volume: string; success_rate: number }
+
+const TABS = ['Overview', 'Merchants', 'Financials', 'Ops', 'AI', 'Settings'] as const;
+type Tab = typeof TABS[number];
 
 export default function AdminPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [allowed, setAllowed] = useState(false);
   const [email, setEmail] = useState('');
-  const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [orgs, setOrgs] = useState<Org[]>([]);
-  const [verifs, setVerifs] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
-
-  const loadData = useCallback(async () => {
-    const [m, o, v] = await Promise.all([
-      api<Metrics>('/admin/metrics'),
-      api<Org[]>(`/admin/orgs${search ? `?search=${encodeURIComponent(search)}` : ''}`),
-      api<any[]>('/admin/verifications'),
-    ]);
-    setMetrics(m); setOrgs(o); setVerifs(v);
-  }, [search]);
-
-  const reviewVerif = async (orgId: string, approve: boolean) => {
-    if (!approve) {
-      const reason = prompt('Rejection reason?') || 'Not specified';
-      await api(`/admin/verifications/${orgId}/reject`, { method: 'POST', body: { reason } });
-    } else {
-      await api(`/admin/verifications/${orgId}/approve`, { method: 'POST' });
-    }
-    await loadData();
-  };
+  const [tab, setTab] = useState<Tab>('Overview');
 
   useEffect(() => {
     if (!tokenStore.get()) { router.replace('/login?next=/admin'); return; }
@@ -43,17 +24,12 @@ export default function AdminPage() {
       try {
         const me = await api<{ is_platform_admin: boolean; email: string }>('/admin/me');
         setEmail(me.email);
-        if (me.is_platform_admin) { setAllowed(true); await loadData(); }
+        if (me.is_platform_admin) setAllowed(true);
       } catch { /* not admin */ }
       setReady(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const suspend = async (id: string, on: boolean) => {
-    await api(`/admin/orgs/${id}/${on ? 'suspend' : 'reactivate'}`, { method: 'POST' });
-    await loadData();
-  };
 
   if (!ready) return <div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>;
   if (!allowed) return (
@@ -67,91 +43,296 @@ export default function AdminPage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Platform Admin</h1>
-          <p className="text-sm text-slate-500">{email}</p>
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur md:px-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <LogoMark size={28} />
+            <div>
+              <div className="text-sm font-semibold leading-tight">Platform Console</div>
+              <div className="text-xs text-slate-400">{email}</div>
+            </div>
+          </div>
+          <Button variant="secondary" onClick={() => { tokenStore.clear(); router.replace('/login'); }}>Sign out</Button>
         </div>
-        <Button variant="secondary" onClick={() => { tokenStore.clear(); router.replace('/login'); }}>Sign out</Button>
-      </div>
-
-      {metrics && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Stat label="Merchants" value={metrics.organizations} hint={`${metrics.suspended} suspended`} />
-          <Stat label="Stores" value={metrics.stores} />
-          <Stat label="Payments" value={metrics.total_payments} hint={`${metrics.success_rate}% success`} />
-          <Stat label="Paid volume" value={`$${metrics.paid_volume}`} />
+        <div className="mx-auto mt-3 flex max-w-6xl gap-1 overflow-x-auto">
+          {TABS.map((t) => (
+            <button key={t} onClick={() => setTab(t)} className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ${tab === t ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:bg-slate-100'}`}>{t}</button>
+          ))}
         </div>
-      )}
+      </header>
 
-      <SupportConsole />
-      <SystemSettings />
-      <ChangePassword />
-
-      {verifs.length > 0 && (
-        <>
-          <h2 className="mb-2 mt-6 text-lg font-semibold">Verifications pending review ({verifs.length})</h2>
-          <Card className="overflow-x-auto p-0">
-            <table className="w-full text-sm">
-              <thead className="border-b border-slate-100 text-left text-slate-500">
-                <tr><th className="px-4 py-3">Organization</th><th className="px-4 py-3">Legal name</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3"></th></tr>
-              </thead>
-              <tbody>
-                {verifs.map((v) => (
-                  <tr key={v.organization_id} className="border-b border-slate-50">
-                    <td className="px-4 py-3">{v.organization_name}</td>
-                    <td className="px-4 py-3">{v.legal_name}</td>
-                    <td className="px-4 py-3 text-slate-500">{v.business_type}</td>
-                    <td className="px-4 py-3 text-slate-500">{v.contact_name}{v.contact_phone ? ` · ${v.contact_phone}` : ''}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => reviewVerif(v.organization_id, true)} className="text-emerald-600 hover:underline">Approve</button>
-                        <button onClick={() => reviewVerif(v.organization_id, false)} className="text-red-600 hover:underline">Reject</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-        </>
-      )}
-
-      <div className="mb-3 mt-6 flex items-center gap-2">
-        <h2 className="text-lg font-semibold">Merchants</h2>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" className="ml-auto rounded-lg border border-slate-200 px-3 py-1.5 text-sm" />
-        <Button variant="secondary" onClick={loadData}>Search</Button>
-      </div>
-      <Card className="overflow-x-auto p-0">
-        <table className="w-full text-sm">
-          <thead className="border-b border-slate-100 text-left text-slate-500">
-            <tr><th className="px-4 py-3">Organization</th><th className="px-4 py-3">Plan</th><th className="px-4 py-3">Members</th><th className="px-4 py-3">Stores</th><th className="px-4 py-3">Paid (mo)</th><th className="px-4 py-3">Status</th><th className="px-4 py-3"></th></tr>
-          </thead>
-          <tbody>
-            {orgs.map((o) => (
-              <tr key={o.id} className="border-b border-slate-50">
-                <td className="px-4 py-3">{o.name}<div className="font-mono text-[10px] text-slate-400">{o.id}</div></td>
-                <td className="px-4 py-3">{o.plan}</td>
-                <td className="px-4 py-3">{o.members}</td>
-                <td className="px-4 py-3">{o.stores}</td>
-                <td className="px-4 py-3">{o.month_paid}</td>
-                <td className="px-4 py-3">{o.status === 'suspended' ? <StatusBadge status="failed" /> : <StatusBadge status="paid" />}</td>
-                <td className="px-4 py-3 text-right">
-                  {o.status === 'suspended'
-                    ? <button onClick={() => suspend(o.id, false)} className="text-emerald-600 hover:underline">Reactivate</button>
-                    : <button onClick={() => suspend(o.id, true)} className="text-red-600 hover:underline">Suspend</button>}
-                </td>
-              </tr>
-            ))}
-            {orgs.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400">No merchants</td></tr>}
-          </tbody>
-        </table>
-      </Card>
+      <main className="mx-auto max-w-6xl p-4 md:p-8">
+        {tab === 'Overview' && <OverviewTab />}
+        {tab === 'Merchants' && <MerchantsTab />}
+        {tab === 'Financials' && <FinancialsTab />}
+        {tab === 'Ops' && <OpsTab />}
+        {tab === 'AI' && <AiTab />}
+        {tab === 'Settings' && <SettingsTab />}
+      </main>
     </div>
   );
 }
 
+// ---------------------------------------------------------------- Overview
+function OverviewTab() {
+  const [m, setM] = useState<Metrics | null>(null);
+  const [rev, setRev] = useState<any>(null);
+  const [recon, setRecon] = useState<any>(null);
+  useEffect(() => {
+    api<Metrics>('/admin/metrics').then(setM).catch(() => {});
+    api<any>('/admin/revenue').then(setRev).catch(() => {});
+    api<any>('/dashboard/admin/ledger/reconcile').then(setRecon).catch(() => {});
+  }, []);
+  return (
+    <>
+      <h2 className="mb-3 text-lg font-semibold">Your platform at a glance</h2>
+      {rev && (
+        <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Stat label="Transaction fees (total)" value={`$${rev.transaction_fees_total}`} icon="💰" accent="emerald" hint="your income" />
+          <Stat label="Subscription rev (30d)" value={`$${rev.subscription_revenue_30d}`} icon="💠" accent="brand" hint={`${rev.subscription_invoices_30d} invoices`} />
+          <Stat label="Total revenue" value={`$${rev.total_revenue}`} icon="📈" accent="brand" />
+          <Stat label="Paid subscriptions" value={rev.active_paid_subscriptions} icon="🧾" accent="slate" />
+        </div>
+      )}
+      {m && (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Stat label="Merchants" value={m.organizations} hint={`${m.suspended} suspended`} icon="🏢" accent="brand" />
+          <Stat label="Stores" value={m.stores} icon="🏬" accent="slate" />
+          <Stat label="Payments" value={m.total_payments} hint={`${m.success_rate}% success`} icon="💳" accent="brand" />
+          <Stat label="GMV (paid)" value={`$${m.paid_volume}`} icon="📊" accent="emerald" />
+        </div>
+      )}
+      {recon && (
+        <Card className={`mt-4 border-l-4 ${recon.balanced ? 'border-emerald-500' : 'border-red-500'}`}>
+          <div className="flex items-center gap-2"><span>{recon.balanced ? '✅' : '⚠️'}</span><span className="font-medium">Books {recon.balanced ? 'reconciled' : `— ${recon.breaks?.length} break(s)`}</span>
+            <span className="ml-auto text-xs text-slate-400">see Financials →</span></div>
+        </Card>
+      )}
+    </>
+  );
+}
+
+// --------------------------------------------------------------- Merchants
+function MerchantsTab() {
+  const [orgs, setOrgs] = useState<any[]>([]);
+  const [verifs, setVerifs] = useState<any[]>([]);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setOrgs(await api<any[]>(`/admin/orgs${search ? `?search=${encodeURIComponent(search)}` : ''}`));
+    setVerifs(await api<any[]>('/admin/verifications'));
+    setPlans(await api<any[]>('/admin/plans'));
+  }, [search]);
+  useEffect(() => { load(); }, [load]);
+
+  const review = async (orgId: string, approve: boolean) => {
+    if (!approve) { const reason = prompt('Rejection reason?') || 'Not specified'; await api(`/admin/verifications/${orgId}/reject`, { method: 'POST', body: { reason } }); }
+    else await api(`/admin/verifications/${orgId}/approve`, { method: 'POST' });
+    await load();
+  };
+  const suspend = async (id: string, on: boolean) => { await api(`/admin/orgs/${id}/${on ? 'suspend' : 'reactivate'}`, { method: 'POST' }); await load(); };
+
+  return (
+    <>
+      {verifs.length > 0 && (
+        <Card className="mb-6 border-l-4 border-amber-400">
+          <h2 className="mb-2 font-semibold">⏳ KYC pending review ({verifs.length})</h2>
+          <ul className="divide-y divide-slate-100 text-sm">
+            {verifs.map((v) => (
+              <li key={v.organization_id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span><b>{v.organization_name}</b> · {v.legal_name} <span className="text-slate-400">({v.business_type})</span></span>
+                <span className="flex gap-2">
+                  <button onClick={() => review(v.organization_id, true)} className="rounded border border-emerald-300 px-2 py-0.5 text-xs text-emerald-700">Approve</button>
+                  <button onClick={() => review(v.organization_id, false)} className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700">Reject</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="text-lg font-semibold">Merchants</h2>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" className="ml-auto rounded-lg border border-slate-200 px-3 py-1.5 text-sm" />
+      </div>
+      <div className="space-y-2">
+        {orgs.map((o) => (
+          <MerchantRow key={o.id} org={o} plans={plans} open={openId === o.id} onToggle={() => setOpenId(openId === o.id ? null : o.id)} onSuspend={suspend} onChange={load} />
+        ))}
+        {orgs.length === 0 && <Card className="text-center text-slate-400">No merchants</Card>}
+      </div>
+    </>
+  );
+}
+
+function MerchantRow({ org, plans, open, onToggle, onSuspend, onChange }: { org: any; plans: any[]; open: boolean; onToggle: () => void; onSuspend: (id: string, on: boolean) => void; onChange: () => void }) {
+  const [detail, setDetail] = useState<any>(null);
+  const [msg, setMsg] = useState('');
+  useEffect(() => { if (open) api<any>(`/admin/orgs/${org.id}`).then(setDetail); }, [open, org.id]);
+
+  const setPlan = async (planId: string) => { await api(`/admin/orgs/${org.id}/plan`, { method: 'PUT', body: { planId } }); setMsg('Plan updated'); setTimeout(() => setMsg(''), 1500); onChange(); };
+  const setFee = async (storeId: string, pct: string) => { await api(`/admin/stores/${storeId}/fee`, { method: 'PUT', body: { feeBps: Math.round(Number(pct) * 100) } }); setMsg('Fee updated'); setTimeout(() => setMsg(''), 1500); };
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button onClick={onToggle} className="flex items-center gap-2 text-left">
+          <span>{open ? '▾' : '▸'}</span>
+          <span><b>{org.name}</b> <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{org.plan}</span> <span className="text-xs text-slate-400">· {org.stores} stores · {org.month_paid} paid/mo</span></span>
+        </button>
+        <span className="flex items-center gap-2">
+          {org.status === 'suspended' ? <StatusBadge status="failed" /> : <StatusBadge status="paid" />}
+          {org.status === 'suspended'
+            ? <button onClick={() => onSuspend(org.id, false)} className="text-xs text-emerald-600 hover:underline">Reactivate</button>
+            : <button onClick={() => onSuspend(org.id, true)} className="text-xs text-red-600 hover:underline">Suspend</button>}
+        </span>
+      </div>
+      {open && detail && (
+        <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
+          {msg && <div className="mb-2 text-xs text-emerald-600">{msg}</div>}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="text-slate-600">Plan:</span>
+            <select defaultValue={detail.plan_id ?? ''} onChange={(e) => setPlan(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1 text-sm">
+              {plans.map((p) => <option key={p.id} value={p.id}>{p.name} {p.price_usd_cents ? `($${(p.price_usd_cents / 100).toFixed(0)}/mo)` : '(free)'}</option>)}
+            </select>
+            <span className="ml-2 text-xs text-slate-400">members: {detail.members.map((m: any) => `${m.email} (${m.role})`).join(', ')}</span>
+          </div>
+          <div className="text-slate-600">Store fees (per-transaction %):</div>
+          <ul className="mt-1 space-y-1">
+            {detail.stores.map((s: any) => (
+              <li key={s.id} className="flex items-center gap-2">
+                <span className="min-w-40">{s.name} <span className="text-xs text-slate-400">{s.live_mode ? '· live' : '· test'}</span></span>
+                <input defaultValue={(s.fee_bps / 100).toString()} onBlur={(e) => setFee(s.id, e.target.value)} className="w-20 rounded border border-slate-200 px-2 py-1 text-sm" />
+                <span className="text-xs text-slate-400">%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// --------------------------------------------------------------- Financials
+function FinancialsTab() {
+  const [tb, setTb] = useState<any>(null);
+  const [recon, setRecon] = useState<any>(null);
+  const [msg, setMsg] = useState('');
+  const load = useCallback(async () => {
+    setTb(await api<any>('/dashboard/admin/ledger/trial-balance'));
+    setRecon(await api<any>('/dashboard/admin/ledger/reconcile'));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const backfill = async () => { setMsg('Posting…'); const r = await api<any>('/dashboard/admin/ledger/backfill', { method: 'POST' }); setMsg(`Backfilled ${r.payments} payments, ${r.refunds} refunds, ${r.commissions} commissions`); await load(); };
+
+  return (
+    <>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Platform ledger & reconciliation</h2>
+        <Button variant="secondary" onClick={backfill}>Backfill from records</Button>
+      </div>
+      {msg && <p className="mb-3 text-sm text-emerald-600">{msg}</p>}
+      {recon && (
+        <Card className={`mb-4 border-l-4 ${recon.balanced ? 'border-emerald-500' : 'border-red-500'}`}>
+          <div className="mb-2 font-medium">{recon.balanced ? '✅ Reconciliation clean' : `⚠️ ${recon.breaks?.length} break(s)`}</div>
+          <ul className="text-sm">{recon.checks?.map((c: any) => <li key={c.id} className="py-0.5">{c.ok ? '🟢' : '🔴'} {c.label} {c.detail && <span className="text-xs text-slate-400">— {c.detail}</span>}</li>)}</ul>
+        </Card>
+      )}
+      {tb && (
+        <Card className="overflow-x-auto">
+          <h3 className="mb-2 font-semibold">Trial balance {tb.in_balance ? <span className="text-sm text-emerald-600">· in balance</span> : <span className="text-sm text-red-600">· OUT OF BALANCE</span>}</h3>
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-xs uppercase tracking-wider text-slate-400"><th className="py-1">Account</th><th>Type</th><th>Cur</th><th className="text-right">Debit</th><th className="text-right">Credit</th><th className="text-right">Balance</th></tr></thead>
+            <tbody>
+              {tb.accounts?.map((a: any) => (
+                <tr key={a.account + a.currency} className="border-t border-slate-50">
+                  <td className="py-1.5">{a.account.replace(/_/g, ' ')}</td><td className="text-xs text-slate-500">{a.type}</td><td>{a.currency}</td>
+                  <td className="text-right">{a.debit}</td><td className="text-right">{a.credit}</td><td className="text-right font-medium">{a.balance}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-xs text-slate-400">“fee revenue” is your transaction income; “merchant payable” is what you owe merchants.</p>
+        </Card>
+      )}
+    </>
+  );
+}
+
+// --------------------------------------------------------------- Ops
+function OpsTab() {
+  const [posture, setPosture] = useState<any>(null);
+  const [mon, setMon] = useState<any>(null);
+  useEffect(() => {
+    api<any>('/admin/security/posture').then(setPosture).catch(() => {});
+    api<any>('/admin/security/monitoring').then(setMon).catch(() => {});
+  }, []);
+  return (
+    <>
+      {mon && (
+        <>
+          <h2 className="mb-2 text-lg font-semibold">System health</h2>
+          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Stat label="Status" value={mon.healthy ? 'Healthy' : 'Degraded'} accent={mon.healthy ? 'emerald' : 'red'} icon={mon.healthy ? '🟢' : '🔴'} />
+            <Stat label="DB latency" value={`${mon.db?.latency_ms}ms`} accent="slate" />
+            <Stat label="Webhook backlog" value={mon.queue?.webhook_backlog} accent={mon.queue?.webhook_backlog > 100 ? 'amber' : 'slate'} />
+            <Stat label="Paid / 1h" value={mon.throughput_1h?.paid} accent="brand" hint={`${mon.throughput_1h?.failed} failed`} />
+          </div>
+        </>
+      )}
+      {posture && (
+        <Card className="mb-6">
+          <h3 className="mb-2 font-semibold">Security posture <span className="text-sm text-slate-500">· {posture.score}%</span></h3>
+          <ul className="text-sm">{posture.checks?.map((c: any) => <li key={c.id} className="flex items-center gap-2 py-0.5"><span>{c.status === 'pass' ? '🟢' : c.status === 'warn' ? '🟡' : '🔴'}</span>{c.label} <span className="text-xs text-slate-400">— {c.detail}</span></li>)}</ul>
+        </Card>
+      )}
+      <SupportConsole />
+    </>
+  );
+}
+
+// --------------------------------------------------------------- AI
+function AiTab() {
+  const [usage, setUsage] = useState<any>(null);
+  const [reg, setReg] = useState<any>(null);
+  useEffect(() => {
+    api<any>('/dashboard/admin/ai/usage').then(setUsage).catch(() => {});
+    api<any>('/dashboard/admin/ai/registry').then(setReg).catch(() => {});
+  }, []);
+  return (
+    <>
+      <h2 className="mb-2 text-lg font-semibold">AI usage & cost (30 days)</h2>
+      {usage && (
+        <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Stat label="Calls" value={usage.total_calls} icon="✨" accent="brand" />
+          <Stat label="Est. cost" value={usage.total_cost} icon="💵" accent="emerald" />
+          <Stat label="Blocked" value={usage.blocked_calls} icon="⛔" accent={usage.blocked_calls ? 'red' : 'slate'} />
+        </div>
+      )}
+      {usage?.by_model && (
+        <Card className="mb-4">
+          <div className="mb-1 text-sm font-medium">By model</div>
+          <ul className="text-sm">{usage.by_model.map((m: any) => <li key={m.model} className="flex justify-between py-0.5"><span className="font-mono text-xs">{m.model}</span><span>{m.calls} calls · {m.cost}</span></li>)}</ul>
+        </Card>
+      )}
+      {reg?.models && (
+        <Card>
+          <div className="mb-1 text-sm font-medium">Model registry</div>
+          <ul className="text-sm">{reg.models.map((m: any) => <li key={m.id} className="py-1"><b>{m.family}</b> <span className="rounded bg-slate-100 px-1.5 text-xs">{m.status}</span> <span className="text-xs text-slate-400">— {m.use}</span></li>)}</ul>
+        </Card>
+      )}
+    </>
+  );
+}
+
+function SettingsTab() {
+  return <><SystemSettings /><ChangePassword /></>;
+}
+
+// ================================================================ helpers
 interface Queue { name: string; waiting?: number; active?: number; completed?: number; failed?: number; delayed?: number; paused?: number; healthy: boolean; error?: string }
 
 function SupportConsole() {
@@ -260,13 +441,7 @@ function SystemSettings() {
                       {s.preview && <span className="font-mono text-slate-400">{s.preview}</span>}
                     </div>
                   </div>
-                  <input
-                    type={s.secret ? 'password' : 'text'}
-                    value={edit[s.key] ?? ''}
-                    onChange={(e) => setEdit((p) => ({ ...p, [s.key]: e.target.value }))}
-                    placeholder={s.configured ? 'Replace…' : 'Set value…'}
-                    className="w-56 rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
-                  />
+                  <input type={s.secret ? 'password' : 'text'} value={edit[s.key] ?? ''} onChange={(e) => setEdit((p) => ({ ...p, [s.key]: e.target.value }))} placeholder={s.configured ? 'Replace…' : 'Set value…'} className="w-56 rounded-lg border border-slate-200 px-3 py-1.5 text-sm" />
                   <Button onClick={() => save(s.key)}>Save</Button>
                   {s.source === 'db' && <button onClick={() => clear(s.key)} className="text-xs text-red-500 hover:underline">Clear</button>}
                 </div>

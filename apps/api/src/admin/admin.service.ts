@@ -133,8 +133,53 @@ export class AdminService {
       status: org.status.toLowerCase(),
       plan: org.plan?.name ?? 'Free',
       grace_until: org.graceUntil?.toISOString() ?? null,
+      plan_id: org.planId ?? null,
       members: org.members.map((m) => ({ email: m.user.email, role: m.role.toLowerCase() })),
-      stores: org.stores.map((s) => ({ id: s.id, name: s.name, live_mode: s.liveMode })),
+      stores: org.stores.map((s) => ({ id: s.id, name: s.name, live_mode: s.liveMode, fee_bps: s.feeBps })),
+    };
+  }
+
+  /** Assign a subscription plan to a merchant (monetization). */
+  async setOrgPlan(user: AuthUser, orgId: string, planId: string) {
+    await this.assertAdmin(user.userId);
+    const [org, plan] = await Promise.all([
+      this.prisma.organization.findUnique({ where: { id: orgId } }),
+      this.prisma.plan.findUnique({ where: { id: planId } }),
+    ]);
+    if (!org) throw ApiError.paymentNotFound('Organization not found');
+    if (!plan) throw ApiError.invalidRequest('Unknown plan');
+    await this.prisma.organization.update({ where: { id: orgId }, data: { planId } });
+    return { id: orgId, plan: plan.name };
+  }
+
+  /** Set a store's per-transaction platform fee in basis points (100 = 1%). */
+  async setStoreFee(user: AuthUser, storeId: string, feeBps: number) {
+    await this.assertAdmin(user.userId);
+    if (feeBps < 0 || feeBps > 2000) throw ApiError.invalidRequest('Fee must be 0–2000 bps (0–20%)');
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) throw ApiError.paymentNotFound('Store not found');
+    await this.prisma.store.update({ where: { id: storeId }, data: { feeBps } });
+    return { id: storeId, fee_bps: feeBps };
+  }
+
+  /** Platform revenue: transaction fees (from the ledger) + subscription income. */
+  async platformRevenue(user: AuthUser) {
+    await this.assertAdmin(user.userId);
+    const from = new Date(Date.now() - 30 * 86_400_000);
+    const [feeCredit, feeDebit, subsPaid, activeSubs] = await Promise.all([
+      this.prisma.ledgerEntry.aggregate({ where: { accountCode: 'fee_revenue', direction: 'CREDIT' }, _sum: { amount: true } }),
+      this.prisma.ledgerEntry.aggregate({ where: { accountCode: 'fee_revenue', direction: 'DEBIT' }, _sum: { amount: true } }),
+      this.prisma.invoice.aggregate({ where: { status: 'paid', paidAt: { gte: from } }, _sum: { amountUsdCents: true }, _count: { _all: true } }),
+      this.prisma.organization.count({ where: { planId: { not: null }, status: 'ACTIVE' } }),
+    ]);
+    const fees = Number(feeCredit._sum.amount ?? 0) - Number(feeDebit._sum.amount ?? 0);
+    const subs = (subsPaid._sum.amountUsdCents ?? 0) / 100;
+    return {
+      transaction_fees_total: fees.toFixed(2),
+      subscription_revenue_30d: subs.toFixed(2),
+      subscription_invoices_30d: subsPaid._count._all,
+      active_paid_subscriptions: activeSubs,
+      total_revenue: (fees + subs).toFixed(2),
     };
   }
 

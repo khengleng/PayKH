@@ -8,6 +8,15 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Platform operator cockpit** (admin console): `/admin` is now a tabbed
+  operator console — **Overview** (platform revenue = transaction fees + subs,
+  GMV, KPIs, books-reconciled status), **Merchants** (KYC approvals + per-merchant
+  **plan assignment** and per-store **transaction-fee %** — the monetization
+  levers), **Financials** (platform trial balance + reconciliation + backfill),
+  **Ops** (system health, security posture, queue monitor, support lookup), **AI**
+  (usage/cost + model registry), and **Settings** (integration keys + change
+  password). New endpoints: `GET /admin/revenue`, `PUT /admin/orgs/:id/plan`,
+  `PUT /admin/stores/:id/fee`. Change-password (`POST /auth/change-password`).
 - **Forgot / reset password**: `POST /auth/forgot-password` (no account
   enumeration — always 200; emails a single-use, 1-hour reset link from the
   configured sender) and `POST /auth/reset-password` (validates a hashed,

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AdminService, UpsertPlanDto } from './admin.service';
@@ -54,6 +54,24 @@ export class AdminController {
   @ApiOperation({ summary: 'Organization detail' })
   org(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.admin.getOrg(user, id);
+  }
+
+  @Get('revenue')
+  @ApiOperation({ summary: 'Platform revenue (transaction fees + subscriptions)' })
+  revenue(@CurrentUser() user: AuthUser) {
+    return this.admin.platformRevenue(user);
+  }
+
+  @Put('orgs/:id/plan')
+  @ApiOperation({ summary: 'Assign a subscription plan to a merchant' })
+  setPlan(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: { planId: string }) {
+    return this.admin.setOrgPlan(user, id, dto.planId);
+  }
+
+  @Put('stores/:id/fee')
+  @ApiOperation({ summary: 'Set a store’s per-transaction fee (bps)' })
+  setFee(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: { feeBps: number }) {
+    return this.admin.setStoreFee(user, id, dto.feeBps);
   }
 
   @Post('orgs/:id/suspend')
