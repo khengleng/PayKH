@@ -84,10 +84,10 @@ function PaymentsContent({ storeId }: { storeId: string }) {
 
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-sm">
-          <thead className="border-b border-slate-100 text-left text-slate-500">
+          <thead className="border-b border-slate-100 bg-slate-50/60 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-4 py-3">Payment</th>
-              <th className="px-4 py-3">Amount</th>
+              <th className="px-4 py-3 text-right">Amount</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Reference</th>
               <th className="px-4 py-3">Created</th>
@@ -96,17 +96,21 @@ function PaymentsContent({ storeId }: { storeId: string }) {
           <tbody>
             {items.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">No payments yet</td>
+                <td colSpan={5} className="px-4 py-12 text-center">
+                  <div className="text-3xl">🧾</div>
+                  <div className="mt-2 text-slate-500">No payments yet</div>
+                  <div className="text-xs text-slate-400">Payments will appear here as they come in.</div>
+                </td>
               </tr>
             )}
             {items.map((p) => (
               <tr
                 key={p.id}
                 onClick={() => setDetail(p)}
-                className="cursor-pointer border-b border-slate-50 hover:bg-slate-50"
+                className="cursor-pointer border-b border-slate-50 transition-colors last:border-0 hover:bg-brand-50/40"
               >
-                <td className="px-4 py-3 font-mono text-xs">{p.id}</td>
-                <td className="px-4 py-3">{p.amount} {p.currency}</td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.id}</td>
+                <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{p.amount} <span className="text-xs font-normal text-slate-400">{p.currency}</span></td>
                 <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                 <td className="px-4 py-3 text-slate-500">{p.reference_id ?? '—'}</td>
                 <td className="px-4 py-3 text-slate-500">{new Date(p.created_at).toLocaleString()}</td>
@@ -157,11 +161,11 @@ function PaymentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex justify-end bg-black/30" onClick={onClose}>
-      <div className="h-full w-full max-w-md overflow-y-auto bg-white p-6" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-30 flex justify-end bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="h-full w-full max-w-md animate-fade-in overflow-y-auto rounded-l-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Payment</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          <h2 className="text-lg font-semibold">Payment details</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">✕</button>
         </div>
         {!data ? (
           <p className="mt-6 text-slate-400">Loading…</p>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError, tokenStore, orgStore } from '@/lib/api';
+import { Logo, LogoMark } from '@/components/Logo';
 
 interface AuthResult {
   token: string;
@@ -25,15 +26,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const path = mode === 'login' ? '/auth/login' : '/auth/register';
-      const body =
-        mode === 'login'
-          ? { email, password }
-          : { email, password, name, organizationName: orgName };
+      const body = mode === 'login' ? { email, password } : { email, password, name, organizationName: orgName };
       const result = await api<AuthResult>(path, { method: 'POST', body, auth: false });
       tokenStore.set(result.token);
       if (result.organization?.id) orgStore.set(result.organization.id);
-      const next =
-        typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
+      const next = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
       router.push(next || '/overview');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
@@ -43,64 +40,82 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-brand-500 text-xl font-bold text-white">
-            P
+    <main className="flex min-h-screen">
+      {/* Brand panel */}
+      <section className="relative hidden w-[46%] flex-col justify-between overflow-hidden bg-brand-950 p-12 text-white lg:flex">
+        <div className="absolute inset-0 opacity-90" style={{ backgroundImage: 'radial-gradient(40rem 40rem at 20% 10%, rgba(30,91,214,0.55), transparent 60%), radial-gradient(30rem 30rem at 90% 90%, rgba(86,135,250,0.35), transparent 60%)' }} />
+        <div className="relative">
+          <div className="flex items-center gap-2.5">
+            <LogoMark size={38} />
+            <span className="text-2xl font-bold tracking-tight">pay<span className="text-brand-300">KH</span></span>
           </div>
-          <h1 className="mt-3 text-xl font-semibold">PayKH Dashboard</h1>
-          <p className="text-sm text-slate-500">Bakong KHQR payments</p>
         </div>
+        <div className="relative">
+          <h2 className="text-4xl font-bold leading-tight tracking-tight">Pay Smart.<br />Grow Together.</h2>
+          <p className="mt-4 max-w-md text-brand-100/80">The all-in-one KHQR payment platform for Cambodian merchants — payments, loyalty, campaigns, and AI insights in one place.</p>
+          <div className="mt-8 grid grid-cols-2 gap-4 text-sm">
+            {[['⚡', 'Instant KHQR', 'Bakong-ready checkout'], ['🎁', 'Loyalty & games', 'Turn buyers into regulars'], ['🛡️', 'Bank-grade security', 'Encrypted, audited, reconciled'], ['✨', 'AI Copilot', 'Grow with recommendations']].map(([icon, t, d]) => (
+              <div key={t} className="rounded-xl bg-white/10 p-3 backdrop-blur">
+                <div className="text-lg">{icon}</div>
+                <div className="mt-1 font-semibold">{t}</div>
+                <div className="text-xs text-brand-100/70">{d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="relative flex items-center gap-2 text-xs text-brand-100/60">
+          <span className="h-px w-6 bg-brand-100/30" /> Made for Cambodia 🇰🇭
+        </div>
+      </section>
 
-        <form onSubmit={submit} className="space-y-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
-          {mode === 'register' && (
-            <>
-              <Field label="Your name" value={name} onChange={setName} placeholder="Sok Dara" />
-              <Field label="Organization" value={orgName} onChange={setOrgName} placeholder="My Company" />
-            </>
-          )}
-          <Field label="Email" type="email" value={email} onChange={setEmail} required />
-          <Field label="Password" type="password" value={password} onChange={setPassword} required />
+      {/* Form panel */}
+      <section className="flex flex-1 items-center justify-center p-6">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 lg:hidden"><Logo /></div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+          <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? 'Sign in to your merchant dashboard.' : 'Start accepting KHQR payments in minutes.'}</p>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          <form onSubmit={submit} className="mt-6 space-y-3.5">
+            {mode === 'register' && (
+              <>
+                <Field label="Your name" value={name} onChange={setName} placeholder="Sok Dara" />
+                <Field label="Organization" value={orgName} onChange={setOrgName} placeholder="My Company" />
+              </>
+            )}
+            <Field label="Email" type="email" value={email} onChange={setEmail} required />
+            <Field label="Password" type="password" value={password} onChange={setPassword} required />
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-brand-500 py-2.5 font-medium text-white hover:bg-brand-600 disabled:opacity-60"
-          >
-            {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
-          </button>
+            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-600/10">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-brand-500 py-2.5 font-semibold text-white shadow-brand transition-all hover:bg-brand-600 active:bg-brand-700 disabled:opacity-60"
+            >
+              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+            </button>
+          </form>
 
           <button
             type="button"
-            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-            className="w-full text-center text-sm text-slate-500 hover:text-slate-700"
+            onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}
+            className="mt-4 w-full text-center text-sm text-slate-500 hover:text-brand-600"
           >
-            {mode === 'login' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
+            {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
-        </form>
-      </div>
+
+          {mode === 'login' && (
+            <p className="mt-6 rounded-lg border border-dashed border-slate-200 px-3 py-2 text-center text-xs text-slate-400">
+              Demo: <span className="font-medium text-slate-500">owner@demo.paykh.dev</span> · pre-filled
+            </p>
+          )}
+        </div>
+      </section>
     </main>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  type = 'text',
-  placeholder,
-  required,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  placeholder?: string;
-  required?: boolean;
-}) {
+function Field({ label, value, onChange, type = 'text', placeholder, required }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; required?: boolean }) {
   return (
     <label className="block">
       <span className="text-sm font-medium text-slate-700">{label}</span>
@@ -110,7 +125,7 @@ function Field({
         required={required}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
       />
     </label>
   );
