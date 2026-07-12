@@ -10,7 +10,8 @@
     "packages/sdk-node",
     "apps/api",
     "apps/checkout",
-    "apps/dashboard"
+    "apps/dashboard",
+    "apps/docs"
   ],
   "engines": {
     "node": ">=18.18.0"
@@ -23,6 +24,7 @@
     "dev:api": "npm run build:packages && npm run dev --workspace @paykh/api",
     "dev:checkout": "npm run dev --workspace @paykh/checkout",
     "dev:dashboard": "npm run dev --workspace @paykh/dashboard",
+    "dev:docs": "npm run dev --workspace @paykh/docs",
     "dev:worker": "npm run build:packages && npm run dev:worker --workspace @paykh/api",
     "prisma:generate": "npm run prisma:generate --workspace @paykh/api",
     "prisma:migrate": "npm run prisma:migrate --workspace @paykh/api",
