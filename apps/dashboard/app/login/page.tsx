@@ -6,6 +6,8 @@ import { api, ApiError, tokenStore, orgStore } from '@/lib/api';
 import { Logo, LogoMark } from '@/components/Logo';
 import { useT, LangToggle } from '@/lib/i18n';
 
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.paykh.cambobia.com';
+
 interface AuthResult {
   token: string;
   organization: { id: string; name: string };
@@ -78,7 +80,10 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center justify-between lg:justify-end">
             <span className="lg:hidden"><Logo /></span>
-            <LangToggle />
+            <div className="flex items-center gap-3">
+              <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-slate-500 hover:text-brand-600">Docs ↗</a>
+              <LangToggle />
+            </div>
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{mode === 'login' ? t('welcome_back') : 'Create your account'}</h1>
           <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? t('signin_sub') : 'Start accepting KHQR payments in minutes.'}</p>
