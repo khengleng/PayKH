@@ -9,6 +9,7 @@ import {
   FailureScreen,
   SuccessScreen,
 } from './StatusScreens';
+import { useT, money, LangToggle } from '@/lib/i18n';
 
 type ConnState = 'live' | 'polling' | 'connecting';
 
@@ -35,6 +36,7 @@ function formatClock(seconds: number): string {
 
 export default function PayPage({ params }: { params: { id: string } }) {
   const { id } = params;
+  const t = useT();
   const [view, setView] = useState<CheckoutView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>('connecting');
@@ -137,6 +139,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
 
   return (
     <Shell accent={accent}>
+      <div className="mb-1 flex justify-end"><LangToggle className="!border-slate-200 text-slate-500" /></div>
       {/* Merchant header */}
       <div className="flex flex-col items-center border-b border-slate-100 pb-5">
         {view.merchant.logo_url ? (
@@ -151,9 +154,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
           </div>
         )}
         <h1 className="mt-3 text-lg font-semibold">{view.merchant.name}</h1>
-        <div className="mt-1 text-3xl font-bold tracking-tight">
-          {view.amount} <span className="text-lg font-medium text-slate-500">{view.currency}</span>
-        </div>
+        <div className="mt-1 text-3xl font-bold tracking-tight">{money(view.amount, view.currency)}</div>
         {view.description && <p className="mt-1 text-sm text-slate-500">{view.description}</p>}
       </div>
 
@@ -168,19 +169,17 @@ export default function PayPage({ params }: { params: { id: string } }) {
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <QRCodeSVG value={view.qr_string} size={220} level="M" includeMargin />
             </div>
-            <p className="mt-3 text-sm text-slate-500">
-              Scan with any Bakong-enabled banking app
-            </p>
+            <p className="mt-3 text-sm text-slate-500">{t('scan_bank_app')}</p>
 
             {view.status === 'scanned' && (
               <div className="mt-3 rounded-full bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700">
-                QR scanned — awaiting confirmation…
+                {t('qr_scanned')}
               </div>
             )}
 
             <div className="mt-4 flex items-center gap-2 text-sm">
               <span className={remaining <= 30 ? 'text-red-600' : 'text-slate-600'}>
-                Expires in <span className="font-mono font-semibold">{formatClock(remaining)}</span>
+                {t('expires_in')} <span className="font-mono font-semibold">{formatClock(remaining)}</span>
               </span>
             </div>
           </div>
@@ -188,13 +187,13 @@ export default function PayPage({ params }: { params: { id: string } }) {
           {/* Reference + actions */}
           <div className="mt-6 space-y-2 rounded-xl bg-slate-50 p-4 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Reference</span>
+              <span className="text-slate-500">{t('reference')}</span>
               <button onClick={copyReference} className="font-mono font-medium text-slate-800 hover:underline">
                 {view.reference_id ?? view.id} {copied ? '✓' : '⧉'}
               </button>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Status</span>
+              <span className="text-slate-500">{t('status')}</span>
               <span className="flex items-center gap-1.5">
                 <span
                   className={`h-2 w-2 rounded-full ${conn === 'live' ? 'bg-emerald-500' : 'bg-amber-400'}`}
@@ -208,7 +207,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
             onClick={() => fetchView()}
             className="mt-4 w-full rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            Refresh status
+            {t('refresh_status')}
           </button>
         </div>
       )}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useT, money, LangToggle } from '@/lib/i18n';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -12,6 +13,7 @@ interface Link {
 }
 
 export default function PayLinkPage({ params }: { params: { id: string } }) {
+  const t = useT();
   const [link, setLink] = useState<Link | null>(null);
   const [error, setError] = useState('');
   const [amount, setAmount] = useState('');
@@ -39,11 +41,12 @@ export default function PayLinkPage({ params }: { params: { id: string } }) {
   return (
     <main style={s.wrap}>
       <div style={s.card}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><LangToggle className="text-slate-500 !border-slate-200" /></div>
         {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
         {link && (
           <>
             <div style={s.store}>{link.store_name}</div>
-            {link.type === 'invoice' && <div style={s.badge}>INVOICE{link.customer_name ? ` · ${link.customer_name}` : ''}</div>}
+            {link.type === 'invoice' && <div style={s.badge}>{t('invoice')}{link.customer_name ? ` · ${link.customer_name}` : ''}</div>}
             <h1 style={s.title}>{link.title}</h1>
             {link.description && <p style={s.desc}>{link.description}</p>}
 
@@ -56,29 +59,29 @@ export default function PayLinkPage({ params }: { params: { id: string } }) {
             )}
 
             {link.paid ? (
-              <div style={{ ...s.paidBox }}>✅ This has already been paid. Thank you!</div>
+              <div style={{ ...s.paidBox }}>✅ {t('paid_already')}</div>
             ) : !link.active ? (
-              <div style={s.paidBox}>This link is no longer active.</div>
+              <div style={s.paidBox}>{t('not_active')}</div>
             ) : (
               <>
                 {link.allows_custom_amount ? (
                   <label style={{ display: 'block', marginBottom: 12 }}>
-                    <span style={s.label}>Amount ({link.currency})</span>
+                    <span style={s.label}>{t('amount')} ({link.currency})</span>
                     <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" style={s.input} />
                   </label>
                 ) : (
-                  <div style={s.amount}>{link.amount} <span style={{ fontSize: 18, color: '#64748b' }}>{link.currency}</span></div>
+                  <div style={s.amount}>{money(link.amount ?? '0', link.currency)}</div>
                 )}
                 <label style={{ display: 'block', marginBottom: 16 }}>
-                  <span style={s.label}>Your name (optional)</span>
-                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={s.input} />
+                  <span style={s.label}>{t('your_name')}</span>
+                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('name')} style={s.input} />
                 </label>
                 <button onClick={pay} disabled={busy || (link.allows_custom_amount && !amount)} style={{ ...s.btn, opacity: busy ? 0.7 : 1 }}>
-                  {busy ? 'Starting…' : 'Pay with KHQR'}
+                  {busy ? t('starting') : t('pay_with_khqr')}
                 </button>
               </>
             )}
-            <p style={s.foot}>Secured by <b>PayKH</b> · Bakong KHQR</p>
+            <p style={s.foot}>{t('secured_by')} <b>PayKH</b> · Bakong KHQR</p>
           </>
         )}
       </div>

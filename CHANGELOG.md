@@ -8,6 +8,12 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Khmer localization (ខ្មែរ) + KHR-first money** (GTM — Cambodia): the entire
+  **customer-facing checkout** (pay, payment-link, receipt pages) is now bilingual
+  Khmer/English with a per-device language toggle, defaulting to **Khmer**; Riel
+  displays with no decimals + ៛ and USD with $. The **merchant dashboard** gains a
+  Khmer toggle with the shell (grouped nav, sign-out, admin console) and login
+  localized (remaining pages incremental).
 - **Customer receipts** (GTM): every paid payment emails the payer a branded
   receipt (when an email is known) and exposes a public, printable receipt page
   (`checkout/r/:id`, `GET /receipts/:id`) with a receipt number, amount, status,

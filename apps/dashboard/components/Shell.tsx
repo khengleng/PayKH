@@ -7,6 +7,7 @@ import { api, tokenStore, storeStore } from '@/lib/api';
 import { Me, Store } from '@/lib/types';
 import { Logo, LogoMark } from '@/components/Logo';
 import { Icon } from '@/components/icons';
+import { useT, LangToggle } from '@/lib/i18n';
 
 const NAV_GROUPS: { title: string; items: { href: string; label: string; icon: string }[] }[] = [
   {
@@ -68,6 +69,7 @@ export interface ShellContext {
 export function Shell({ children }: { children: (ctx: ShellContext) => React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const t = useT();
   const [me, setMe] = useState<Me | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -105,7 +107,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-slate-400">
           <LogoMark size={40} className="animate-pulse" />
-          <span className="text-sm">Loading your workspace…</span>
+          <span className="text-sm">{t('loading_ws')}</span>
         </div>
       </div>
     );
@@ -119,7 +121,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
     <nav className="flex-1 space-y-5 overflow-y-auto">
       {NAV_GROUPS.map((group) => (
         <div key={group.title}>
-          <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{group.title}</div>
+          <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t(`grp.${group.title}`)}</div>
           <div className="space-y-0.5">
             {group.items.map((item) => {
               const active = pathname === item.href;
@@ -133,7 +135,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
                   }`}
                 >
                   {active && <span className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-brand-500" />}
-                  <Icon name={item.icon} className={active ? 'text-brand-600' : 'text-slate-400 group-hover:text-slate-600'} /> {item.label}
+                  <Icon name={item.icon} className={active ? 'text-brand-600' : 'text-slate-400 group-hover:text-slate-600'} /> {t(`nav.${item.label}`)}
                 </Link>
               );
             })}
@@ -151,11 +153,11 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
         <NavList />
         {me.is_platform_admin && (
           <a href="/admin" className="mt-3 flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">
-            <span>🛰️</span> Admin Console
+            <span>🛰️</span> {t('admin_console')}
           </a>
         )}
         <button onClick={logout} className="mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-500 hover:bg-slate-100">
-          <span>↩</span> Sign out
+          <span>↩</span> {t('signout')}
         </button>
       </aside>
 
@@ -199,6 +201,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
             )}
           </div>
           <div className="flex items-center gap-3">
+            <LangToggle />
             <span className="hidden text-sm text-slate-500 sm:inline">{me.email}</span>
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-500 text-xs font-semibold text-white">{initials}</div>
           </div>

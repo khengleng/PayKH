@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError, tokenStore, orgStore } from '@/lib/api';
 import { Logo, LogoMark } from '@/components/Logo';
+import { useT, LangToggle } from '@/lib/i18n';
 
 interface AuthResult {
   token: string;
@@ -12,6 +13,7 @@ interface AuthResult {
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useT();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('owner@demo.paykh.dev');
   const [password, setPassword] = useState('Password123!');
@@ -74,9 +76,12 @@ export default function LoginPage() {
       {/* Form panel */}
       <section className="flex flex-1 items-center justify-center p-6">
         <div className="w-full max-w-sm">
-          <div className="mb-8 lg:hidden"><Logo /></div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
-          <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? 'Sign in to your merchant dashboard.' : 'Start accepting KHQR payments in minutes.'}</p>
+          <div className="mb-8 flex items-center justify-between lg:justify-end">
+            <span className="lg:hidden"><Logo /></span>
+            <LangToggle />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{mode === 'login' ? t('welcome_back') : 'Create your account'}</h1>
+          <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? t('signin_sub') : 'Start accepting KHQR payments in minutes.'}</p>
 
           <form onSubmit={submit} className="mt-6 space-y-3.5">
             {mode === 'register' && (
@@ -85,8 +90,8 @@ export default function LoginPage() {
                 <Field label="Organization" value={orgName} onChange={setOrgName} placeholder="My Company" />
               </>
             )}
-            <Field label="Email" type="email" value={email} onChange={setEmail} required />
-            <Field label="Password" type="password" value={password} onChange={setPassword} required />
+            <Field label={t('email')} type="email" value={email} onChange={setEmail} required />
+            <Field label={t('password')} type="password" value={password} onChange={setPassword} required />
 
             {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-600/10">{error}</p>}
 
@@ -95,7 +100,7 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full rounded-lg bg-brand-500 py-2.5 font-semibold text-white shadow-brand transition-all hover:bg-brand-600 active:bg-brand-700 disabled:opacity-60"
             >
-              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+              {loading ? 'Please wait…' : mode === 'login' ? t('signin') : 'Create account'}
             </button>
           </form>
 

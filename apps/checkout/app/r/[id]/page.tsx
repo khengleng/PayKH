@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useT, money, LangToggle } from '@/lib/i18n';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -11,6 +12,7 @@ interface Receipt {
 }
 
 export default function ReceiptPage({ params }: { params: { id: string } }) {
+  const t = useT();
   const [r, setR] = useState<Receipt | null>(null);
   const [error, setError] = useState('');
   const load = useCallback(async () => {
@@ -26,26 +28,27 @@ export default function ReceiptPage({ params }: { params: { id: string } }) {
   return (
     <main style={s.wrap}>
       <div style={s.card}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}><LangToggle className="!border-slate-200 text-slate-500" /></div>
         {error && <p style={{ color: '#dc2626' }}>{error}</p>}
         {r && (
           <>
             <div style={{ textAlign: 'center' }}>
               <div style={{ ...s.badge, background: paid ? '#dcfce7' : '#f1f5f9', color: paid ? '#15803d' : '#475569' }}>
-                {paid ? '✓ Paid' : r.status}
+                {paid ? `✓ ${t('paid')}` : r.status}
               </div>
               <div style={s.store}>{r.store_name}</div>
-              <div style={s.amount}>{r.amount} <span style={{ fontSize: 18, color: '#64748b' }}>{r.currency}</span></div>
+              <div style={s.amount}>{money(r.amount, r.currency)}</div>
             </div>
             <div style={s.rows}>
-              <Row k="Receipt no." v={r.receipt_number} mono />
-              {r.description && <Row k="For" v={r.description} />}
-              {r.reference && <Row k="Reference" v={r.reference} mono />}
-              <Row k="Date" v={new Date(r.paid_at ?? r.created_at).toLocaleString()} />
-              <Row k="Payment ID" v={r.id} mono small />
-              {refunded && <Row k="Refunded" v={`${r.refunded_amount} ${r.currency}`} />}
+              <Row k={t('receipt_no')} v={r.receipt_number} mono />
+              {r.description && <Row k={t('reference')} v={r.description} />}
+              {r.reference && <Row k={t('reference')} v={r.reference} mono />}
+              <Row k={t('date')} v={new Date(r.paid_at ?? r.created_at).toLocaleString()} />
+              <Row k="ID" v={r.id} mono small />
+              {refunded && <Row k="Refunded" v={money(r.refunded_amount, r.currency)} />}
             </div>
-            {r.support_email && <p style={s.support}>Questions? Contact <a href={`mailto:${r.support_email}`} style={{ color: '#1E5BD6' }}>{r.support_email}</a></p>}
-            <button onClick={() => window.print()} style={s.btn}>Print / Save PDF</button>
+            {r.support_email && <p style={s.support}>{t('questions_contact')} <a href={`mailto:${r.support_email}`} style={{ color: '#1E5BD6' }}>{r.support_email}</a></p>}
+            <button onClick={() => window.print()} style={s.btn}>{t('print_save')}</button>
             <p style={s.foot}>Powered by <b>PayKH</b> · Bakong KHQR</p>
           </>
         )}
