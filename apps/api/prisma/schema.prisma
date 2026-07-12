@@ -1091,6 +1091,7 @@ model Plan {
   name             String
   monthlyPaidQuota Int // successful payments per month; -1 = unlimited
   priceUsdCents    Int      @default(0)
+  defaultFeeBps    Int      @default(0) // transaction fee (bps) applied to new stores on this plan
   createdAt        DateTime @default(now())
 
   organizations Organization[]

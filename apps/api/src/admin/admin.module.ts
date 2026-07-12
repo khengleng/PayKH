@@ -3,9 +3,10 @@ import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 import { AuthModule } from '../auth/auth.module';
 import { VerificationModule } from '../verification/verification.module';
+import { LedgerModule } from '../ledger/ledger.module';
 
 @Module({
-  imports: [AuthModule, VerificationModule],
+  imports: [AuthModule, VerificationModule, LedgerModule],
   controllers: [AdminController],
   providers: [AdminService],
 })

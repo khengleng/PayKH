@@ -152,44 +152,22 @@ export class ReconciliationService {
     checks.push({ id: 'coverage', label: 'Every paid payment has a captured journal', ok: missing === 0, detail: `${paidCount} paid, ${missing} un-posted` });
     if (missing > 0) breaks.push({ check: 'coverage', expected: String(paidCount), ledger: String(paidCount - missing), delta: String(missing) });
 
-    // Expected fee/net from source, per currency (fee rate is per store).
-    const groups = await this.prisma.payment.groupBy({ by: ['storeId', 'currency'], where: { ...scope, status: 'PAID' }, _sum: { amount: true, refundedAmount: true } });
-    const stores = await this.prisma.store.findMany({ where: storeId ? { id: storeId } : {}, select: { id: true, feeBps: true } });
-    const feeOf = new Map(stores.map((s) => [s.id, s.feeBps]));
-    const expFee = new Map<string, Prisma.Decimal>();
-    const expPayable = new Map<string, Prisma.Decimal>();
-    for (const g of groups) {
-      const bps = feeOf.get(g.storeId) ?? 0;
-      const base = D(g._sum.amount ?? 0).minus(D(g._sum.refundedAmount ?? 0));
-      const fee = base.mul(bps).div(10_000);
-      expFee.set(g.currency, (expFee.get(g.currency) ?? D(0)).add(fee));
-      expPayable.set(g.currency, (expPayable.get(g.currency) ?? D(0)).add(base.minus(fee)));
+    // (D) Gross-captured tie-out — fee-independent: the total money booked in
+    // matches the gross of the payments actually captured. (Value tie-outs that
+    // recompute fees are avoided since a store's fee can change over time; the
+    // external tie-out to Bakong settlement files is the authoritative check.)
+    const capturedIds = capturedRefs.map((r) => r.reference).filter((r): r is string => !!r);
+    const capturedPayments = await this.prisma.payment.findMany({ where: { id: { in: capturedIds } }, select: { amount: true, currency: true } });
+    const expGross = new Map<string, Prisma.Decimal>();
+    for (const p of capturedPayments) expGross.set(p.currency, (expGross.get(p.currency) ?? D(0)).add(D(p.amount)));
+    const clearingDebits = await this.prisma.ledgerEntry.groupBy({ by: ['currency'], where: { accountCode: 'settlement_clearing', direction: 'DEBIT', journal: { event: 'payment.captured' }, ...entryScope }, _sum: { amount: true } });
+    const ledGross = new Map(clearingDebits.map((g) => [g.currency, D(g._sum.amount ?? 0)]));
+    let grossOk = true;
+    for (const cur of new Set<string>([...expGross.keys(), ...ledGross.keys()])) {
+      const exp = expGross.get(cur) ?? D(0); const actual = ledGross.get(cur) ?? D(0);
+      if (exp.minus(actual).abs().gt(TOL)) { grossOk = false; breaks.push({ check: 'gross_captured', currency: cur, expected: exp.toFixed(2), ledger: actual.toFixed(2), delta: exp.minus(actual).toFixed(2) }); }
     }
-
-    // Ledger balances per account+currency (credit-normal accounts: credit - debit)
-    const led = await this.prisma.ledgerEntry.groupBy({ by: ['accountCode', 'direction', 'currency'], where: entryScope, _sum: { amount: true } });
-    const ledBal = (code: string, cur: string) => {
-      let credit = D(0), debit = D(0);
-      for (const g of led) if (g.accountCode === code && g.currency === cur) { if (g.direction === 'CREDIT') credit = credit.add(D(g._sum.amount ?? 0)); else debit = debit.add(D(g._sum.amount ?? 0)); }
-      return credit.minus(debit);
-    };
-    const currencies = new Set<string>([...expFee.keys(), ...led.map((g) => g.currency)]);
-
-    // (D) fee revenue tie-out
-    let feeOk = true;
-    for (const cur of currencies) {
-      const exp = expFee.get(cur) ?? D(0); const actual = ledBal('fee_revenue', cur);
-      if (exp.minus(actual).abs().gt(TOL)) { feeOk = false; breaks.push({ check: 'fee_revenue', currency: cur, expected: exp.toFixed(2), ledger: actual.toFixed(2), delta: exp.minus(actual).toFixed(2) }); }
-    }
-    checks.push({ id: 'fee_revenue', label: 'Fee revenue ties to expected fees', ok: feeOk });
-
-    // (E) merchant payable tie-out
-    let payOk = true;
-    for (const cur of currencies) {
-      const exp = expPayable.get(cur) ?? D(0); const actual = ledBal('merchant_payable', cur);
-      if (exp.minus(actual).abs().gt(TOL)) { payOk = false; breaks.push({ check: 'merchant_payable', currency: cur, expected: exp.toFixed(2), ledger: actual.toFixed(2), delta: exp.minus(actual).toFixed(2) }); }
-    }
-    checks.push({ id: 'merchant_payable', label: 'Merchant payable ties to expected net owed', ok: payOk });
+    checks.push({ id: 'gross_captured', label: 'Captured gross ties to source payment amounts', ok: grossOk });
 
     const balanced = checks.every((c) => c.ok);
     return { scope: storeId ?? 'platform', balanced, checks, breaks };

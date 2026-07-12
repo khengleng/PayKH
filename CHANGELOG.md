@@ -8,6 +8,14 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Merchant payouts + default plan fees** (operator money-out): a **Payouts**
+  tab shows what the platform owes each merchant (their `merchant_payable` ledger
+  balance); **mark-paid** posts a payout journal (Dr merchant-payable / Cr
+  clearing) and clears the balance. Plans gain a **default transaction fee** that
+  new stores inherit, editable in the admin **Plans & pricing** manager.
+  Reconciliation reworked to fee-independent checks (journal integrity,
+  trial-balance zero-sum, coverage, gross-captured tie-out) so it stays clean
+  through fee changes and payouts.
 - **Platform operator cockpit** (admin console): `/admin` is now a tabbed
   operator console — **Overview** (platform revenue = transaction fees + subs,
   GMV, KPIs, books-reconciled status), **Merchants** (KYC approvals + per-merchant

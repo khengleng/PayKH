@@ -1,18 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { Prisma } from '@prisma/client';
+import { prefixedId } from '@paykh/security';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { currentPeriodStart } from '../billing/period.util';
 import { QUEUE_MAINTENANCE, QUEUE_WEBHOOK } from '../queue/queue.constants';
+import { LedgerService } from '../ledger/ledger.service';
 
 export class UpsertPlanDto {
   @IsString() id!: string;
   @IsString() name!: string;
   @IsInt() @Min(-1) monthlyPaidQuota!: number;
   @IsInt() @Min(0) priceUsdCents!: number;
+  @IsOptional() @IsInt() @Min(0) defaultFeeBps?: number;
 }
 
 export class AdminListQuery {
@@ -28,6 +32,7 @@ export class AdminListQuery {
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly ledger: LedgerService,
     @InjectQueue(QUEUE_WEBHOOK) private readonly webhookQueue: Queue,
     @InjectQueue(QUEUE_MAINTENANCE) private readonly maintenanceQueue: Queue,
   ) {}
@@ -221,16 +226,49 @@ export class AdminService {
   async listPlans(user: AuthUser) {
     await this.assertAdmin(user.userId);
     const plans = await this.prisma.plan.findMany({ orderBy: { priceUsdCents: 'asc' } });
-    return plans.map((p) => ({ id: p.id, name: p.name, monthly_quota: p.monthlyPaidQuota, price_usd_cents: p.priceUsdCents }));
+    return plans.map((p) => ({ id: p.id, name: p.name, monthly_quota: p.monthlyPaidQuota, price_usd_cents: p.priceUsdCents, default_fee_bps: p.defaultFeeBps }));
   }
 
   async upsertPlan(user: AuthUser, dto: UpsertPlanDto) {
     await this.assertAdmin(user.userId);
     const plan = await this.prisma.plan.upsert({
       where: { id: dto.id },
-      create: { id: dto.id, name: dto.name, monthlyPaidQuota: dto.monthlyPaidQuota, priceUsdCents: dto.priceUsdCents },
-      update: { name: dto.name, monthlyPaidQuota: dto.monthlyPaidQuota, priceUsdCents: dto.priceUsdCents },
+      create: { id: dto.id, name: dto.name, monthlyPaidQuota: dto.monthlyPaidQuota, priceUsdCents: dto.priceUsdCents, defaultFeeBps: dto.defaultFeeBps ?? 0 },
+      update: { name: dto.name, monthlyPaidQuota: dto.monthlyPaidQuota, priceUsdCents: dto.priceUsdCents, defaultFeeBps: dto.defaultFeeBps },
     });
-    return { id: plan.id, name: plan.name, monthly_quota: plan.monthlyPaidQuota, price_usd_cents: plan.priceUsdCents };
+    return { id: plan.id, name: plan.name, monthly_quota: plan.monthlyPaidQuota, price_usd_cents: plan.priceUsdCents, default_fee_bps: plan.defaultFeeBps };
+  }
+
+  // ------------------------------------------------------------- payouts
+  /** What the platform owes each merchant (merchant_payable ledger balance). */
+  async payouts(user: AuthUser) {
+    await this.assertAdmin(user.userId);
+    const grouped = await this.prisma.ledgerEntry.groupBy({ by: ['storeId', 'direction', 'currency'], where: { accountCode: 'merchant_payable' }, _sum: { amount: true } });
+    const byStore = new Map<string, { storeId: string; currency: string; credit: number; debit: number }>();
+    for (const g of grouped) {
+      if (!g.storeId) continue;
+      const key = `${g.storeId}|${g.currency}`;
+      const row = byStore.get(key) ?? { storeId: g.storeId, currency: g.currency, credit: 0, debit: 0 };
+      if (g.direction === 'CREDIT') row.credit += Number(g._sum.amount ?? 0); else row.debit += Number(g._sum.amount ?? 0);
+      byStore.set(key, row);
+    }
+    const storeIds = [...new Set([...byStore.values()].map((r) => r.storeId))];
+    const stores = await this.prisma.store.findMany({ where: { id: { in: storeIds } }, include: { organization: true } });
+    const nameOf = new Map(stores.map((s) => [s.id, { store: s.name, org: s.organization.name }]));
+    return [...byStore.values()]
+      .map((r) => ({ store_id: r.storeId, store: nameOf.get(r.storeId)?.store ?? r.storeId, merchant: nameOf.get(r.storeId)?.org ?? '', currency: r.currency, owed: (r.credit - r.debit).toFixed(2) }))
+      .filter((r) => Number(r.owed) > 0.005)
+      .sort((a, b) => Number(b.owed) - Number(a.owed));
+  }
+
+  /** Record a payout to a merchant — posts DR merchant_payable / CR clearing. */
+  async payMerchant(user: AuthUser, storeId: string, currency: string, amount: string, ref?: string) {
+    await this.assertAdmin(user.userId);
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) throw ApiError.paymentNotFound('Store not found');
+    const value = new Prisma.Decimal(amount);
+    if (value.lte(0)) throw ApiError.invalidRequest('Amount must be positive');
+    await this.ledger.postPayout(storeId, currency, value, ref ?? prefixedId('payout'));
+    return { store_id: storeId, currency, paid: value.toFixed(2) };
   }
 }

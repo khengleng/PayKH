@@ -8,7 +8,7 @@ import { LogoMark } from '@/components/Logo';
 
 interface Metrics { organizations: number; suspended: number; stores: number; total_payments: number; paid_count: number; paid_volume: string; success_rate: number }
 
-const TABS = ['Overview', 'Merchants', 'Financials', 'Ops', 'AI', 'Settings'] as const;
+const TABS = ['Overview', 'Merchants', 'Financials', 'Payouts', 'Ops', 'AI', 'Settings'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminPage() {
@@ -66,6 +66,7 @@ export default function AdminPage() {
         {tab === 'Overview' && <OverviewTab />}
         {tab === 'Merchants' && <MerchantsTab />}
         {tab === 'Financials' && <FinancialsTab />}
+        {tab === 'Payouts' && <PayoutsTab />}
         {tab === 'Ops' && <OpsTab />}
         {tab === 'AI' && <AiTab />}
         {tab === 'Settings' && <SettingsTab />}
@@ -328,8 +329,88 @@ function AiTab() {
   );
 }
 
+// --------------------------------------------------------------- Payouts
+function PayoutsTab() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [msg, setMsg] = useState('');
+  const load = useCallback(async () => { setRows(await api<any[]>('/admin/payouts')); }, []);
+  useEffect(() => { load(); }, [load]);
+  const pay = async (r: any) => {
+    if (!confirm(`Record a payout of ${r.owed} ${r.currency} to ${r.merchant} (${r.store})?`)) return;
+    await api(`/admin/stores/${r.store_id}/payout`, { method: 'POST', body: { currency: r.currency, amount: r.owed } });
+    setMsg(`Paid ${r.owed} ${r.currency} to ${r.merchant}`); setTimeout(() => setMsg(''), 2500); await load();
+  };
+  const total = rows.reduce((a, r) => a + Number(r.owed), 0);
+  return (
+    <>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Merchant payouts</h2>
+        <span className="text-sm text-slate-500">Outstanding: <b>{total.toFixed(2)}</b></span>
+      </div>
+      <p className="mb-3 text-sm text-slate-500">What you owe each merchant (their net after your fees). Recording a payout posts to the ledger and clears the balance.</p>
+      {msg && <p className="mb-3 text-sm text-emerald-600">{msg}</p>}
+      <Card className="overflow-x-auto p-0">
+        <table className="w-full text-sm">
+          <thead className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr><th className="px-4 py-3">Merchant</th><th className="px-4 py-3">Store</th><th className="px-4 py-3 text-right">Owed</th><th className="px-4 py-3"></th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.store_id + r.currency} className="border-b border-slate-50">
+                <td className="px-4 py-3 font-medium">{r.merchant}</td>
+                <td className="px-4 py-3 text-slate-500">{r.store}</td>
+                <td className="px-4 py-3 text-right font-semibold tabular-nums">{r.owed} <span className="text-xs font-normal text-slate-400">{r.currency}</span></td>
+                <td className="px-4 py-3 text-right"><button onClick={() => pay(r)} className="rounded-md border border-brand-200 px-2 py-1 text-xs text-brand-700 hover:bg-brand-50">Mark paid</button></td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">Nothing outstanding — all merchants settled. 🎉</td></tr>}
+          </tbody>
+        </table>
+      </Card>
+    </>
+  );
+}
+
 function SettingsTab() {
-  return <><SystemSettings /><ChangePassword /></>;
+  return <><PlansManager /><SystemSettings /><ChangePassword /></>;
+}
+
+function PlansManager() {
+  const [plans, setPlans] = useState<any[]>([]);
+  const [edit, setEdit] = useState<Record<string, { price: string; fee: string }>>({});
+  const [msg, setMsg] = useState('');
+  const load = useCallback(async () => { setPlans(await api<any[]>('/admin/plans')); }, []);
+  useEffect(() => { load(); }, [load]);
+  const save = async (p: any) => {
+    const e = edit[p.id] ?? { price: (p.price_usd_cents / 100).toString(), fee: (p.default_fee_bps / 100).toString() };
+    await api('/admin/plans', { method: 'POST', body: { id: p.id, name: p.name, monthlyPaidQuota: p.monthly_quota, priceUsdCents: Math.round(Number(e.price) * 100), defaultFeeBps: Math.round(Number(e.fee) * 100) } });
+    setMsg(`${p.name} saved`); setTimeout(() => setMsg(''), 1500); await load();
+  };
+  return (
+    <>
+      <h2 className="mb-2 text-lg font-semibold">Plans & pricing</h2>
+      <p className="mb-3 text-sm text-slate-500">Set each plan’s monthly price and the default transaction fee new stores on that plan inherit. {msg && <span className="text-emerald-600">· {msg}</span>}</p>
+      <Card className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-xs uppercase tracking-wider text-slate-400"><th className="py-1">Plan</th><th>Quota/mo</th><th>Price $/mo</th><th>Default fee %</th><th></th></tr></thead>
+          <tbody>
+            {plans.map((p) => {
+              const e = edit[p.id] ?? { price: (p.price_usd_cents / 100).toString(), fee: ((p.default_fee_bps ?? 0) / 100).toString() };
+              return (
+                <tr key={p.id} className="border-t border-slate-50">
+                  <td className="py-2 font-medium">{p.name}</td>
+                  <td>{p.monthly_quota === -1 ? '∞' : p.monthly_quota}</td>
+                  <td><input value={e.price} onChange={(ev) => setEdit((s) => ({ ...s, [p.id]: { ...e, price: ev.target.value } }))} className="w-20 rounded border border-slate-200 px-2 py-1 text-sm" /></td>
+                  <td><input value={e.fee} onChange={(ev) => setEdit((s) => ({ ...s, [p.id]: { ...e, fee: ev.target.value } }))} className="w-20 rounded border border-slate-200 px-2 py-1 text-sm" /></td>
+                  <td><Button onClick={() => save(p)}>Save</Button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+    </>
+  );
 }
 
 // ================================================================ helpers

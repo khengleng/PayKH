@@ -103,6 +103,14 @@ export class LedgerService implements OnModuleInit {
     ]);
   }
 
+  /** Merchant payout: DR merchant payable; CR clearing (cash paid out to merchant). */
+  async postPayout(storeId: string, currency: string, amount: Prisma.Decimal, ref: string): Promise<void> {
+    await this.post('payout', `${storeId}:${ref}`, storeId, currency, [
+      { accountCode: 'merchant_payable', direction: 'DEBIT', amount: D(amount) },
+      { accountCode: 'settlement_clearing', direction: 'CREDIT', amount: D(amount) },
+    ]);
+  }
+
   /** Commission paid out: DR commission payable; CR clearing (cash out). */
   async postCommissionPaid(commissionId: string, storeId: string, currency: string, amount: Prisma.Decimal): Promise<void> {
     await this.post('commission.paid', commissionId, storeId, currency, [

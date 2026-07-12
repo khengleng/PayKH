@@ -74,6 +74,18 @@ export class AdminController {
     return this.admin.setStoreFee(user, id, dto.feeBps);
   }
 
+  @Get('payouts')
+  @ApiOperation({ summary: 'What the platform owes each merchant (from the ledger)' })
+  payouts(@CurrentUser() user: AuthUser) {
+    return this.admin.payouts(user);
+  }
+
+  @Post('stores/:id/payout')
+  @ApiOperation({ summary: 'Record a payout to a merchant (posts to the ledger)' })
+  payout(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: { currency: string; amount: string; ref?: string }) {
+    return this.admin.payMerchant(user, id, dto.currency, dto.amount, dto.ref);
+  }
+
   @Post('orgs/:id/suspend')
   @ApiOperation({ summary: 'Suspend a merchant' })
   async suspend(@CurrentUser() user: AuthUser, @Param('id') id: string, @Req() req: Request) {

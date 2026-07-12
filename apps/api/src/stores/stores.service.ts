@@ -30,11 +30,15 @@ export class StoresService {
 
   async create(user: AuthUser, dto: CreateStoreDto) {
     requirePermission(user, dto.organizationId, 'store:write');
+    // New stores inherit the merchant plan's default transaction fee.
+    const org = await this.prisma.organization.findUnique({ where: { id: dto.organizationId }, include: { plan: true } });
+    const feeBps = org?.plan?.defaultFeeBps ?? 0;
     const store = await this.prisma.store.create({
       data: {
         id: ids.store(),
         organizationId: dto.organizationId,
         name: dto.name,
+        feeBps,
         branding: { create: {} },
       },
       include: { branding: true },
