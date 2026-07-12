@@ -42,7 +42,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Search
             <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 text-[11px] font-medium">⌘K</kbd>
           </button>
-          <a href={`${DASHBOARD_URL}/register`} className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white shadow-brand hover:bg-brand-700">Get API keys</a>
+          <a href={`${DASHBOARD_URL}/login`} className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white shadow-brand hover:bg-brand-700">Get API keys</a>
         </div>
       </header>
 
