@@ -40,6 +40,7 @@ const DICT: Record<string, { en: string; km: string }> = {
   'nav.AI Copilot': { en: 'AI Copilot', km: 'ជំនួយ AI' },
   'nav.API Keys': { en: 'API Keys', km: 'API Keys' },
   'nav.Webhooks': { en: 'Webhooks', km: 'Webhooks' },
+  'nav.Documentation': { en: 'Documentation', km: 'ឯកសារ​សម្រាប់​អ្នក​អភិវឌ្ឍន៍' },
   'nav.Stores': { en: 'Stores', km: 'ហាង' },
   'nav.Team': { en: 'Team', km: 'ក្រុមការងារ' },
   'nav.Access': { en: 'Access', km: 'សិទ្ធិចូលប្រើ' },

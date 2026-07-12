@@ -30,6 +30,8 @@ export default function OverviewPage() {
   );
 }
 
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.paykh.cambobia.com';
+
 const QUICK_ACTIONS = [
   { href: '/payments', icon: '💳', label: 'Payments', desc: 'View & refund' },
   { href: '/customers', icon: '👤', label: 'Customers', desc: 'Customer 360' },
@@ -110,6 +112,20 @@ function OverviewContent({ storeId, live, storeName, email }: { storeId: string;
           </div>
         </>
       )}
+
+      <div className="mt-8 flex flex-col gap-4 rounded-2xl border border-slate-200/70 bg-gradient-to-br from-brand-50 to-white p-5 shadow-card sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-xl">📚</div>
+          <div>
+            <div className="font-semibold text-slate-900">Build with the PayKH API</div>
+            <p className="text-sm text-slate-500">Quickstart, API reference, SDKs and webhooks — everything to integrate Bakong KHQR.</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">Read the docs ↗</a>
+          <Link href="/keys" className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-300">Get API keys</Link>
+        </div>
+      </div>
     </>
   );
 }

@@ -9,7 +9,9 @@ import { Logo, LogoMark } from '@/components/Logo';
 import { Icon } from '@/components/icons';
 import { useT, LangToggle } from '@/lib/i18n';
 
-const NAV_GROUPS: { title: string; items: { href: string; label: string; icon: string }[] }[] = [
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.paykh.cambobia.com';
+
+const NAV_GROUPS: { title: string; items: { href: string; label: string; icon: string; external?: boolean }[] }[] = [
   {
     title: 'Operate',
     items: [
@@ -45,6 +47,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string; icon: s
     items: [
       { href: '/keys', label: 'API Keys', icon: 'keys' },
       { href: '/webhooks', label: 'Webhooks', icon: 'webhooks' },
+      { href: DOCS_URL, label: 'Documentation', icon: 'docs', external: true },
     ],
   },
   {
@@ -124,18 +127,31 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
           <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t(`grp.${group.title}`)}</div>
           <div className="space-y-0.5">
             {group.items.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={`group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                    active ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-600 hover:bg-slate-100/70'
-                  }`}
-                >
+              const active = !item.external && pathname === item.href;
+              const className = `group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                active ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-600 hover:bg-slate-100/70'
+              }`;
+              const inner = (
+                <>
                   {active && <span className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-brand-500" />}
                   <Icon name={item.icon} className={active ? 'text-brand-600' : 'text-slate-400 group-hover:text-slate-600'} /> {t(`nav.${item.label}`)}
+                  {item.external && <span className="ml-auto text-xs text-slate-300 group-hover:text-slate-400">↗</span>}
+                </>
+              );
+              return item.external ? (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setMobileOpen(false)}
+                  className={className}
+                >
+                  {inner}
+                </a>
+              ) : (
+                <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className={className}>
+                  {inner}
                 </Link>
               );
             })}
