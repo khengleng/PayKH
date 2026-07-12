@@ -16,6 +16,7 @@ import { SettlementsModule } from '../settlements/settlements.module';
 import { BranchesModule } from '../branches/branches.module';
 import { CustomersModule } from '../customers/customers.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
+import { SettingsCoreModule } from '../settings/settings.module';
 import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
 import { MaintenanceProcessor } from './maintenance.processor';
 import { WorkerScheduler } from './worker-scheduler';
@@ -32,6 +33,7 @@ import { WorkerScheduler } from './worker-scheduler';
     ConfigModule.forRoot({ isGlobal: true, load: [loadConfig] }),
     PrismaModule,
     CommonModule,
+    SettingsCoreModule, // provides SettingsService (EmailService/Telegram/Messaging resolve keys through it)
     EmailModule,
     AuditModule,
     ProviderModule,
