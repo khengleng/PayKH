@@ -166,6 +166,11 @@ enum LedgerDirection {
   CREDIT
 }
 
+enum PaymentLinkType {
+  LINK // reusable / one-off shareable payment link
+  INVOICE // addressed to a customer, with line items + due date
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -293,6 +298,7 @@ model Store {
   revenueShares        RevenueShareAgreement[]
   riskCases            RiskCase[]
   connectors           Connector[]
+  paymentLinks         PaymentLink[]
 
   @@index([organizationId])
 }
@@ -819,6 +825,33 @@ model LedgerEntry {
   @@index([accountCode, currency])
   @@index([storeId])
   @@index([journalId])
+}
+
+/// A no-code shareable payment link or invoice. Opening it mints a Payment for
+/// the store (no API key needed — the link id is the authorization) and hands
+/// off to the hosted checkout. `amount` null = the payer enters the amount.
+model PaymentLink {
+  id            String          @id
+  storeId       String
+  type          PaymentLinkType @default(LINK)
+  title         String
+  description   String?
+  amount        Decimal?        @db.Decimal(18, 2) // null → payer enters amount
+  currency      Currency        @default(USD)
+  active        Boolean         @default(true)
+  singleUse     Boolean         @default(false)
+  timesPaid     Int             @default(0)
+  // Invoice fields (optional)
+  customerName  String?
+  customerEmail String?
+  dueAt         DateTime?
+  lineItems     Json            @default("[]") // [{name, qty, price}]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
 }
 
 /// An installed third-party connector (Slack / Zapier / generic webhook) that

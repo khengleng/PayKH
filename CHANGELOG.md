@@ -8,6 +8,13 @@ All notable changes to PayKH are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Payment Links & Invoicing** (GTM — no-code get-paid): merchants create a
+  shareable **payment link** (fixed or customer-entered amount, single-use or
+  reusable) or an **invoice** (addressed customer, line items) with no code.
+  Opening the hosted link (`checkout/l/:id`) mints a Payment for the store — the
+  link id is the authorization, no API key — and hands off to KHQR checkout.
+  Dashboard builder with copyable URLs; public `GET /links/:id` + `POST
+  /links/:id/pay`.
 - **ABAC policy layer** (Domain 2, on top of RBAC): attribute-based access control
   — decisions from subject/resource/environment attributes. Policies: high-value
   refunds (≥ $500) require **owner**; analysts can't write to **live** stores;

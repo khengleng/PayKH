@@ -14,6 +14,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string; icon: s
     items: [
       { href: '/overview', label: 'Overview', icon: 'overview' },
       { href: '/payments', label: 'Payments', icon: 'payments' },
+      { href: '/links', label: 'Payment Links', icon: 'links' },
       { href: '/settlements', label: 'Settlements', icon: 'settlements' },
       { href: '/ledger', label: 'Ledger', icon: 'ledger' },
     ],

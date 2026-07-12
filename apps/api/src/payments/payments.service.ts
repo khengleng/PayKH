@@ -156,7 +156,7 @@ export class PaymentsService {
           data: {
             id: paymentId,
             storeId: ctx.storeId,
-            apiKeyId: ctx.apiKeyId,
+            apiKeyId: ctx.apiKeyId || null, // '' (link/dashboard-originated) → no api key
             mode: ctx.mode === 'live' ? 'LIVE' : 'TEST',
             status: 'PENDING',
             amount,
