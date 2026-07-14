@@ -138,10 +138,18 @@ export class WebhooksService {
     const orgId = await this.storeOrgId(delivery.endpoint.storeId);
     requirePermission(user, orgId, 'webhook:write');
 
-    await this.prisma.webhookDelivery.update({
-      where: { id: deliveryId },
-      data: { status: 'PENDING', error: null, nextAttemptAt: null },
-    });
+    await this.prisma.$transaction([
+      // Re-enable the endpoint — otherwise the processor immediately re-fails a
+      // delivery to a disabled endpoint and the manual resend silently no-ops.
+      this.prisma.webhookEndpoint.updateMany({
+        where: { id: delivery.endpointId, disabled: true },
+        data: { disabled: false },
+      }),
+      this.prisma.webhookDelivery.update({
+        where: { id: deliveryId },
+        data: { status: 'PENDING', error: null, nextAttemptAt: null },
+      }),
+    ]);
     await this.events.enqueue(deliveryId);
     return { id: deliveryId, resent: true };
   }

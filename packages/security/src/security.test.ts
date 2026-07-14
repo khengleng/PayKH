@@ -7,12 +7,13 @@ import {
 import {
   generateWebhookSecret,
   buildSignatureHeader,
+  buildSignatureHeaderMulti,
   verifySignature,
   computeSignature,
 } from './hmac';
 import { encrypt, decrypt, loadEncryptionKey } from './encryption';
 import { prefixedId, ids } from './ids';
-import { generateTotpSecret, totpCode, verifyTotp, base32Decode, base32Encode } from './totp';
+import { generateTotpSecret, totpCode, verifyTotp, verifyTotpCounter, base32Decode, base32Encode } from './totp';
 
 describe('apiKeys', () => {
   it('generates a live key with the correct prefix and a matching hash', () => {
@@ -79,6 +80,19 @@ describe('hmac webhook signing', () => {
   it('computeSignature is deterministic', () => {
     expect(computeSignature(secret, 1, 'a')).toBe(computeSignature(secret, 1, 'a'));
   });
+
+  it('dual-signs during rotation so either secret verifies', () => {
+    const ts = 1_700_000_000;
+    const oldSecret = generateWebhookSecret();
+    const newSecret = generateWebhookSecret();
+    const header = buildSignatureHeaderMulti([newSecret, oldSecret], body, ts);
+    // A consumer still on the old secret verifies.
+    expect(verifySignature(oldSecret, body, header, { nowSeconds: ts }).valid).toBe(true);
+    // A consumer updated to the new secret verifies.
+    expect(verifySignature(newSecret, body, header, { nowSeconds: ts }).valid).toBe(true);
+    // An unrelated secret still fails.
+    expect(verifySignature(generateWebhookSecret(), body, header, { nowSeconds: ts }).valid).toBe(false);
+  });
 });
 
 describe('encryption AES-256-GCM', () => {
@@ -137,5 +151,18 @@ describe('totp', () => {
     // two windows back is rejected
     const older = totpCode(secret, now - 90_000);
     expect(verifyTotp(secret, older, now, 1)).toBe(false);
+  });
+
+  it('returns the matched step counter for replay tracking', () => {
+    const secret = generateTotpSecret();
+    const now = 1_700_000_000_000;
+    const step = Math.floor(now / 1000 / 30);
+    // Current code matches the current step counter.
+    expect(verifyTotpCounter(secret, totpCode(secret, now), now)).toBe(step);
+    // Previous-window code matches the previous step (strictly smaller), so a
+    // caller storing the last counter can reject a replay of the same code.
+    expect(verifyTotpCounter(secret, totpCode(secret, now - 30_000), now)).toBe(step - 1);
+    // A wrong code yields null.
+    expect(verifyTotpCounter(secret, '000000', now)).toBeNull();
   });
 });

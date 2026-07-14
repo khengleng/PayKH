@@ -72,7 +72,9 @@ export class PaymentsService {
     idempotencyKey: string | undefined,
     rawBody: string,
   ): Promise<{ resource: PaymentResource; status: number }> {
-    const endpoint = 'POST /v1/payments';
+    // Scope the idempotency namespace by mode so the same key can't replay a
+    // test-mode resource for a live-mode request (or vice versa) within a store.
+    const endpoint = `POST /v1/payments:${ctx.mode}`;
     const requestHash = this.hashBody(rawBody);
 
     // Idempotency replay handling.
@@ -293,7 +295,7 @@ export class PaymentsService {
     idempotencyKey: string | undefined,
     rawBody: string,
   ): Promise<{ resource: RefundResource; status: number }> {
-    const endpoint = `POST /v1/payments/${paymentId}/refund`;
+    const endpoint = `POST /v1/payments/${paymentId}/refund:${ctx.mode}`;
     const requestHash = this.hashBody(rawBody);
 
     if (idempotencyKey) {
@@ -349,36 +351,73 @@ export class PaymentsService {
     const fullyRefunded = newRefunded.greaterThanOrEqualTo(total);
 
     // Optimistic-locked increment: only succeeds if refundedAmount is unchanged,
-    // which prevents concurrent over-refunding.
-    const refund = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.payment.updateMany({
-        where: { id: paymentId, refundedAmount: alreadyRefunded },
-        data: { refundedAmount: newRefunded },
+    // which prevents concurrent over-refunding. The idempotency record is
+    // reserved in the SAME transaction (via its unique constraint) so a
+    // *sequential* retry with the same key can't slip past the top-of-method
+    // pre-check and issue a second refund.
+    let refund: Refund;
+    try {
+      refund = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.payment.updateMany({
+          where: { id: paymentId, refundedAmount: alreadyRefunded },
+          data: { refundedAmount: newRefunded },
+        });
+        if (updated.count !== 1) {
+          throw ApiError.idempotencyConflict('Concurrent refund detected; retry');
+        }
+        const created = await tx.refund.create({
+          data: {
+            id: refundId,
+            paymentId,
+            amount: refundAmount,
+            currency: payment.currency,
+            reason: dto.reason ?? null,
+            status: 'SUCCEEDED',
+            providerRefId: providerResult.providerRefId ?? null,
+          },
+        });
+        await tx.paymentStatusHistory.create({
+          data: {
+            paymentId,
+            fromStatus: 'PAID',
+            toStatus: 'PAID',
+            reason: `refund ${formatAmount(refundAmount, payment.currency)}${providerResult.manual ? ' (manual settlement)' : ''}`,
+          },
+        });
+        if (idempotencyKey) {
+          await tx.idempotencyRecord.create({
+            data: {
+              storeId: ctx.storeId,
+              endpoint,
+              idempotencyKey,
+              requestHash,
+              responseStatus: 201,
+              responseBody: this.serializeRefund(created) as unknown as Prisma.InputJsonValue,
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            },
+          });
+        }
+        return created;
       });
-      if (updated.count !== 1) {
-        throw ApiError.idempotencyConflict('Concurrent refund detected; retry');
+    } catch (err) {
+      // A concurrent request with the same key won the reservation — replay it.
+      if (
+        idempotencyKey &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const existing = await this.prisma.idempotencyRecord.findUnique({
+          where: { storeId_endpoint_idempotencyKey: { storeId: ctx.storeId, endpoint, idempotencyKey } },
+        });
+        if (existing) {
+          if (existing.requestHash !== requestHash) {
+            throw ApiError.idempotencyConflict('Idempotency-Key already used with a different request body');
+          }
+          return { resource: existing.responseBody as unknown as RefundResource, status: existing.responseStatus };
+        }
       }
-      const created = await tx.refund.create({
-        data: {
-          id: refundId,
-          paymentId,
-          amount: refundAmount,
-          currency: payment.currency,
-          reason: dto.reason ?? null,
-          status: 'SUCCEEDED',
-          providerRefId: providerResult.providerRefId ?? null,
-        },
-      });
-      await tx.paymentStatusHistory.create({
-        data: {
-          paymentId,
-          fromStatus: 'PAID',
-          toStatus: 'PAID',
-          reason: `refund ${formatAmount(refundAmount, payment.currency)}${providerResult.manual ? ' (manual settlement)' : ''}`,
-        },
-      });
-      return created;
-    });
+      throw err;
+    }
 
     // Double-entry ledger: post this refund slice (best-effort, idempotent by refundId).
     try {
@@ -398,21 +437,6 @@ export class PaymentsService {
     }
 
     const resource = this.serializeRefund(refund);
-    if (idempotencyKey) {
-      await this.prisma.idempotencyRecord
-        .create({
-          data: {
-            storeId: ctx.storeId,
-            endpoint,
-            idempotencyKey,
-            requestHash,
-            responseStatus: 201,
-            responseBody: resource as unknown as Prisma.InputJsonValue,
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          },
-        })
-        .catch(() => undefined);
-    }
     await this.audit.record({
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
@@ -520,17 +544,26 @@ export class PaymentsService {
       if (!canTransition(from, to)) {
         throw ApiError.invalidRequest(`Illegal transition ${from} -> ${to}`);
       }
-      const updated = await tx.payment.update({
-        where: { id: paymentId },
+      // Guard on the from-state so two concurrent callers (e.g. the status poller
+      // and an inbound webhook) can't both win the transition and fire the paid
+      // side effects twice. The loser's updateMany matches 0 rows.
+      const updated = await tx.payment.updateMany({
+        where: { id: paymentId, status: payment.status },
         data: {
           status: toDbStatus(to),
           paidAt: to === 'paid' ? new Date() : payment.paidAt,
         },
       });
+      if (updated.count !== 1) {
+        // Another transaction already moved this payment; treat as no-op.
+        emit = false;
+        return payment;
+      }
       await tx.paymentStatusHistory.create({
         data: { paymentId, fromStatus: payment.status, toStatus: toDbStatus(to), reason },
       });
-      return updated;
+      const refreshed = await tx.payment.findUnique({ where: { id: paymentId } });
+      return refreshed ?? payment;
     });
 
     // Live checkout update (SSE) + webhook fan-out for interesting statuses.

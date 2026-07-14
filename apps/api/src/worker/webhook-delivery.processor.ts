@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
-import { buildSignatureHeader } from '@paykh/security';
+import { buildSignatureHeaderMulti } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EmailService } from '../email/email.service';
@@ -60,11 +60,18 @@ export class WebhookDeliveryProcessor extends WorkerHost {
       return; // don't retry
     }
 
-    const secret = await this.prisma.webhookSecret.findFirst({
-      where: { endpointId: endpoint.id, active: true },
+    // Sign with EVERY currently-valid secret: the active one plus any rotated-out
+    // secret still within its grace window (expiresAt > now). During a rotation
+    // this dual-signs so a consumer that has updated to either secret verifies.
+    const now = new Date();
+    const validSecrets = await this.prisma.webhookSecret.findMany({
+      where: {
+        endpointId: endpoint.id,
+        OR: [{ active: true }, { expiresAt: { gt: now } }],
+      },
       orderBy: { createdAt: 'desc' },
     });
-    if (!secret) {
+    if (validSecrets.length === 0) {
       await this.markPermanentFailure(deliveryId, endpoint.id, job, null, 'no active signing secret');
       return;
     }
@@ -80,7 +87,11 @@ export class WebhookDeliveryProcessor extends WorkerHost {
     const attempt = job.attemptsMade + 1;
     const rawBody = JSON.stringify(delivery.event.payload);
     const timestamp = Math.floor(Date.now() / 1000);
-    const signature = buildSignatureHeader(secret.secret, rawBody, timestamp);
+    const signature = buildSignatureHeaderMulti(
+      validSecrets.map((s) => s.secret),
+      rawBody,
+      timestamp,
+    );
 
     let responseStatus: number | null = null;
     let errorText: string | null = null;
@@ -164,16 +175,23 @@ export class WebhookDeliveryProcessor extends WorkerHost {
 
   /** Disable an endpoint after N consecutive permanent failures + notify. */
   private async maybeDisableEndpoint(endpointId: string): Promise<void> {
+    // Count FAILED deliveries in an unbroken run from the newest — stopping at
+    // the first SUCCEEDED. This measures "N failures with no success since",
+    // not merely "the last N rows are all FAILED" (which could disable an
+    // endpoint on a single fresh failure sitting behind a stale failure burst).
+    // PENDING rows (in-flight retries) are skipped, not counted as failures.
     const recent = await this.prisma.webhookDelivery.findMany({
       where: { endpointId },
       orderBy: { createdAt: 'desc' },
-      take: ENDPOINT_FAILURE_DISABLE_THRESHOLD,
+      take: ENDPOINT_FAILURE_DISABLE_THRESHOLD * 3,
       select: { status: true },
     });
-    if (
-      recent.length >= ENDPOINT_FAILURE_DISABLE_THRESHOLD &&
-      recent.every((d) => d.status === 'FAILED')
-    ) {
+    let consecutiveFailures = 0;
+    for (const d of recent) {
+      if (d.status === 'SUCCEEDED') break;
+      if (d.status === 'FAILED') consecutiveFailures++;
+    }
+    if (consecutiveFailures >= ENDPOINT_FAILURE_DISABLE_THRESHOLD) {
       const endpoint = await this.prisma.webhookEndpoint.findUnique({ where: { id: endpointId } });
       if (!endpoint || endpoint.disabled) return;
       await this.prisma.webhookEndpoint.update({

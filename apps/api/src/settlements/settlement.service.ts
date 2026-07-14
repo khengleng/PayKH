@@ -60,7 +60,7 @@ export class SettlementService {
       const [currency, dayIso] = key.split('|');
       const payoutDate = new Date(dayIso);
       const settlement = await this.settleGroup(store.id, store.feeBps, currency as 'USD' | 'KHR', payoutDate, group);
-      results.push(settlement);
+      if (settlement) results.push(settlement);
     }
     this.logger.log(`settled ${payments.length} payment(s) into ${results.length} batch(es) for store ${storeId}`);
     return results;
@@ -72,19 +72,38 @@ export class SettlementService {
     currency: 'USD' | 'KHR',
     payoutDate: Date,
     group: Payment[],
-  ): Promise<Settlement> {
-    let grossSum = new D(0);
-    let refundSum = new D(0);
-    for (const p of group) {
-      grossSum = grossSum.plus(p.amount);
-      refundSum = refundSum.plus(p.refundedAmount);
-    }
-    const { gross, refunds, fee, net } = computeSettlementAmounts(grossSum, refundSum, feeBps);
-
+  ): Promise<Settlement | null> {
     return this.prisma.$transaction(async (tx) => {
+      // Serialize concurrent settlement runs (hourly worker sweep vs. manual
+      // "settle now") for this (store,currency,day) so they can't both fold the
+      // same payments in and double the statement.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`settle:${storeId}:${currency}:${payoutDate.toISOString()}`}))`;
+
+      // Re-read INSIDE the tx and only settle rows still unclaimed — a
+      // concurrent run that already ran will have set settlementId on some/all
+      // of them, and we must not count those again.
+      const fresh = await tx.payment.findMany({
+        where: { id: { in: group.map((p) => p.id) }, settlementId: null },
+        select: { id: true, amount: true, refundedAmount: true },
+      });
+
       const existing = await tx.settlement.findUnique({
         where: { storeId_currency_payoutDate: { storeId, currency, payoutDate } },
       });
+
+      if (fresh.length === 0) {
+        // Another run already claimed everything in this group; nothing to add.
+        return existing;
+      }
+
+      let grossSum = new D(0);
+      let refundSum = new D(0);
+      for (const p of fresh) {
+        grossSum = grossSum.plus(p.amount);
+        refundSum = refundSum.plus(p.refundedAmount);
+      }
+      const { gross, refunds, fee, net } = computeSettlementAmounts(grossSum, refundSum, feeBps);
+
       let settlement: Settlement;
       if (existing) {
         settlement = await tx.settlement.update({
@@ -94,7 +113,7 @@ export class SettlementService {
             refundAmount: existing.refundAmount.plus(refunds),
             feeAmount: existing.feeAmount.plus(fee),
             netAmount: existing.netAmount.plus(net),
-            paymentCount: existing.paymentCount + group.length,
+            paymentCount: existing.paymentCount + fresh.length,
           },
         });
       } else {
@@ -110,13 +129,13 @@ export class SettlementService {
             feeBps,
             feeAmount: fee,
             netAmount: net,
-            paymentCount: group.length,
+            paymentCount: fresh.length,
             settledAt: new Date(),
           },
         });
       }
       await tx.payment.updateMany({
-        where: { id: { in: group.map((p) => p.id) } },
+        where: { id: { in: fresh.map((p) => p.id) }, settlementId: null },
         data: { settlementId: settlement.id },
       });
       return settlement;

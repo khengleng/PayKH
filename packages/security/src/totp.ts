@@ -64,6 +64,30 @@ export function totpCode(secretBase32: string, atMs = Date.now(), stepSec = 30):
   return hotp(secretBase32, Math.floor(atMs / 1000 / stepSec));
 }
 
+/**
+ * Verify a TOTP token allowing ±`window` steps of clock drift, returning the
+ * matched step counter (or null on failure). Callers can persist the counter to
+ * reject replay of the same code within its validity window.
+ */
+export function verifyTotpCounter(
+  secretBase32: string,
+  token: string,
+  atMs = Date.now(),
+  window = 1,
+  stepSec = 30,
+): number | null {
+  const clean = (token ?? '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(clean)) return null;
+  const counter = Math.floor(atMs / 1000 / stepSec);
+  for (let i = -window; i <= window; i++) {
+    const expected = hotp(secretBase32, counter + i);
+    const a = Buffer.from(expected);
+    const b = Buffer.from(clean);
+    if (a.length === b.length && timingSafeEqual(a, b)) return counter + i;
+  }
+  return null;
+}
+
 /** Verify a TOTP token allowing ±`window` steps of clock drift. */
 export function verifyTotp(
   secretBase32: string,
@@ -72,16 +96,7 @@ export function verifyTotp(
   window = 1,
   stepSec = 30,
 ): boolean {
-  const clean = (token ?? '').replace(/\s/g, '');
-  if (!/^\d{6}$/.test(clean)) return false;
-  const counter = Math.floor(atMs / 1000 / stepSec);
-  for (let i = -window; i <= window; i++) {
-    const expected = hotp(secretBase32, counter + i);
-    const a = Buffer.from(expected);
-    const b = Buffer.from(clean);
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  return false;
+  return verifyTotpCounter(secretBase32, token, atMs, window, stepSec) !== null;
 }
 
 /** Build an otpauth:// URI for QR provisioning. */

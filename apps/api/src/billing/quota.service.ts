@@ -62,7 +62,15 @@ export class QuotaService {
     };
   }
 
-  /** Throw 402 if the org has reached its monthly paid quota. */
+  /**
+   * Throw 402 if the org has reached its monthly paid quota. Enforced at payment
+   * CREATE — the only point where rejection is valid (a payment that has already
+   * succeeded at the bank can never be un-captured). We count paid transactions
+   * PLUS still-in-flight pending/scanned ones created this period, so a merchant
+   * at the limit can't burst-create an unbounded number of QRs that later all
+   * settle past the quota (each individual create would otherwise still see the
+   * paid count under the cap).
+   */
   async assertWithinQuota(organizationId: string): Promise<void> {
     const { org, plan } = await this.planForOrg(organizationId);
     if (org.status === 'SUSPENDED') {
@@ -72,12 +80,21 @@ export class QuotaService {
     if (quota < 0) return; // unlimited
 
     const periodStart = currentPeriodStart();
-    const usage = await this.prisma.usageRecord.findUnique({
-      where: { organizationId_periodStart: { organizationId, periodStart } },
-    });
-    if ((usage?.paidCount ?? 0) >= quota) {
+    const [usage, inFlight] = await Promise.all([
+      this.prisma.usageRecord.findUnique({
+        where: { organizationId_periodStart: { organizationId, periodStart } },
+      }),
+      this.prisma.payment.count({
+        where: {
+          store: { organizationId },
+          status: { in: ['PENDING', 'SCANNED'] },
+          createdAt: { gte: periodStart },
+        },
+      }),
+    ]);
+    if ((usage?.paidCount ?? 0) + inFlight >= quota) {
       throw ApiError.quotaExceeded(
-        `Monthly quota of ${quota} successful payments reached. Upgrade your plan to continue.`,
+        `Monthly quota of ${quota} successful payments reached (including in-flight). Upgrade your plan to continue.`,
       );
     }
   }

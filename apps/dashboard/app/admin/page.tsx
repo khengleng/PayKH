@@ -90,9 +90,9 @@ function OverviewTab() {
       <h2 className="mb-3 text-lg font-semibold">Your platform at a glance</h2>
       {rev && (
         <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Stat label="Transaction fees (total)" value={`$${rev.transaction_fees_total}`} icon="💰" accent="emerald" hint="your income" />
+          <Stat label="Transaction fees (USD)" value={`$${rev.transaction_fees_by_currency?.USD ?? '0.00'}`} icon="💰" accent="emerald" hint={rev.transaction_fees_by_currency?.KHR ? `+ ${rev.transaction_fees_by_currency.KHR} KHR` : 'your income'} />
           <Stat label="Subscription rev (30d)" value={`$${rev.subscription_revenue_30d}`} icon="💠" accent="brand" hint={`${rev.subscription_invoices_30d} invoices`} />
-          <Stat label="Total revenue" value={`$${rev.total_revenue}`} icon="📈" accent="brand" />
+          <Stat label="Total revenue (USD)" value={`$${rev.total_revenue_usd}`} icon="📈" accent="brand" />
           <Stat label="Paid subscriptions" value={rev.active_paid_subscriptions} icon="🧾" accent="slate" />
         </div>
       )}

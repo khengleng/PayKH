@@ -246,7 +246,13 @@ export class ReferralsService {
       if (payment.paidAt && payment.paidAt.getTime() > windowEnd) return;
     }
 
-    const amount = new Prisma.Decimal(payment.amount).mul(program.commissionBps).div(10_000);
+    // Round to 2dp ONCE, up front, so the amount persisted (Decimal(18,2)) and
+    // the amount posted to the ledger are identical — otherwise the 4dp accrual
+    // credit and the 2dp payout debit leave dust in commission_payable forever.
+    const amount = new Prisma.Decimal(payment.amount)
+      .mul(program.commissionBps)
+      .div(10_000)
+      .toDecimalPlaces(2);
     if (amount.lte(0)) return;
 
     try {

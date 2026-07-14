@@ -32,7 +32,7 @@ export class JwtAuthGuard implements CanActivate {
     if (!match) {
       throw ApiError.unauthorized('Missing Bearer token');
     }
-    let payload: { sub: string };
+    let payload: { sub: string; epoch?: number };
     try {
       payload = await this.jwt.verifyAsync(match[1]);
     } catch {
@@ -45,6 +45,11 @@ export class JwtAuthGuard implements CanActivate {
     });
     if (!user) {
       throw ApiError.unauthorized('User no longer exists');
+    }
+    // Reject tokens minted before the user's current epoch — a password change
+    // or reset bumps tokenEpoch, immediately invalidating older sessions.
+    if ((payload.epoch ?? 0) !== user.tokenEpoch) {
+      throw ApiError.unauthorized('Session expired, please sign in again');
     }
 
     const authUser: AuthUser = {

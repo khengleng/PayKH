@@ -7,6 +7,7 @@ import {
   JOB_IDEMPOTENCY_CLEANUP,
   JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
+  JOB_WEBHOOK_RECONCILE,
   QUEUE_MAINTENANCE,
 } from '../queue/queue.constants';
 
@@ -48,6 +49,12 @@ export class WorkerScheduler implements OnModuleInit {
     await this.queue.add(JOB_SETTLEMENT_SWEEP, {}, {
       repeat: { every: 3_600_000 }, // hourly: batch completed-day paid payments
       jobId: 'repeat:settlement-sweep',
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+    await this.queue.add(JOB_WEBHOOK_RECONCILE, {}, {
+      repeat: { every: 120_000 }, // every 2 min: re-enqueue orphaned PENDING deliveries
+      jobId: 'repeat:webhook-reconcile',
       removeOnComplete: true,
       removeOnFail: true,
     });

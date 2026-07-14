@@ -92,6 +92,33 @@ export class WebhookEventsService {
     this.logger.log(`emitted ${type} for ${payment.id} to ${matching.length} endpoint(s)`);
   }
 
+  /**
+   * Re-enqueue orphaned PENDING deliveries — rows whose BullMQ job was lost
+   * (worker died between the row insert and enqueue, or Redis was flushed), so
+   * nothing would ever retry them. A delivery is treated as orphaned when its
+   * scheduled retry time has passed, or it has never been attempted and is older
+   * than `orphanMs`. The processor's SUCCEEDED short-circuit makes a redundant
+   * re-enqueue harmless. Returns the number re-enqueued.
+   */
+  async reconcilePending(orphanMs = 120_000): Promise<number> {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - orphanMs);
+    const orphans = await this.prisma.webhookDelivery.findMany({
+      where: {
+        status: 'PENDING',
+        endpoint: { disabled: false },
+        OR: [{ nextAttemptAt: { lt: now } }, { nextAttemptAt: null, createdAt: { lt: cutoff } }],
+      },
+      select: { id: true },
+      take: 500,
+    });
+    for (const d of orphans) await this.enqueue(d.id);
+    if (orphans.length) {
+      this.logger.warn(`reconciled ${orphans.length} orphaned PENDING webhook delivery(ies)`);
+    }
+    return orphans.length;
+  }
+
   /** Enqueue a delivery job with the standard retry policy. */
   async enqueue(deliveryId: string): Promise<void> {
     const job: DeliverWebhookJob = { deliveryId };

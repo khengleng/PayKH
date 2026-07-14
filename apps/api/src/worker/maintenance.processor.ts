@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
 import { BillingService } from '../billing/billing.service';
 import { SettlementService } from '../settlements/settlement.service';
+import { WebhookEventsService } from '../webhooks/webhook-events.service';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
 import {
   JOB_BILLING_SWEEP,
@@ -12,6 +13,7 @@ import {
   JOB_IDEMPOTENCY_CLEANUP,
   JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
+  JOB_WEBHOOK_RECONCILE,
   QUEUE_MAINTENANCE,
 } from '../queue/queue.constants';
 
@@ -32,6 +34,7 @@ export class MaintenanceProcessor extends WorkerHost {
     private readonly payments: PaymentsService,
     private readonly billing: BillingService,
     private readonly settlement: SettlementService,
+    private readonly webhookEvents: WebhookEventsService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {
     super();
@@ -49,6 +52,9 @@ export class MaintenanceProcessor extends WorkerHost {
         return this.billing.sweep();
       case JOB_SETTLEMENT_SWEEP:
         return this.settlementSweep();
+      case JOB_WEBHOOK_RECONCILE:
+        await this.webhookEvents.reconcilePending();
+        return;
       default:
         return;
     }

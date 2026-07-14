@@ -9,6 +9,7 @@ import { ApiError } from '../common/api-error';
 import { LoginDto, RegisterDto } from './dto';
 import { MfaService } from './mfa.service';
 import { EmailService } from '../email/email.service';
+import { AccountThrottleService } from '../ratelimit/account-throttle.service';
 
 /** A valid bcrypt hash used only to equalize login timing for unknown emails. */
 const DECOY_HASH = '$2a$12$6OLD4IHTLvrnE7I8TXy/4eUd4pNDXYqkdBYqi22Yv.fVHmzHvAWk.';
@@ -28,13 +29,14 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly mfa: MfaService,
     private readonly config: ConfigService,
+    private readonly throttle: AccountThrottleService,
     // EmailService is resolved lazily (moduleRef) to avoid a module cycle —
     // AuthModule is a hub imported everywhere and EmailService → SettingsService.
     private readonly moduleRef: ModuleRef,
   ) {}
 
-  private sign(userId: string, email: string): Promise<string> {
-    return this.jwt.signAsync({ sub: userId, email });
+  private sign(userId: string, email: string, tokenEpoch: number): Promise<string> {
+    return this.jwt.signAsync({ sub: userId, email, epoch: tokenEpoch });
   }
 
   private hashToken(raw: string): string {
@@ -84,7 +86,12 @@ export class AuthService {
     const ok = await verifyPassword(currentPassword, user.passwordHash);
     if (!ok) throw ApiError.invalidRequest('Current password is incorrect');
     const passwordHash = await hashPassword(newPassword);
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    // Bump tokenEpoch so every existing JWT for this user stops validating —
+    // a password change must lock out any session opened with the old password.
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, tokenEpoch: { increment: 1 } },
+    });
     // Invalidate any outstanding reset tokens after a change.
     await this.prisma.passwordResetToken.deleteMany({ where: { userId, usedAt: null } });
     this.logger.log(`password changed for user ${userId}`);
@@ -100,7 +107,9 @@ export class AuthService {
     }
     const passwordHash = await hashPassword(newPassword);
     await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
+      // Bump tokenEpoch so any session (e.g. an attacker's) opened before the
+      // reset is invalidated — the whole point of account recovery.
+      this.prisma.user.update({ where: { id: record.userId }, data: { passwordHash, tokenEpoch: { increment: 1 } } }),
       this.prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
       // Invalidate any other outstanding tokens for this user.
       this.prisma.passwordResetToken.deleteMany({ where: { userId: record.userId, usedAt: null } }),
@@ -138,7 +147,7 @@ export class AuthService {
     // attacker claim an invited email. Joining requires the invitation token
     // (delivered to the invited mailbox) via POST /team/invitations/accept.
 
-    const token = await this.sign(result.user.id, result.user.email);
+    const token = await this.sign(result.user.id, result.user.email, 0);
     return {
       token,
       user: { id: result.user.id, email: result.user.email, name: result.user.name },
@@ -148,6 +157,10 @@ export class AuthService {
 
   async login(dto: LoginDto): Promise<AuthResult> {
     const email = dto.email.toLowerCase().trim();
+    // Account-scoped brute-force gate (independent of the per-IP limiter) —
+    // caps failed attempts per account no matter how many IPs are rotated.
+    await this.throttle.assertNotLocked('login', email);
+
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { memberships: { include: { organization: true } } },
@@ -157,19 +170,22 @@ export class AuthService {
     const hash = user?.passwordHash ?? DECOY_HASH;
     const passwordOk = await verifyPassword(dto.password, hash);
     if (!user || !user.passwordHash || !passwordOk) {
+      await this.throttle.recordFailure('login', email);
       throw ApiError.unauthorized('Invalid email or password');
     }
 
     // Enforce MFA when enabled.
     if (user.mfaEnabled && user.mfaSecret) {
-      const valid = await this.mfa.verifyLogin(user.mfaSecret, dto.mfaCode);
+      const valid = await this.mfa.verifyLogin(user.id, user.mfaSecret, dto.mfaCode);
       if (!valid) {
+        await this.throttle.recordFailure('login', email);
         throw new ApiError('unauthorized', 'MFA code required', 401);
       }
     }
 
+    await this.throttle.clear('login', email);
     const primary = user.memberships[0];
-    const token = await this.sign(user.id, user.email);
+    const token = await this.sign(user.id, user.email, user.tokenEpoch);
     return {
       token,
       user: { id: user.id, email: user.email, name: user.name },

@@ -170,20 +170,37 @@ export class AdminService {
   async platformRevenue(user: AuthUser) {
     await this.assertAdmin(user.userId);
     const from = new Date(Date.now() - 30 * 86_400_000);
-    const [feeCredit, feeDebit, subsPaid, activeSubs] = await Promise.all([
-      this.prisma.ledgerEntry.aggregate({ where: { accountCode: 'fee_revenue', direction: 'CREDIT' }, _sum: { amount: true } }),
-      this.prisma.ledgerEntry.aggregate({ where: { accountCode: 'fee_revenue', direction: 'DEBIT' }, _sum: { amount: true } }),
+    const [feeGrouped, subsPaid, activeSubs] = await Promise.all([
+      // Group by currency — fee_revenue holds both USD and KHR lines, which have
+      // wildly different scales (~4000× ) and must NEVER be summed together.
+      this.prisma.ledgerEntry.groupBy({
+        by: ['currency', 'direction'],
+        where: { accountCode: 'fee_revenue' },
+        _sum: { amount: true },
+      }),
       this.prisma.invoice.aggregate({ where: { status: 'paid', paidAt: { gte: from } }, _sum: { amountUsdCents: true }, _count: { _all: true } }),
       this.prisma.organization.count({ where: { planId: { not: null }, status: 'ACTIVE' } }),
     ]);
-    const fees = Number(feeCredit._sum.amount ?? 0) - Number(feeDebit._sum.amount ?? 0);
+    // Net fee (credit − debit) per currency.
+    const feeByCurrency: Record<string, number> = {};
+    for (const g of feeGrouped) {
+      const signed = (g.direction === 'CREDIT' ? 1 : -1) * Number(g._sum.amount ?? 0);
+      feeByCurrency[g.currency] = (feeByCurrency[g.currency] ?? 0) + signed;
+    }
+    const transactionFeesByCurrency: Record<string, string> = {};
+    for (const [cur, amt] of Object.entries(feeByCurrency)) {
+      transactionFeesByCurrency[cur] = amt.toFixed(2);
+    }
     const subs = (subsPaid._sum.amountUsdCents ?? 0) / 100;
+    // total_revenue is USD-denominated: USD fees + USD subscriptions only. KHR
+    // fees are reported separately (mixing currencies into one total is wrong).
+    const usdFees = feeByCurrency['USD'] ?? 0;
     return {
-      transaction_fees_total: fees.toFixed(2),
+      transaction_fees_by_currency: transactionFeesByCurrency,
       subscription_revenue_30d: subs.toFixed(2),
       subscription_invoices_30d: subsPaid._count._all,
       active_paid_subscriptions: activeSubs,
-      total_revenue: (fees + subs).toFixed(2),
+      total_revenue_usd: (usdFees + subs).toFixed(2),
     };
   }
 

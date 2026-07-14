@@ -5,7 +5,7 @@ import { randomBase58 } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
-import { requirePermission } from '../auth/rbac';
+import { requirePermission, roleForOrg } from '../auth/rbac';
 import { EmailService } from '../email/email.service';
 import { inviteEmail } from '../email/templates';
 
@@ -35,8 +35,21 @@ export class TeamService {
     }));
   }
 
+  /**
+   * Only an owner may grant the owner role. `team:manage` alone (held by
+   * platform_admin, which is NOT itself an org owner) must not be able to mint
+   * owners — otherwise a platform_admin member could self-escalate to owner and
+   * pick up money-moving permissions (mint live keys, write payments) it lacks.
+   */
+  private assertCanAssignRole(user: AuthUser, organizationId: string, role: string) {
+    if (toDbRole(role) === 'OWNER' && roleForOrg(user, organizationId) !== 'owner') {
+      throw ApiError.forbidden('Only an organization owner can grant the owner role');
+    }
+  }
+
   async invite(user: AuthUser, organizationId: string, email: string, role: string) {
     requirePermission(user, organizationId, 'team:manage');
+    this.assertCanAssignRole(user, organizationId, role);
     const normalized = email.toLowerCase().trim();
 
     // Already a member?
@@ -123,6 +136,7 @@ export class TeamService {
 
   async changeRole(user: AuthUser, organizationId: string, targetUserId: string, role: string) {
     requirePermission(user, organizationId, 'team:manage');
+    this.assertCanAssignRole(user, organizationId, role);
     const target = await this.prisma.organizationMember.findUnique({
       where: { organizationId_userId: { organizationId, userId: targetUserId } },
     });

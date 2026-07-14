@@ -24,22 +24,36 @@ export function buildSignatureHeader(secret: string, rawBody: string, timestamp:
   return `t=${timestamp},v1=${v1}`;
 }
 
+/**
+ * Build a header signed with several secrets at once (`t=..,v1=..,v1=..`),
+ * Stripe-style. Used during secret rotation so a consumer that has updated to
+ * EITHER the old or the new secret can still verify — verifySignature accepts a
+ * match against any `v1`.
+ */
+export function buildSignatureHeaderMulti(secrets: string[], rawBody: string, timestamp: number): string {
+  const v1s = secrets.map((s) => `v1=${computeSignature(s, timestamp, rawBody)}`);
+  return [`t=${timestamp}`, ...v1s].join(',');
+}
+
 interface ParsedSignature {
   timestamp: number;
+  /** First v1 (back-compat). */
   v1: string;
+  /** All v1 candidates present in the header. */
+  v1s: string[];
 }
 
 export function parseSignatureHeader(header: string): ParsedSignature | null {
   const parts = header.split(',').map((p) => p.trim());
   let timestamp: number | undefined;
-  let v1: string | undefined;
+  const v1s: string[] = [];
   for (const part of parts) {
     const [k, v] = part.split('=', 2);
     if (k === 't') timestamp = Number(v);
-    if (k === 'v1') v1 = v;
+    if (k === 'v1' && v) v1s.push(v);
   }
-  if (timestamp === undefined || Number.isNaN(timestamp) || !v1) return null;
-  return { timestamp, v1 };
+  if (timestamp === undefined || Number.isNaN(timestamp) || v1s.length === 0) return null;
+  return { timestamp, v1: v1s[0], v1s };
 }
 
 function safeEqualHex(a: string, b: string): boolean {
@@ -81,7 +95,14 @@ export function verifySignature(
   }
 
   const expected = computeSignature(secret, parsed.timestamp, rawBody);
-  if (!safeEqualHex(expected, parsed.v1)) {
+  // Accept a match against any presented v1 (a rotation window may carry the
+  // signatures of several valid secrets). Compare all candidates in constant
+  // time and OR the results so timing doesn't reveal which one matched.
+  let matched = false;
+  for (const candidate of parsed.v1s) {
+    if (safeEqualHex(expected, candidate)) matched = true;
+  }
+  if (!matched) {
     return { valid: false, reason: 'signature_mismatch' };
   }
   return { valid: true };

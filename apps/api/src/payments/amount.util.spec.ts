@@ -30,8 +30,26 @@ describe('validateAmount', () => {
     expect(() => validateAmount('-1.50', 'USD')).toThrow(ApiError);
   });
 
-  it('accepts KHR whole amounts', () => {
+  it('accepts KHR whole amounts and formats them without decimals', () => {
     const v = validateAmount('4000', 'KHR');
-    expect(formatAmount(v, 'KHR')).toBe('4000.00');
+    expect(formatAmount(v, 'KHR')).toBe('4000');
+  });
+
+  it('rejects fractional KHR amounts', () => {
+    try {
+      validateAmount('4000.50', 'KHR');
+      fail('expected throw');
+    } catch (e) {
+      expect((e as ApiError).code).toBe('invalid_request');
+    }
+  });
+
+  it('rejects USD amounts finer than the minor unit', () => {
+    try {
+      validateAmount('1.005', 'USD');
+      fail('expected throw');
+    } catch (e) {
+      expect((e as ApiError).code).toBe('invalid_request');
+    }
   });
 });

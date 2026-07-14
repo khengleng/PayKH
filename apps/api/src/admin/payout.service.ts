@@ -37,8 +37,12 @@ export class PayoutService {
   ) {}
 
   /** The merchant_payable balance owed to a store in one currency. */
-  private async owed(storeId: string, currency: string): Promise<Prisma.Decimal> {
-    const grouped = await this.prisma.ledgerEntry.groupBy({
+  private async owed(
+    storeId: string,
+    currency: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<Prisma.Decimal> {
+    const grouped = await client.ledgerEntry.groupBy({
       by: ['direction'],
       where: { accountCode: 'merchant_payable', storeId, currency },
       _sum: { amount: true },
@@ -59,11 +63,52 @@ export class PayoutService {
     const value = D(amount);
     if (value.lte(0)) throw ApiError.invalidRequest('Amount must be positive');
 
+    if (method === 'MANUAL') {
+      // Admin already transferred funds out-of-band; record + book it. The whole
+      // critical section — recompute owed, insert the payout, DR merchant_payable
+      // — runs in ONE transaction under a per-(store,currency) advisory lock, so
+      // two concurrent payouts can't both read the same `owed` and over-drain the
+      // merchant_payable balance (double-pay). The ledger post shares the tx.
+      try {
+        const p = await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`payout:${storeId}:${currency}`}))`;
+          const owed = await this.owed(storeId, currency, tx);
+          if (value.minus(owed).gt(TOL)) {
+            throw ApiError.invalidRequest(`Amount ${value.toFixed(2)} exceeds ${currency} owed (${owed.toFixed(2)})`);
+          }
+          const created = await tx.payout.create({
+            data: {
+              id: prefixedId('pout'),
+              storeId,
+              currency,
+              amount: value,
+              status: 'PENDING',
+              method,
+              note: note ?? null,
+              initiatedByUserId: user.userId,
+            },
+          });
+          await this.ledger.postPayout(storeId, currency, value, created.id, tx);
+          return tx.payout.update({
+            where: { id: created.id },
+            data: { status: 'PAID', paidAt: new Date(), providerRef: prefixedId('manual') },
+          });
+        });
+        this.logger.log(`payout ${p.id} settled (${p.amount.toFixed(2)} ${p.currency})`);
+        return this.view(p);
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        this.logger.error(`payout execution error for store ${storeId}: ${err}`);
+        throw ApiError.internal('Payout execution failed');
+      }
+    }
+
+    // BAKONG automated disbursement — never books money until the bank rail is
+    // wired, so it fails cleanly with no ledger impact (no balance to guard).
     const owed = await this.owed(storeId, currency);
     if (value.minus(owed).gt(TOL)) {
       throw ApiError.invalidRequest(`Amount ${value.toFixed(2)} exceeds ${currency} owed (${owed.toFixed(2)})`);
     }
-
     const payout = await this.prisma.payout.create({
       data: {
         id: prefixedId('pout'),
@@ -76,35 +121,14 @@ export class PayoutService {
         initiatedByUserId: user.userId,
       },
     });
-
-    try {
-      if (method === 'MANUAL') {
-        // Admin has already transferred the funds out-of-band; record + book it.
-        await this.ledger.postPayout(storeId, currency, value, payout.id);
-        return this.settle(payout.id, prefixedId('manual'));
-      }
-      // BAKONG automated disbursement.
-      const token = await this.settings.resolve('bakong_disbursement_token');
-      if (!token) {
-        return this.fail(payout.id, 'Bakong disbursement not configured (set bakong_disbursement_token)');
-      }
-      // Disbursement API is not yet wired to the bank rail — fail cleanly rather
-      // than book money that never moved. Flip to a real call when the bank
-      // provides the disbursement endpoint + account.
-      return this.fail(payout.id, 'Bakong disbursement rail not yet enabled');
-    } catch (err) {
-      this.logger.error(`payout ${payout.id} execution error: ${err}`);
-      return this.fail(payout.id, String(err));
+    const token = await this.settings.resolve('bakong_disbursement_token');
+    if (!token) {
+      return this.fail(payout.id, 'Bakong disbursement not configured (set bakong_disbursement_token)');
     }
-  }
-
-  private async settle(payoutId: string, providerRef: string) {
-    const p = await this.prisma.payout.update({
-      where: { id: payoutId },
-      data: { status: 'PAID', paidAt: new Date(), providerRef },
-    });
-    this.logger.log(`payout ${payoutId} settled (${p.amount.toFixed(2)} ${p.currency})`);
-    return this.view(p);
+    // Disbursement API is not yet wired to the bank rail — fail cleanly rather
+    // than book money that never moved. Flip to a real call when the bank
+    // provides the disbursement endpoint + account.
+    return this.fail(payout.id, 'Bakong disbursement rail not yet enabled');
   }
 
   private async fail(payoutId: string, reason: string) {

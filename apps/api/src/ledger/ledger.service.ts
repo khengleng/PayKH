@@ -40,16 +40,21 @@ export class LedgerService implements OnModuleInit {
    * and idempotency on (event, reference) — a duplicate event is a no-op. This
    * is the ONLY write path; entries are never updated or deleted.
    */
-  async post(event: string, reference: string | null, storeId: string | null, currency: string, lines: Line[]): Promise<void> {
-    const debits = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s.add(l.amount), D(0));
-    const credits = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s.add(l.amount), D(0));
+  async post(event: string, reference: string | null, storeId: string | null, currency: string, lines: Line[], client: Prisma.TransactionClient = this.prisma): Promise<void> {
+    // Round every line to the ledger column scale (4dp) FIRST, then assert
+    // balance on the rounded values — otherwise a fee whose 5th decimal is an
+    // exact half can round each line the same direction and persist a journal
+    // that no longer sums to zero (hidden under reconciliation's tolerance).
+    const rounded = lines.map((l) => ({ ...l, amount: l.amount.toDecimalPlaces(4) }));
+    const debits = rounded.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s.add(l.amount), D(0));
+    const credits = rounded.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s.add(l.amount), D(0));
     if (!debits.equals(credits)) {
       throw ApiError.internal(`Unbalanced journal ${event}/${reference}: DR ${debits.toFixed(4)} != CR ${credits.toFixed(4)}`);
     }
     if (debits.lte(0)) return; // nothing to post
 
     try {
-      await this.prisma.journalEntry.create({
+      await client.journalEntry.create({
         data: {
           id: prefixedId('jrn'),
           event,
@@ -57,7 +62,7 @@ export class LedgerService implements OnModuleInit {
           storeId,
           currency,
           lines: {
-            create: lines.map((l) => ({ id: prefixedId('led'), accountCode: l.accountCode, storeId, direction: l.direction, amount: l.amount, currency })),
+            create: rounded.map((l) => ({ id: prefixedId('led'), accountCode: l.accountCode, storeId, direction: l.direction, amount: l.amount, currency })),
           },
         },
       });
@@ -117,11 +122,11 @@ export class LedgerService implements OnModuleInit {
   }
 
   /** Merchant payout: DR merchant payable; CR clearing (cash paid out to merchant). */
-  async postPayout(storeId: string, currency: string, amount: Prisma.Decimal, ref: string): Promise<void> {
+  async postPayout(storeId: string, currency: string, amount: Prisma.Decimal, ref: string, client: Prisma.TransactionClient = this.prisma): Promise<void> {
     await this.post('payout', `${storeId}:${ref}`, storeId, currency, [
       { accountCode: 'merchant_payable', direction: 'DEBIT', amount: D(amount) },
       { accountCode: 'settlement_clearing', direction: 'CREDIT', amount: D(amount) },
-    ]);
+    ], client);
   }
 
   /** Commission paid out: DR commission payable; CR clearing (cash out). */

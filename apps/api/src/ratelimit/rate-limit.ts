@@ -24,6 +24,20 @@ export const RATE_LIMIT_KEY = 'rate_limit_options';
 export const RateLimit = (options: RateLimitOptions) => SetMetadata(RATE_LIMIT_KEY, options);
 
 /**
+ * Atomic fixed-window counter. INCR and EXPIRE happen in one server-side script
+ * so a crash/failover between them can never leave a key without a TTL (which
+ * would wedge the subject into a permanent 429). Also re-arms the TTL if the key
+ * somehow lost it (ttl < 0). Returns [count, ttlSeconds].
+ */
+export const FIXED_WINDOW_LUA = `
+local c = redis.call('INCR', KEYS[1])
+if c == 1 or redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return {c, redis.call('TTL', KEYS[1])}
+`;
+
+/**
  * Redis-backed fixed-window rate limiter. Fails open if Redis is unavailable so
  * a Redis outage never takes down the API. Emits standard RateLimit headers and
  * a structured 429 (`rate_limit_exceeded`).
@@ -50,9 +64,13 @@ export class RateLimitGuard implements CanActivate {
     const key = `rl:${options.by}:${subject}:${req.path}`;
 
     try {
-      const count = await this.redis.incr(key);
-      if (count === 1) await this.redis.expire(key, options.windowSec);
-      const ttl = count === 1 ? options.windowSec : await this.redis.ttl(key);
+      const [count, ttlRaw] = (await this.redis.eval(
+        FIXED_WINDOW_LUA,
+        1,
+        key,
+        options.windowSec,
+      )) as [number, number];
+      const ttl = ttlRaw < 0 ? options.windowSec : ttlRaw;
       const remaining = Math.max(0, options.limit - count);
 
       res.setHeader('RateLimit-Limit', options.limit);

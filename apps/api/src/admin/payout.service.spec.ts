@@ -29,6 +29,11 @@ function make(opts: { owedCredit: number; owedDebit: number; disbursementToken?:
         return Promise.resolve(row);
       }),
     },
+    // The MANUAL path runs its critical section inside a $transaction; the mock
+    // just invokes the callback with the same client (the advisory lock is a
+    // raw no-op here).
+    $executeRaw: jest.fn().mockResolvedValue(1),
+    $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(prisma)),
   };
   const ledger = { postPayout: jest.fn().mockResolvedValue(undefined) };
   const settings = { resolve: jest.fn().mockResolvedValue(opts.disbursementToken) };
