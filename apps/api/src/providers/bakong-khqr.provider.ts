@@ -18,6 +18,9 @@ import { CryptoService } from '../common/crypto.service';
 /** Shape of the decrypted per-store Bakong credential blob (JSON). */
 interface BakongCredential {
   bakongAccountId: string;
+  /** Payee account/phone (tag 29 sub-tag 01) — the "receiver account" banks
+   *  require. Populated by the KHQR import. */
+  accountInformation?: string;
   merchantName?: string;
   merchantCity?: string;
   merchantId?: string;
@@ -92,6 +95,7 @@ export class BakongKhqrProvider implements PaymentProvider {
     const cred = await this.loadCredential(input.storeId, input.mode);
     const { qrString, md5 } = buildBakongKhqr({
       bakongAccountId: cred.bakongAccountId,
+      accountInformation: cred.accountInformation,
       merchantName: cred.merchantName || input.merchantName,
       merchantCity: cred.merchantCity || input.merchantCity || 'Phnom Penh',
       amount: input.amount,

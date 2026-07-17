@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PAYMENT_PROVIDER } from './payment-provider.interface';
 import { MockKhqrProvider } from './mock-khqr.provider';
 import { BakongKhqrProvider } from './bakong-khqr.provider';
+import { RoutingKhqrProvider } from './routing-khqr.provider';
 import { DIGITAL_VALUE_PROVIDER } from './digital-value-provider.interface';
 import { MockDigitalValueProvider } from './mock-digital-value.provider';
 
@@ -15,16 +16,25 @@ import { MockDigitalValueProvider } from './mock-digital-value.provider';
   providers: [
     MockKhqrProvider,
     BakongKhqrProvider,
+    RoutingKhqrProvider,
     {
       provide: PAYMENT_PROVIDER,
-      inject: [ConfigService, MockKhqrProvider, BakongKhqrProvider],
+      inject: [ConfigService, MockKhqrProvider, BakongKhqrProvider, RoutingKhqrProvider],
       useFactory: (
         config: ConfigService,
         mock: MockKhqrProvider,
         bakong: BakongKhqrProvider,
+        routing: RoutingKhqrProvider,
       ) => {
+        // 'bakong' forces every store onto the platform Bakong account (the
+        // original single-account behaviour). Anything else — including the
+        // default 'mock' — routes per store: a store that imported its own bank
+        // KHQR pays that account; the rest fall back to mock. So an imported
+        // account reaches POS / links / checkout with no env change.
         const provider = config.get<string>('paymentProvider') ?? 'mock';
-        return provider === 'bakong' ? bakong : mock;
+        if (provider === 'bakong') return bakong;
+        if (provider === 'mock') return mock; // explicit escape hatch: force mock everywhere
+        return routing;
       },
     },
 
