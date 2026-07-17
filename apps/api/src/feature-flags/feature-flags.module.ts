@@ -47,12 +47,18 @@ const DEFS: Def[] = [
   { key: 'cashback.enabled', label: 'Cashback', group: 'Product', default: false, resolution: 'override' },
   { key: 'automatic_promotions.enabled', label: 'Automatic promotions', group: 'Product', default: false, resolution: 'override' },
 
-  // PayChain. Gated: issuing real digital value needs platform sign-off, not
-  // just a tenant toggling a switch in their own dashboard.
-  { key: 'paychain.enabled', label: 'PayChain digital value', group: 'PayChain', default: false, resolution: 'gated' },
-  { key: 'paychain.shadow_mode.enabled', label: 'PayChain shadow mode (dual-write, legacy is source of truth)', group: 'PayChain', default: false, resolution: 'gated' },
+  // PayChain. Tenant-settable: each tenant configures their OWN PayChain client
+  // credentials (see PayChainIntegration), so enabling this spends their
+  // PayChain account, not the platform's — there is nothing for a platform gate
+  // to protect here, and gating it would only block self-service onboarding.
+  // The platform row still acts as a kill switch: it is the fallback when a
+  // tenant has expressed no preference, and stablecoin (below) stays gated.
+  { key: 'paychain.enabled', label: 'PayChain digital value', group: 'PayChain', default: false, resolution: 'override' },
+  { key: 'paychain.shadow_mode.enabled', label: 'PayChain shadow mode (dual-write, legacy is source of truth)', group: 'PayChain', default: false, resolution: 'override' },
 
-  // Stablecoin. Disabled by default and gated — spec §29 requires both.
+  // Stablecoin. Gated even though PayChain is not: spec §21 requires the
+  // PayChain *and* tenant flags to agree, and stablecoin carries regulatory
+  // exposure the platform cannot delegate to a tenant's own dashboard.
   { key: 'stablecoin.balance.enabled', label: 'Stablecoin balances', group: 'Stablecoin', default: false, resolution: 'gated' },
   { key: 'stablecoin.transfer.enabled', label: 'Stablecoin transfer', group: 'Stablecoin', default: false, resolution: 'gated' },
   { key: 'stablecoin.redemption.enabled', label: 'Stablecoin redemption', group: 'Stablecoin', default: false, resolution: 'gated' },

@@ -228,6 +228,7 @@ model Organization {
   plan          Plan?                 @relation(fields: [planId], references: [id])
   members       OrganizationMember[]
   stores        Store[]
+  paychain      PayChainIntegration?
   auditLogs     AuditLog[]
   subscriptions Subscription[]
   usageRecords  UsageRecord[]
@@ -921,6 +922,35 @@ model SystemSetting {
   valueCiphertext String   @db.Text
   updatedAt       DateTime @updatedAt
   updatedByUserId String?
+}
+
+/// A tenant's own connection to PayChain (wallet-as-a-service), configured by
+/// the organization owner rather than by a platform administrator — each tenant
+/// brings their own PayChain client credentials and loyalty asset.
+///
+/// Scoped to the Organization, not the Store: a PayChain client is issued to a
+/// business, and its customers' wallets should not fragment per storefront.
+///
+/// The client secret is AES-256-GCM encrypted with the same CryptoService that
+/// protects ProviderCredential, and is never returned by the API — only a
+/// masked preview. Rotating ENCRYPTION_KEY makes these undecryptable.
+model PayChainIntegration {
+  organizationId  String   @id
+  baseUrl         String   @default("https://api.paychain.cambobia.com")
+  clientId        String
+  secretCiphertext String  @db.Text
+  /// The PayChain asset PayKH issues loyalty points against.
+  loyaltyAssetId  String
+  /// Result of the last credential check — connection health is a property of
+  /// the tenant's own credentials, so they can diagnose it without the platform.
+  lastTestedAt    DateTime?
+  lastTestOk      Boolean?
+  lastTestDetail  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  updatedByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 /// A feature toggle, resolved per organization with a platform-level fallback.

@@ -49,32 +49,60 @@ describe('FeatureFlagsService.isEnabled', () => {
   });
 
   describe('gated flags', () => {
+    const GATED = 'stablecoin.transfer.enabled';
+
     it('stays off when the org opts in but the platform has not enabled it', async () => {
-      // The load-bearing case: a tenant must not be able to switch on real
-      // value movement from their own dashboard.
+      // The load-bearing case: a tenant must not be able to switch on stablecoin
+      // from their own dashboard. Unlike PayChain — where the tenant supplies
+      // their own credentials — this carries regulatory exposure the platform
+      // cannot delegate (spec §21).
       const s = make([
-        { key: 'paychain.enabled', scope: GLOBAL_SCOPE, enabled: false },
-        { key: 'paychain.enabled', scope: ORG, enabled: true },
+        { key: GATED, scope: GLOBAL_SCOPE, enabled: false },
+        { key: GATED, scope: ORG, enabled: true },
       ]);
-      expect(await s.isEnabled('paychain.enabled', ORG)).toBe(false);
+      expect(await s.isEnabled(GATED, ORG)).toBe(false);
     });
 
     it('stays off when the platform enables it but the org has not opted in', async () => {
-      const s = make([{ key: 'paychain.enabled', scope: GLOBAL_SCOPE, enabled: true }]);
-      expect(await s.isEnabled('paychain.enabled', ORG)).toBe(false);
+      const s = make([{ key: GATED, scope: GLOBAL_SCOPE, enabled: true }]);
+      expect(await s.isEnabled(GATED, ORG)).toBe(false);
     });
 
     it('is on only when platform and org both agree', async () => {
       const s = make([
-        { key: 'paychain.enabled', scope: GLOBAL_SCOPE, enabled: true },
-        { key: 'paychain.enabled', scope: ORG, enabled: true },
+        { key: GATED, scope: GLOBAL_SCOPE, enabled: true },
+        { key: GATED, scope: ORG, enabled: true },
       ]);
-      expect(await s.isEnabled('paychain.enabled', ORG)).toBe(true);
+      expect(await s.isEnabled(GATED, ORG)).toBe(true);
     });
 
     it('resolves the platform half alone when no org is supplied', async () => {
-      const s = make([{ key: 'paychain.enabled', scope: GLOBAL_SCOPE, enabled: true }]);
-      expect(await s.isEnabled('paychain.enabled')).toBe(true);
+      const s = make([{ key: GATED, scope: GLOBAL_SCOPE, enabled: true }]);
+      expect(await s.isEnabled(GATED)).toBe(true);
+    });
+  });
+
+  describe('PayChain flags are tenant-settable', () => {
+    // Each tenant configures their OWN PayChain credentials, so enabling this
+    // spends their PayChain account rather than the platform's — there is
+    // nothing for a platform gate to protect, and gating it would block
+    // self-service onboarding.
+    it('lets an org enable PayChain for itself without platform sign-off', async () => {
+      const s = make([{ key: 'paychain.enabled', scope: ORG, enabled: true }]);
+      expect(await s.isEnabled('paychain.enabled', ORG)).toBe(true);
+    });
+
+    it('lets an org opt out even when the platform default is on', async () => {
+      const s = make([
+        { key: 'paychain.enabled', scope: GLOBAL_SCOPE, enabled: true },
+        { key: 'paychain.enabled', scope: ORG, enabled: false },
+      ]);
+      expect(await s.isEnabled('paychain.enabled', ORG)).toBe(false);
+    });
+
+    it('still defaults to off when nobody has said anything', async () => {
+      expect(await make().isEnabled('paychain.enabled', ORG)).toBe(false);
+      expect(await make().isEnabled('paychain.shadow_mode.enabled', ORG)).toBe(false);
     });
   });
 
