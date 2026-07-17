@@ -153,6 +153,32 @@ describe('TelegramDetectionService', () => {
     });
   });
 
+  describe('testParse (dry-run)', () => {
+    async function verified() {
+      const m = make();
+      const { verify_code } = await m.svc.beginVerify(m.owner, 'st_1');
+      await m.svc.ingest({ update_id: 1, message: { chat: { id: -100 }, text: verify_code } });
+      return m;
+    }
+    it('reports a clean parse with a unique match', async () => {
+      const m = await verified();
+      m.addPayment('p1', '5000');
+      const r = await m.svc.testParse(m.owner, 'st_1', 'You received 5,000 KHR');
+      expect(r).toMatchObject({ parsed: true, amount: '5000', currency: 'KHR', would_match_count: 1 });
+    });
+    it('reports an unparseable message and records NOTHING', async () => {
+      const m = await verified();
+      const r = await m.svc.testParse(m.owner, 'st_1', 'Your OTP is 123456');
+      expect(r.parsed).toBe(false);
+      expect(m.detections).toHaveLength(0); // dry-run: no side effects
+    });
+    it('reports a clean parse with no matching charge', async () => {
+      const m = await verified();
+      const r = await m.svc.testParse(m.owner, 'st_1', 'Received 5000 KHR');
+      expect(r).toMatchObject({ parsed: true, would_match_count: 0 });
+    });
+  });
+
   describe('confirm (assist mode)', () => {
     it('marks the matched payment paid only when the cashier confirms', async () => {
       const m = make();

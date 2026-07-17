@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Headers, Injectable, Logger, Module, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
-import { IsString } from 'class-validator';
+import { IsString, MaxLength } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { prefixedId, randomBase58 } from '@paykh/security';
@@ -182,6 +182,42 @@ export class TelegramDetectionService {
     return { confirmed: true, payment_id: det.paymentId };
   }
 
+  /**
+   * Dry-run a bank alert: what would PayKH read from this exact message?
+   *
+   * Read-only — records nothing, moves no money. Its purpose is to make the one
+   * silent-failure mode visible: if a merchant's bank phrases alerts in a way
+   * the parser does not recognise, detection would quietly never match. Pasting
+   * a real message here shows whether it parses, and whether it would match a
+   * pending charge right now.
+   */
+  async testParse(user: AuthUser, storeId: string, text: string) {
+    await this.assertStore(user, storeId, 'payment:read');
+    const parsed = parseBankAlert(text);
+    let wouldMatch = 0;
+    if (parsed) {
+      const since = new Date(Date.now() - MATCH_WINDOW_MS);
+      const candidates = await this.prisma.payment.findMany({
+        where: { storeId, status: { in: ['PENDING', 'SCANNED'] }, currency: parsed.currency, createdAt: { gte: since } },
+        select: { amount: true },
+      });
+      wouldMatch = candidates.filter((c) => c.amount.equals(new Prisma.Decimal(parsed.amount))).length;
+    }
+    return {
+      parsed: !!parsed,
+      amount: parsed?.amount ?? null,
+      currency: parsed?.currency ?? null,
+      would_match_count: wouldMatch,
+      hint: !parsed
+        ? 'PayKH could not read an amount + currency from this. Detection would not match it. Send the exact message so the parser can be improved.'
+        : wouldMatch === 1
+          ? 'Reads cleanly and matches exactly one open charge — this would offer a one-tap confirm.'
+          : wouldMatch === 0
+            ? 'Reads cleanly, but no open charge matches right now (create a charge for this amount to test the full flow).'
+            : 'Reads cleanly, but several open charges share this amount — PayKH would record it without auto-linking, to avoid confirming the wrong one.',
+    };
+  }
+
   /** The secret Telegram must echo in X-Telegram-Bot-Api-Secret-Token. */
   webhookSecret(): string | undefined {
     return this.config.get<string>('telegramWebhookSecret');
@@ -199,6 +235,10 @@ class ConfirmDto {
   // whitelist:true, which strips any undecorated property — leaving detection_id
   // undefined and the lookup malformed.
   @IsString() detection_id!: string;
+}
+
+class TestParseDto {
+  @IsString() @MaxLength(2000) text!: string;
 }
 
 @ApiTags('telegram-detection')
@@ -234,6 +274,12 @@ export class TelegramDetectionController {
   @ApiOperation({ summary: 'Confirm a detected payment as paid' })
   confirm(@CurrentUser() user: AuthUser, @Body() dto: ConfirmDto) {
     return this.svc.confirm(user, dto.detection_id);
+  }
+
+  @Post('test-parse')
+  @ApiOperation({ summary: 'Dry-run: what would PayKH read from this bank message?' })
+  testParse(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: TestParseDto) {
+    return this.svc.testParse(user, storeId, dto.text);
   }
 }
 

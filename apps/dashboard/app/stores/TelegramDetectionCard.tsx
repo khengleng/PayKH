@@ -28,6 +28,17 @@ export function TelegramDetectionCard({ storeId }: { storeId: string }) {
   const begin = async () => { setBusy(true); try { await api(`/dashboard/stores/${storeId}/telegram-detection/verify`, { method: 'POST' }); await load(); } finally { setBusy(false); } };
   const unlink = async () => { if (!confirm('Disconnect the payment-alert chat?')) return; setBusy(true); try { await api(`/dashboard/stores/${storeId}/telegram-detection/unlink`, { method: 'POST' }); await load(); } finally { setBusy(false); } };
 
+  // Dry-run: let the merchant paste a real bank message and see what PayKH reads.
+  const [sample, setSample] = useState('');
+  const [parseResult, setParseResult] = useState<{ parsed: boolean; amount: string | null; currency: string | null; hint: string } | null>(null);
+  const testParse = async () => {
+    if (!sample.trim()) return;
+    setBusy(true);
+    try { setParseResult(await api(`/dashboard/stores/${storeId}/telegram-detection/test-parse`, { method: 'POST', body: { text: sample } })); }
+    catch (e) { setParseResult({ parsed: false, amount: null, currency: null, hint: (e as Error).message }); }
+    finally { setBusy(false); }
+  };
+
   if (!st) return null;
 
   return (
@@ -67,6 +78,28 @@ export function TelegramDetectionCard({ storeId }: { storeId: string }) {
       ) : (
         <Button onClick={begin} disabled={busy || !st.bot_configured}>{busy ? 'Starting…' : 'Connect a chat'}</Button>
       )}
+
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <div className="mb-1 text-sm font-medium text-slate-700">Test a bank message</div>
+        <p className="mb-2 text-xs text-slate-500">
+          Paste a real payment alert from your bank to check PayKH reads the amount correctly before you rely on it.
+        </p>
+        <textarea
+          value={sample}
+          onChange={(e) => setSample(e.target.value)}
+          placeholder="You have received 5,000 KHR from…"
+          rows={2}
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+        />
+        <Button size="sm" variant="secondary" className="mt-2" onClick={testParse} disabled={busy || !sample.trim()}>Test</Button>
+        {parseResult && (
+          <div className={`mt-2 rounded-lg p-2 text-sm ${parseResult.parsed ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
+            {parseResult.parsed
+              ? <span>Reads <strong>{parseResult.amount} {parseResult.currency}</strong>. {parseResult.hint}</span>
+              : <span>{parseResult.hint}</span>}
+          </div>
+        )}
+      </div>
     </Card>
   );
 }

@@ -111,6 +111,18 @@ describe('KHQR import + Telegram detection (e2e)', () => {
       expect(res.body).toHaveProperty('verified');
       expect(res.body).toHaveProperty('bot_configured');
     });
+
+    it('test-parse reads an amount from a real-looking alert (read-only)', async () => {
+      const res = await auth(http.post(`/dashboard/stores/${storeId}/telegram-detection/test-parse`))
+        .send({ text: 'You have received 5,000 KHR from a customer.' }).expect(201);
+      expect(res.body).toMatchObject({ parsed: true, amount: '5000', currency: 'KHR' });
+    });
+
+    it('test-parse reports an unreadable message rather than erroring', async () => {
+      const res = await auth(http.post(`/dashboard/stores/${storeId}/telegram-detection/test-parse`))
+        .send({ text: 'Your OTP is 123456' }).expect(201);
+      expect(res.body.parsed).toBe(false);
+    });
   });
 
   describe('the public webhook fails closed', () => {
