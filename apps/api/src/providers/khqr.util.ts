@@ -95,6 +95,113 @@ export function buildBakongKhqr(p: BakongKhqrParams): { qrString: string; md5: s
   return { qrString, md5 };
 }
 
+// ---------------------------------------------------------------- decoding
+
+export interface ParsedKhqr {
+  /** true when the QR carries no amount (a bank's "receive" QR). */
+  isStatic: boolean;
+  /** Tag 30 (merchant) rather than tag 29 (individual). */
+  isMerchant: boolean;
+  /** Tag 29/30 sub-tag 00 — the account that gets paid. */
+  bakongAccountId: string;
+  /** Sub-tag 01: account or phone number. */
+  accountInformation?: string;
+  /** Merchant-only sub-tags. */
+  merchantId?: string;
+  acquiringBank?: string;
+  merchantName?: string;
+  merchantCity?: string;
+  currency?: 'USD' | 'KHR';
+  amount?: string;
+}
+
+/** Split an EMVCo TLV string into [tag, value] pairs. Rejects malformed input. */
+function parseTlv(s: string): Map<string, string> {
+  const out = new Map<string, string>();
+  let i = 0;
+  while (i < s.length) {
+    if (i + 4 > s.length) throw new Error('Truncated TLV: a tag/length header is incomplete');
+    const tag = s.slice(i, i + 2);
+    const lenRaw = s.slice(i + 2, i + 4);
+    if (!/^\d{2}$/.test(lenRaw)) throw new Error(`Invalid length "${lenRaw}" for tag ${tag}`);
+    const len = parseInt(lenRaw, 10);
+    const value = s.slice(i + 4, i + 4 + len);
+    if (value.length !== len) throw new Error(`Tag ${tag} claims ${len} chars but only ${value.length} remain`);
+    out.set(tag, value);
+    i += 4 + len;
+  }
+  return out;
+}
+
+const CODE_TO_CURRENCY: Record<string, 'USD' | 'KHR'> = { '840': 'USD', '116': 'KHR' };
+
+/**
+ * Parse and validate a KHQR payload — e.g. one a merchant exported from their
+ * own banking app so PayKH can reissue it with an amount.
+ *
+ * Everything here is attacker-supplied, so nothing is trusted without proof:
+ * the CRC is recomputed before any field is believed, and a payload that is not
+ * recognisably KHQR is rejected rather than half-read. Getting this wrong sends
+ * a customer's money to whatever account the string happened to name, so it
+ * fails loudly instead of guessing.
+ */
+export function parseKhqr(qrString: string): ParsedKhqr {
+  const qr = qrString.trim();
+  if (qr.length < 12) throw new Error('Not a KHQR payload: too short');
+
+  // CRC first. Tag 63 is always last and covers everything up to and including
+  // its own "6304" header.
+  const crcIdx = qr.lastIndexOf('6304');
+  if (crcIdx === -1 || crcIdx !== qr.length - 8) {
+    throw new Error('Not a KHQR payload: missing the trailing CRC (tag 63)');
+  }
+  const expected = crc16(qr.slice(0, crcIdx + 4));
+  const actual = qr.slice(-4).toUpperCase();
+  if (expected !== actual) {
+    throw new Error(`KHQR checksum mismatch (expected ${expected}, got ${actual}) — the code is corrupt or was retyped`);
+  }
+
+  const top = parseTlv(qr.slice(0, crcIdx));
+  if (top.get('00') !== '01') throw new Error('Not a KHQR payload: unexpected payload format indicator');
+
+  const initiation = top.get('01');
+  if (initiation !== '11' && initiation !== '12') {
+    throw new Error(`Not a KHQR payload: unexpected point-of-initiation "${initiation}"`);
+  }
+
+  const isMerchant = top.has('30');
+  const accountBlock = top.get('30') ?? top.get('29');
+  if (!accountBlock) {
+    throw new Error('Not a Bakong KHQR: no individual (29) or merchant (30) account block');
+  }
+  const acct = parseTlv(accountBlock);
+  const bakongAccountId = acct.get('00');
+  if (!bakongAccountId) throw new Error('KHQR is missing the Bakong account id');
+  // Bakong ids are "name@bank". Anything else would not route.
+  if (!/^[^@\s]+@[^@\s]+$/.test(bakongAccountId)) {
+    throw new Error(`"${bakongAccountId}" is not a Bakong account id (expected name@bank)`);
+  }
+
+  const country = top.get('58');
+  if (country && country.toUpperCase() !== 'KH') {
+    throw new Error(`KHQR is for country ${country}, not KH`);
+  }
+
+  const currencyCode = top.get('53');
+  return {
+    isStatic: initiation === '11',
+    isMerchant,
+    bakongAccountId,
+    accountInformation: acct.get('01'),
+    merchantId: isMerchant ? acct.get('01') : undefined,
+    acquiringBank: acct.get('02'),
+    merchantName: top.get('59'),
+    merchantCity: top.get('60'),
+    currency: currencyCode ? CODE_TO_CURRENCY[currencyCode] : undefined,
+    amount: top.get('54'),
+  };
+}
+
 export function buildMockKhqr(params: KhqrParams): { qrString: string; md5: string } {
   const merchantAccount = tlv('00', 'mock@paykh') + tlv('01', 'PayKH Mock Acquirer');
 
