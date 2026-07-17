@@ -48,8 +48,9 @@ function make(opts: { balance: number; txns: Txn[]; expiryMonths?: number | null
       return Promise.resolve();
     }),
   };
-  const svc = new LoyaltyService(client as never, {} as never, ledger as never, {} as never);
-  return { svc, state, written, posted, client };
+  const email = { send: jest.fn().mockResolvedValue(undefined) };
+  const svc = new LoyaltyService(client as never, {} as never, ledger as never, {} as never, email as never);
+  return { svc, state, written, posted, client, email };
 }
 
 describe('LoyaltyService.expireForStore', () => {

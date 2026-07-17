@@ -6,6 +6,7 @@ import {
   JOB_EXPIRY_SWEEP,
   JOB_IDEMPOTENCY_CLEANUP,
   JOB_POINTS_EXPIRY,
+  JOB_POINTS_EXPIRY_NOTICE,
   JOB_POINTS_RECONCILE,
   JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
@@ -69,6 +70,12 @@ export class WorkerScheduler implements OnModuleInit {
     await this.queue.add(JOB_POINTS_EXPIRY, {}, {
       repeat: { every: 86_400_000 }, // daily: expiry is a date boundary, not a hot path
       jobId: 'repeat:points-expiry',
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+    await this.queue.add(JOB_POINTS_EXPIRY_NOTICE, {}, {
+      repeat: { every: 86_400_000 }, // daily, and deduped per expiry date
+      jobId: 'repeat:points-expiry-notice',
       removeOnComplete: true,
       removeOnFail: true,
     });

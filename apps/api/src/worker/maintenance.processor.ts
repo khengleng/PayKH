@@ -15,6 +15,7 @@ import {
   JOB_EXPIRY_SWEEP,
   JOB_IDEMPOTENCY_CLEANUP,
   JOB_POINTS_EXPIRY,
+  JOB_POINTS_EXPIRY_NOTICE,
   JOB_POINTS_RECONCILE,
   JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
@@ -67,6 +68,8 @@ export class MaintenanceProcessor extends WorkerHost {
         return this.pointsReconcile();
       case JOB_POINTS_EXPIRY:
         return this.pointsExpiry();
+      case JOB_POINTS_EXPIRY_NOTICE:
+        return this.pointsExpiryNotice();
       default:
         return;
     }
@@ -112,6 +115,22 @@ export class MaintenanceProcessor extends WorkerHost {
         await this.loyalty.expireForStore(p.storeId);
       } catch (err) {
         this.logger.warn(`points expiry failed for store ${p.storeId}: ${err}`);
+      }
+    }
+  }
+
+  /** Warn customers before their points expire. Runs as its own job, ahead of
+   *  the expiry sweep, so a warning is never a side effect of the expiry. */
+  private async pointsExpiryNotice(): Promise<void> {
+    const programs = await this.prisma.loyaltyProgram.findMany({
+      where: { active: true, expiryMonths: { not: null } },
+      select: { storeId: true },
+    });
+    for (const p of programs) {
+      try {
+        await this.loyalty.notifyExpiringForStore(p.storeId);
+      } catch (err) {
+        this.logger.warn(`expiry notice failed for store ${p.storeId}: ${err}`);
       }
     }
   }

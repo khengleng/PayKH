@@ -9,6 +9,7 @@ import { requirePermission } from '../auth/rbac';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../idempotency/idempotency.module';
+import { EmailService } from '../email/email.service';
 
 export class UpdateProgramDto {
   @IsOptional() @IsBoolean() active?: boolean;
@@ -63,6 +64,7 @@ export class LoyaltyService {
     private readonly campaigns: CampaignsService,
     private readonly ledgerService: LedgerService,
     private readonly idempotency: IdempotencyService,
+    private readonly email: EmailService,
   ) {}
 
   // ------------------------------------------------------------- program
@@ -216,6 +218,31 @@ export class LoyaltyService {
     return { customers: touched, points };
   }
 
+  /**
+   * Points earned before `cutoff` that redemptions have not already consumed,
+   * capped at what the customer actually holds.
+   *
+   * The FIFO rule lives here alone so expiry and the expiry *warning* cannot
+   * disagree: warning about points the job would not expire (or expiring points
+   * never warned about) is worse than either feature on its own. Passing a
+   * later cutoff answers "what will expire by then".
+   */
+  private atRiskBefore(
+    txns: { points: number; createdAt: Date }[],
+    balance: number,
+    cutoff: Date,
+  ): number {
+    const earnedBeforeCutoff = txns
+      .filter((t) => t.points > 0 && t.createdAt < cutoff)
+      .reduce((s, t) => s + t.points, 0);
+    const consumed = txns
+      .filter((t) => t.points < 0)
+      .reduce((s, t) => s + Math.abs(t.points), 0);
+    // Never more than they actually hold: an adjust-down could already have
+    // taken the balance below what the age arithmetic implies.
+    return Math.max(0, Math.min(Math.max(0, earnedBeforeCutoff - consumed), balance));
+  }
+
   private async expireCustomer(storeId: string, customerId: string, cutoff: Date, months: number): Promise<number> {
     return this.prisma.$transaction(async (tx) => {
       const customer = await tx.customer.findUnique({ where: { id: customerId } });
@@ -228,17 +255,7 @@ export class LoyaltyService {
         select: { points: true, createdAt: true },
       });
 
-      const earnedBeforeCutoff = txns
-        .filter((t) => t.points > 0 && t.createdAt < cutoff)
-        .reduce((s, t) => s + t.points, 0);
-      const consumed = txns
-        .filter((t) => t.points < 0)
-        .reduce((s, t) => s + Math.abs(t.points), 0);
-
-      const unconsumedOld = Math.max(0, earnedBeforeCutoff - consumed);
-      // Never expire more than they actually hold: an adjust-down could already
-      // have taken the balance below what the age arithmetic implies.
-      const expirable = Math.min(unconsumedOld, customer.pointsBalance);
+      const expirable = this.atRiskBefore(txns, customer.pointsBalance, cutoff);
       if (expirable <= 0) return 0;
 
       const txnId = prefixedId('pts');
@@ -262,6 +279,91 @@ export class LoyaltyService {
       await this.ledgerService.postPointsMovement('EXPIRE', txnId, storeId, customerId, -expirable, tx);
       return expirable;
     });
+  }
+
+  /**
+   * Warn customers whose points are about to expire (spec §26).
+   *
+   * Expiry without this is value disappearing unannounced, which is the part
+   * customers actually feel. Deliberately a separate pass from expireForStore
+   * so a warning is never a side effect of the thing it is warning about.
+   *
+   * "About to expire" reuses atRiskBefore with the cutoff pushed forward by the
+   * warn window, so the warning is computed by the same rule that will do the
+   * expiring.
+   */
+  async notifyExpiringForStore(storeId: string): Promise<{ notified: number; points: number }> {
+    const program = await this.prisma.loyaltyProgram.findUnique({ where: { storeId } });
+    if (!program?.active || !program.expiryMonths) return { notified: 0, points: 0 };
+
+    // Two cutoffs. `cutoff` is what the expiry job will take today;
+    // `warnCutoff` is what it will take by the end of the warn window. The
+    // difference between them is what is genuinely *about to* expire.
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - program.expiryMonths);
+    const warnCutoff = new Date(cutoff);
+    warnCutoff.setDate(warnCutoff.getDate() + program.expiryWarnDays);
+
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, include: { branding: true } });
+    const customers = await this.prisma.customer.findMany({
+      where: { storeId, pointsBalance: { gt: 0 }, email: { not: null } },
+      select: { id: true, name: true, email: true, pointsBalance: true },
+    });
+
+    let notified = 0;
+    let points = 0;
+    for (const c of customers) {
+      try {
+        const txns = await this.prisma.pointsTransaction.findMany({
+          where: { customerId: c.id, status: 'CONFIRMED' },
+          select: { points: true, createdAt: true },
+        });
+        // "About to expire" is what will go during the window, NOT what is
+        // already past it: the expiry job takes that today, and emailing
+        // "expiring on <a date last month>" is worse than saying nothing.
+        const alreadyDue = this.atRiskBefore(txns, c.pointsBalance, cutoff);
+        const atRisk = this.atRiskBefore(txns, c.pointsBalance, warnCutoff) - alreadyDue;
+        if (atRisk <= 0) continue;
+
+        // The day those points actually die: the oldest earn that is not yet
+        // due, plus the window. Deterministic, so re-running produces the same
+        // key and the unique index absorbs the duplicate.
+        const oldestNotYetDue = txns
+          .filter((t) => t.points > 0 && t.createdAt >= cutoff && t.createdAt < warnCutoff)
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+        if (!oldestNotYetDue) continue;
+        const expiresOn = new Date(oldestNotYetDue.createdAt);
+        expiresOn.setMonth(expiresOn.getMonth() + program.expiryMonths);
+        expiresOn.setHours(0, 0, 0, 0);
+
+        // Claim the notice BEFORE sending. If the send fails we do not retry —
+        // a duplicate "your points are expiring" email is worse than a missed
+        // one, and the next batch will warn again anyway.
+        try {
+          await this.prisma.pointsExpiryNotice.create({
+            data: { id: prefixedId('pen'), customerId: c.id, storeId, expiresOn, points: atRisk },
+          });
+        } catch (e) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') continue; // already warned
+          throw e;
+        }
+
+        const brand = store?.branding?.displayName ?? store?.name ?? 'PayKH';
+        const when = expiresOn.toISOString().slice(0, 10);
+        await this.email.send({
+          to: c.email as string,
+          subject: `${atRisk} points expiring on ${when}`,
+          html: `<p>Hi ${c.name ?? 'there'},</p><p>You have <strong>${atRisk} point(s)</strong> with <strong>${brand}</strong> expiring on <strong>${when}</strong>.</p><p>Your current balance is ${c.pointsBalance} point(s).</p>`,
+          text: `Hi ${c.name ?? 'there'} — you have ${atRisk} point(s) with ${brand} expiring on ${when}. Your current balance is ${c.pointsBalance}.`,
+        });
+        notified++;
+        points += atRisk;
+      } catch (e) {
+        this.logger.error(`expiry notice failed for ${c.id}: ${e}`);
+      }
+    }
+    if (notified > 0) this.logger.log(`warned ${notified} customer(s) about ${points} expiring pts in ${storeId}`);
+    return { notified, points };
   }
 
   /** Highest tier whose threshold the lifetime points satisfy (or null). */

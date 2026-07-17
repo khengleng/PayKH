@@ -385,6 +385,7 @@ model Customer {
   tier         LoyaltyTier?         @relation(fields: [tierId], references: [id])
   preferences  CustomerPreference[]
   consentLogs  ConsentLog[]
+  expiryNotices PointsExpiryNotice[]
 
   @@unique([storeId, externalId])
   @@unique([storeId, referralCode])
@@ -677,10 +678,34 @@ model LoyaltyProgram {
   /// switching it on retroactively expires real customer balances, so it must
   /// be an explicit per-store decision rather than a default.
   expiryMonths  Int?
+  /// How many days before expiry the customer is warned. Only meaningful when
+  /// expiryMonths is set.
+  expiryWarnDays Int     @default(14)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+/// One "your points expire soon" warning per customer per expiry date.
+///
+/// The job runs daily and recomputes the same at-risk batch every day, so
+/// without this a customer would be emailed every morning until their points
+/// died. `expiresOn` is derived deterministically from the points themselves,
+/// so re-running produces the same key and the unique index absorbs it.
+model PointsExpiryNotice {
+  id         String   @id
+  customerId String
+  storeId    String
+  /// The day the at-risk points actually expire.
+  expiresOn  DateTime @db.Date
+  points     Int
+  sentAt     DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, expiresOn])
+  @@index([storeId, sentAt])
 }
 
 model PointsTransaction {
