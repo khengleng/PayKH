@@ -9,8 +9,12 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  # Named "typecheck" because that is what it does. ESLint has never been
+  # installed or configured in this repo, so the previous `eslint` / `next lint`
+  # scripts always failed — real linting is a separate piece of work.
+  typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,11 +22,15 @@ jobs:
       - run: npm ci
       - run: npm run build:packages
       - run: npm run prisma:generate --workspace @paykh/api
-      - name: Typecheck / lint workspaces
+      - name: Typecheck workspaces
         run: npm run lint --workspaces --if-present
 
   build-test:
     runs-on: ubuntu-latest
+    # Without this a hung step burns the runner's full 6h before failing, which
+    # is what the e2e suite did for days — the signal arrived far too late to be
+    # useful. Fail fast instead.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine
@@ -65,6 +73,38 @@ jobs:
         run: npm run test:e2e --workspace @paykh/api
       - name: Build all workspaces
         run: npm run build
+
+      # The API and the worker have SEPARATE Nest roots (app.module.ts vs
+      # worker/worker.module.ts), so a @Global module registered only in the
+      # API's graph leaves the worker unable to resolve it. That is not a
+      # compile error and no unit test sees it: it only surfaces when the
+      # process boots. It crash-looped the worker in production on 2026-07-17,
+      # taking webhook delivery and every sweep down, while the API stayed
+      # green. Boot both.
+      - name: Boot smoke test (API + worker)
+        run: |
+          set -e
+          boot() { # name, entrypoint, ready-marker
+            echo "--- booting $1 ---"
+            node "$2" > "/tmp/$1.log" 2>&1 &
+            local pid=$!
+            for i in $(seq 1 30); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "::error::$1 exited during boot"; tail -30 "/tmp/$1.log"; return 1
+              fi
+              if grep -q "$3" "/tmp/$1.log"; then
+                echo "$1 booted OK"; kill "$pid" 2>/dev/null || true; return 0
+              fi
+              if grep -q "can't resolve dependencies" "/tmp/$1.log"; then
+                echo "::error::$1 failed dependency injection"
+                grep -m1 -A 4 "can't resolve dependencies" "/tmp/$1.log"; kill "$pid" 2>/dev/null || true; return 1
+              fi
+              sleep 2
+            done
+            echo "::error::$1 did not become ready in 60s"; tail -30 "/tmp/$1.log"; kill "$pid" 2>/dev/null || true; return 1
+          }
+          boot api    apps/api/dist/main.js   "Nest application successfully started"
+          boot worker apps/api/dist/worker.js "PayKH worker started"
 
   python-sdk:
     runs-on: ubuntu-latest
