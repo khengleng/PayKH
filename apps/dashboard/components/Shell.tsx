@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, tokenStore, storeStore } from '@/lib/api';
+import { api, ApiError, tokenStore, storeStore } from '@/lib/api';
 import { Me, Store } from '@/lib/types';
 import { Logo, LogoMark } from '@/components/Logo';
 import { Icon } from '@/components/icons';
@@ -77,6 +77,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
   const [stores, setStores] = useState<Store[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const reloadStores = async () => {
@@ -90,20 +91,64 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
 
   useEffect(() => {
     if (!tokenStore.get()) { router.replace('/login'); return; }
+    // Ignore results once this Shell is gone: navigating away rejects the
+    // in-flight fetch, and acting on that would clear the session of the page
+    // the user just moved to.
+    let cancelled = false;
     (async () => {
       try {
         const meResult = await api<Me>('/auth/me');
+        if (cancelled) return;
         setMe(meResult);
         await reloadStores();
-      } catch {
-        tokenStore.clear();
-        router.replace('/login');
+        if (cancelled) return;
+      } catch (e) {
+        if (cancelled) return;
+        // Only a real auth failure ends the session. This catch also covers
+        // /stores and any network blip, and treating those as "logged out"
+        // silently destroys a valid session — indistinguishable, to the user,
+        // from being randomly signed out.
+        if (e instanceof ApiError && e.status === 401) {
+          tokenStore.clear();
+          router.replace('/login');
+        } else {
+          setLoadError(e instanceof Error ? e.message : 'Could not reach the API');
+        }
         return;
       }
       setReady(true);
     })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A transient failure keeps the session and offers a retry, rather than
+  // bouncing to /login and making a working login look expired.
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6">
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <LogoMark size={40} />
+          <p className="text-sm font-medium text-slate-700">Couldn’t load your workspace</p>
+          <p className="text-sm text-slate-500">{loadError}</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="rounded-lg bg-brand-500 px-4 py-2 text-sm text-white hover:bg-brand-600"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => { tokenStore.clear(); router.replace('/login'); }}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!ready || !me) {
     return (
