@@ -29,6 +29,64 @@ export function canTransition(from: PaymentStatus, to: PaymentStatus): boolean {
   return PAYMENT_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+// ---------------------------------------------------------------------------
+// Digital value transactions
+// ---------------------------------------------------------------------------
+
+/**
+ * Lifecycle of anything that moves value (loyalty points today; cashback,
+ * gift-card and merchant-credit balances later).
+ *
+ * The distinction that matters: a value transaction is only *final* at
+ * `confirmed`. Everything before that is a claim we have submitted but the
+ * value provider has not acknowledged, so it must never be presented to a
+ * customer as a settled reward.
+ *
+ * Legacy, purely-internal value never leaves this process, so it is written
+ * straight to `confirmed`. Once PayChain is issuing, an entry sits at
+ * `pending`/`processing` until a webhook or a status poll confirms it.
+ */
+export type ValueTxnStatus =
+  | 'pending' // recorded locally, not yet submitted to the provider
+  | 'processing' // submitted, provider has not confirmed
+  | 'confirmed' // provider confirmed — final, and the only status a customer may be shown as settled
+  | 'failed' // provider rejected it
+  | 'manual_review' // ambiguous (timeout after submit, reconciliation mismatch) — a human decides
+  | 'reversed'; // compensated after confirmation
+
+/**
+ * Allowed transitions.
+ *
+ * `pending → confirmed` is permitted so internal-only value (and the mock
+ * provider) need not fake a round-trip through `processing`.
+ *
+ * `failed → manual_review` exists because a provider "failure" can still have
+ * moved value on their side — a timeout after submission is reported as a
+ * failure but may well have succeeded, so an operator must be able to pull it
+ * back for investigation rather than trusting the failure at face value.
+ *
+ * `confirmed → reversed` is the only exit from `confirmed`: value that has been
+ * confirmed is never deleted, only compensated by an opposing entry.
+ */
+export const VALUE_TXN_TRANSITIONS: Record<ValueTxnStatus, ValueTxnStatus[]> = {
+  pending: ['processing', 'confirmed', 'failed', 'manual_review'],
+  processing: ['confirmed', 'failed', 'manual_review'],
+  confirmed: ['reversed'],
+  failed: ['manual_review'],
+  manual_review: ['confirmed', 'failed', 'reversed'],
+  reversed: [],
+};
+
+export function canTransitionValue(from: ValueTxnStatus, to: ValueTxnStatus): boolean {
+  return VALUE_TXN_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** Statuses that count toward a spendable balance. */
+export const SETTLED_VALUE_STATUSES: ValueTxnStatus[] = ['confirmed'];
+
+/** Statuses that can still become `confirmed`, i.e. worth polling/awaiting. */
+export const IN_FLIGHT_VALUE_STATUSES: ValueTxnStatus[] = ['pending', 'processing', 'manual_review'];
+
 export type KeyMode = 'test' | 'live';
 export type Currency = 'USD' | 'KHR';
 

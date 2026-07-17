@@ -29,6 +29,7 @@ import { EcosystemModule } from './ecosystem/ecosystem.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { AccessModule } from './access/access.module';
 import { SettingsModule } from './settings/settings.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { AlertModule } from './observability/alert.module';
 import { LinksModule } from './links/links.module';
 import { ReceiptsModule } from './receipts/receipts.module';
@@ -76,6 +77,7 @@ import { RequestIdMiddleware } from './common/request-context';
     LedgerModule,
     AccessModule,
     SettingsModule,
+    FeatureFlagsModule,
     AlertModule,
     LinksModule,
     ReceiptsModule,

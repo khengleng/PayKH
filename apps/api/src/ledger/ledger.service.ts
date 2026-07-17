@@ -12,9 +12,18 @@ export const CHART_OF_ACCOUNTS: { code: string; name: string; type: LedgerAccoun
   { code: 'subscription_revenue', name: 'Platform Subscription Revenue', type: 'REVENUE' },
   { code: 'commission_expense', name: 'Affiliate Commission Expense', type: 'EXPENSE' },
   { code: 'commission_payable', name: 'Affiliate Commission Payable', type: 'LIABILITY' },
+  // Loyalty points. Issuing points creates a real obligation to the customer,
+  // so they are a liability like merchant payables — not a counter.
+  { code: 'points_liability', name: 'Loyalty Points Liability', type: 'LIABILITY' }, // points owed to customers
+  { code: 'points_expense', name: 'Loyalty Points Expense', type: 'EXPENSE' }, // cost of issuing points
+  { code: 'points_settled', name: 'Loyalty Points Settled', type: 'REVENUE' }, // obligation discharged by a redemption
+  { code: 'points_breakage', name: 'Loyalty Points Breakage', type: 'REVENUE' }, // obligation released unredeemed (expiry / write-down)
 ];
 
-type Line = { accountCode: string; direction: 'DEBIT' | 'CREDIT'; amount: Prisma.Decimal };
+/** The ledger currency for loyalty points. Points are whole units, not money. */
+export const POINTS_CURRENCY = 'PTS';
+
+type Line = { accountCode: string; direction: 'DEBIT' | 'CREDIT'; amount: Prisma.Decimal; customerId?: string };
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 
@@ -62,7 +71,7 @@ export class LedgerService implements OnModuleInit {
           storeId,
           currency,
           lines: {
-            create: rounded.map((l) => ({ id: prefixedId('led'), accountCode: l.accountCode, storeId, direction: l.direction, amount: l.amount, currency })),
+            create: rounded.map((l) => ({ id: prefixedId('led'), accountCode: l.accountCode, storeId, customerId: l.customerId ?? null, direction: l.direction, amount: l.amount, currency })),
           },
         },
       });
@@ -135,5 +144,91 @@ export class LedgerService implements OnModuleInit {
       { accountCode: 'commission_payable', direction: 'DEBIT', amount: D(amount) },
       { accountCode: 'settlement_clearing', direction: 'CREDIT', amount: D(amount) },
     ]);
+  }
+
+  // -------------------------------------------------------- loyalty points
+  /**
+   * Post the points half of a loyalty movement. `pointsTxnId` is the sub-ledger
+   * row this mirrors, and (event, pointsTxnId) is what makes the posting
+   * idempotent — so a retried earn cannot inflate the liability.
+   *
+   * `points` is signed exactly as PointsTransaction.points is: positive adds to
+   * the customer's balance, negative removes. The direction on points_liability
+   * follows from the sign, and the contra account follows from *why*:
+   *
+   *   earn / adjust-up   DR points_expense    CR points_liability
+   *   redeem             DR points_liability  CR points_settled    (obligation discharged for a reward)
+   *   expire / adjust-dn DR points_liability  CR points_breakage   (obligation released unredeemed)
+   *
+   * Only the points_liability line carries `customerId`; the contra lines are
+   * store-level. That keeps `pointsBalanceFor` a single-account filter and makes
+   * the per-customer balances sum to the account balance by construction.
+   */
+  async postPointsMovement(
+    type: 'EARN' | 'REDEEM' | 'ADJUST' | 'EXPIRE',
+    pointsTxnId: string,
+    storeId: string,
+    customerId: string,
+    points: number,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    if (points === 0) return;
+    const magnitude = D(Math.abs(points));
+    const increasesBalance = points > 0;
+
+    // An ADJUST can go either way, so pick the contra account from the sign
+    // rather than the type. EXPIRE and REDEEM both reduce, but for different
+    // reasons, and conflating them would misstate breakage.
+    const contra = increasesBalance ? 'points_expense' : type === 'REDEEM' ? 'points_settled' : 'points_breakage';
+
+    const liabilityLine: Line = {
+      accountCode: 'points_liability',
+      direction: increasesBalance ? 'CREDIT' : 'DEBIT',
+      amount: magnitude,
+      customerId,
+    };
+    const contraLine: Line = {
+      accountCode: contra,
+      direction: increasesBalance ? 'DEBIT' : 'CREDIT',
+      amount: magnitude,
+    };
+
+    await this.post(
+      `points.${type.toLowerCase()}`,
+      pointsTxnId,
+      storeId,
+      POINTS_CURRENCY,
+      [liabilityLine, contraLine],
+      client,
+    );
+  }
+
+  /**
+   * A customer's points balance as the ledger sees it: credits minus debits on
+   * points_liability. This is the reconciliation counterpart to the denormalised
+   * Customer.pointsBalance column and, later, to the PayChain balance.
+   */
+  async pointsBalanceFor(customerId: string): Promise<number> {
+    const rows = await this.prisma.ledgerEntry.groupBy({
+      by: ['direction'],
+      where: { customerId, accountCode: 'points_liability', currency: POINTS_CURRENCY },
+      _sum: { amount: true },
+    });
+    return this.creditsMinusDebits(rows);
+  }
+
+  /** Total outstanding points liability for a store (or the platform if null). */
+  async pointsLiabilityFor(storeId?: string): Promise<number> {
+    const rows = await this.prisma.ledgerEntry.groupBy({
+      by: ['direction'],
+      where: { accountCode: 'points_liability', currency: POINTS_CURRENCY, ...(storeId ? { storeId } : {}) },
+      _sum: { amount: true },
+    });
+    return this.creditsMinusDebits(rows);
+  }
+
+  private creditsMinusDebits(rows: { direction: 'DEBIT' | 'CREDIT'; _sum: { amount: Prisma.Decimal | null } }[]): number {
+    const sum = (dir: 'DEBIT' | 'CREDIT') => rows.find((r) => r.direction === dir)?._sum.amount ?? D(0);
+    return sum('CREDIT').minus(sum('DEBIT')).toNumber();
   }
 }

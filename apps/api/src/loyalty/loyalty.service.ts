@@ -7,6 +7,7 @@ import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
 import { CampaignsService } from '../campaigns/campaigns.service';
+import { LedgerService } from '../ledger/ledger.service';
 
 export class UpdateProgramDto {
   @IsOptional() @IsBoolean() active?: boolean;
@@ -57,6 +58,7 @@ export class LoyaltyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly campaigns: CampaignsService,
+    private readonly ledgerService: LedgerService,
   ) {}
 
   // ------------------------------------------------------------- program
@@ -140,15 +142,23 @@ export class LoyaltyService {
     const newLifetime = customer.lifetimePoints + earned;
     const newTierId = await this.computeTierId(payment.storeId, newLifetime);
 
-    await this.prisma.$transaction([
-      this.prisma.pointsTransaction.create({
-        data: { id: prefixedId('pts'), storeId: payment.storeId, customerId: payment.customerId, type: 'EARN', points: earned, paymentId: payment.id, reason: multiplier !== 1 ? `payment (x${multiplier})` : 'payment' },
-      }),
-      this.prisma.customer.update({
-        where: { id: payment.customerId },
+    // Narrowed above, but re-bound so it stays non-null inside the closure.
+    const customerId = payment.customerId;
+    const txnId = prefixedId('pts');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.pointsTransaction.create({
+        data: { id: txnId, storeId: payment.storeId, customerId, type: 'EARN', points: earned, paymentId: payment.id, reason: multiplier !== 1 ? `payment (x${multiplier})` : 'payment', confirmedAt: new Date() },
+      });
+      await tx.customer.update({
+        where: { id: customerId },
         data: { pointsBalance: { increment: earned }, lifetimePoints: newLifetime, tierId: newTierId },
-      }),
-    ]);
+      });
+      // Share the transaction: the sub-ledger row, the denormalised balance and
+      // the journal commit together or not at all. Posting outside it would let
+      // a rollback leave the ledger claiming an obligation that no points
+      // transaction backs.
+      await this.ledgerService.postPointsMovement('EARN', txnId, payment.storeId, customerId, earned, tx);
+    });
     this.logger.log(`awarded ${earned} pts (base ${base} x${multiplier}) to ${payment.customerId}; lifetime ${newLifetime}`);
 
     // Apply any active campaign promotions (bonus points on top of base earn).
@@ -182,10 +192,12 @@ export class LoyaltyService {
       if (!customer || customer.storeId !== storeId) throw ApiError.invalidRequest('Unknown customer for this store');
       const newBalance = customer.pointsBalance + delta;
       if (newBalance < 0) throw ApiError.invalidRequest('Insufficient points balance');
+      const txnId = prefixedId('pts');
       await tx.pointsTransaction.create({
-        data: { id: prefixedId('pts'), storeId, customerId, type, points: delta, reason: reason ?? null },
+        data: { id: txnId, storeId, customerId, type, points: delta, reason: reason ?? null, confirmedAt: new Date() },
       });
       const updated = await tx.customer.update({ where: { id: customerId }, data: { pointsBalance: newBalance } });
+      await this.ledgerService.postPointsMovement(type, txnId, storeId, customerId, delta, tx);
       return { customer_id: customerId, type: type.toLowerCase(), points: delta, balance: updated.pointsBalance };
     });
   }

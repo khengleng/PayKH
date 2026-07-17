@@ -91,6 +91,17 @@ enum PointsTxnType {
   EXPIRE
 }
 
+/// Lifecycle of a value-moving transaction. Only CONFIRMED is final — see
+/// ValueTxnStatus in @paykh/shared-types for the transition rules.
+enum ValueTxnStatus {
+  PENDING
+  PROCESSING
+  CONFIRMED
+  FAILED
+  MANUAL_REVIEW
+  REVERSED
+}
+
 enum RedemptionStatus {
   ISSUED
   FULFILLED
@@ -676,10 +687,24 @@ model PointsTransaction {
   reason     String?
   createdAt  DateTime      @default(now())
 
+  /// Only CONFIRMED counts toward a spendable balance. Defaults to CONFIRMED
+  /// because internal-only points are final the moment they are written; rows
+  /// created once PayChain is issuing start at PENDING instead.
+  status      ValueTxnStatus @default(CONFIRMED)
+  confirmedAt DateTime?
+  /// PayChain's transaction id, once it has acknowledged this entry. Kept here
+  /// rather than in a mapping table so the reconciler can join in one read.
+  paychainTxId  String?
+  /// Why this entry is FAILED or MANUAL_REVIEW — shown to operators triaging
+  /// the failed-reward queue.
+  statusDetail  String?
+
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId, createdAt])
   @@index([paymentId])
+  @@index([status]) // the failed/in-flight reward queues scan by status
+  @@index([paychainTxId])
 }
 
 model StoreBranding {
@@ -844,6 +869,12 @@ model LedgerEntry {
   journalId   String
   accountCode String
   storeId     String?
+  /// Set on points_liability lines so one customer's balance is a filter over
+  /// these same rows. Deliberately NOT a relation with a cascade: a customer
+  /// erasure must never delete ledger history, and the aggregate liability must
+  /// stay correct even after the customer row is anonymised. Null on lines that
+  /// have no customer dimension (merchant money, expense/revenue lines).
+  customerId  String?
   direction   LedgerDirection
   amount      Decimal         @db.Decimal(20, 4)
   currency    String
@@ -855,6 +886,7 @@ model LedgerEntry {
   @@index([accountCode, currency])
   @@index([storeId])
   @@index([journalId])
+  @@index([customerId, accountCode]) // per-customer points balance
 }
 
 /// A payout to a merchant. Persists the execution lifecycle (PENDING → PAID |
@@ -889,6 +921,25 @@ model SystemSetting {
   valueCiphertext String   @db.Text
   updatedAt       DateTime @updatedAt
   updatedByUserId String?
+}
+
+/// A feature toggle, resolved per organization with a platform-level fallback.
+/// `scope` is either the sentinel "global" (the platform default) or an
+/// Organization id — a composite id rather than a nullable column because
+/// Postgres treats NULLs as distinct in unique indexes, which would let
+/// duplicate platform rows accumulate for one key.
+///
+/// Rows are advisory: the registry in feature-flags.module.ts owns the set of
+/// known keys and their code defaults, so an unknown or missing row always
+/// resolves to the (safe) default rather than to "enabled".
+model FeatureFlag {
+  key             String
+  scope           String // "global" | organizationId
+  enabled         Boolean
+  updatedAt       DateTime @updatedAt
+  updatedByUserId String?
+
+  @@id([key, scope])
 }
 
 /// A no-code shareable payment link or invoice. Opening it mints a Payment for
