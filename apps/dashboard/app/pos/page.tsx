@@ -31,9 +31,23 @@ function Content({ storeId }: { storeId: string }) {
 
 function ChargeTab({ storeId }: { storeId: string }) {
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('USD');
+  const [currency, setCurrency] = useState('KHR');
+  const [connected, setConnected] = useState<('USD' | 'KHR')[]>([]);
   const [charge, setCharge] = useState<Charge | null>(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  // Offer only currencies the store can actually be paid in, and default to
+  // one — charging a currency with no connected account just 400s.
+  useEffect(() => {
+    api<{ imported: boolean; accounts?: { currency: 'USD' | 'KHR' }[] }>(`/dashboard/stores/${storeId}/khqr`)
+      .then((r) => {
+        const list = r.imported && r.accounts ? r.accounts.map((a) => a.currency) : [];
+        setConnected(list);
+        if (list.length) setCurrency(list.includes('KHR') ? 'KHR' : list[0]);
+      })
+      .catch(() => setConnected([]));
+  }, [storeId]);
 
   const press = (k: string) => setAmount((a) => {
     if (k === '⌫') return a.slice(0, -1);
@@ -43,8 +57,9 @@ function ChargeTab({ storeId }: { storeId: string }) {
 
   const start = async () => {
     if (!amount || Number(amount) <= 0) return;
-    setBusy(true);
+    setBusy(true); setErr('');
     try { setCharge(await api<Charge>(`/dashboard/stores/${storeId}/pos/charge`, { method: 'POST', body: { amount, currency } })); }
+    catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
 
@@ -93,7 +108,7 @@ function ChargeTab({ storeId }: { storeId: string }) {
     <Card className="mx-auto max-w-sm">
       <div className="mb-2 flex items-center justify-between">
         <div className="text-4xl font-bold tracking-tight">{amount || '0'} <span className="text-xl text-slate-400">{currency}</span></div>
-        <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1 text-sm"><option>USD</option><option>KHR</option></select>
+        <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1 text-sm">{(connected.length ? connected : ['USD','KHR']).map((c) => <option key={c}>{c}</option>)}</select>
       </div>
       <div className="my-4 grid grid-cols-3 gap-2">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((k) => (
@@ -103,22 +118,78 @@ function ChargeTab({ storeId }: { storeId: string }) {
       <button onClick={start} disabled={busy || !amount} className="w-full rounded-xl bg-brand-500 py-3.5 text-lg font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
         {busy ? 'Generating QR…' : 'Charge'}
       </button>
+      {err && <p className="mt-3 text-center text-sm text-red-600">{err}</p>}
     </Card>
   );
 }
 
 function CounterTab({ storeId }: { storeId: string }) {
-  const [qr, setQr] = useState<{ url: string } | null>(null);
-  const load = useCallback(async () => { setQr(await api<{ url: string }>(`/dashboard/stores/${storeId}/pos/counter-qr`)); }, [storeId]);
+  const [currencies, setCurrencies] = useState<('USD' | 'KHR')[] | null>(null);
+  const [currency, setCurrency] = useState<'USD' | 'KHR'>('KHR');
+  const [khqr, setKhqr] = useState<string | null>(null);
+  const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
+  const [err, setErr] = useState('');
+
+  // Which currencies the store has connected — only those can be a real KHQR.
+  useEffect(() => {
+    api<{ imported: boolean; accounts?: { currency: 'USD' | 'KHR' }[] }>(`/dashboard/stores/${storeId}/khqr`)
+      .then((r) => {
+        const list = r.imported && r.accounts ? r.accounts.map((a) => a.currency) : [];
+        setCurrencies(list);
+        if (list.length) setCurrency(list.includes('KHR') ? 'KHR' : list[0]);
+      })
+      .catch(() => setCurrencies([]));
+  }, [storeId]);
+
+  // A real, static KHQR of the connected account for the chosen currency — a
+  // banking app scans it and the customer types the amount. Falls back to the
+  // checkout link only when no bank account is connected.
+  const load = useCallback(async () => {
+    setErr(''); setKhqr(null); setFallbackUrl(null);
+    if (currencies === null) return;
+    if (currencies.length === 0) {
+      const r = await api<{ url: string }>(`/dashboard/stores/${storeId}/pos/counter-qr`).catch(() => null);
+      setFallbackUrl(r?.url ?? null);
+      return;
+    }
+    try {
+      const r = await api<{ qr_string: string }>(`/dashboard/stores/${storeId}/khqr/counter?currency=${currency}`);
+      setKhqr(r.qr_string);
+    } catch (e) { setErr((e as Error).message); }
+  }, [storeId, currency, currencies]);
   useEffect(() => { load(); }, [load]);
-  if (!qr) return <Card className="mx-auto max-w-sm text-center text-slate-400">Loading…</Card>;
+
+  if (currencies === null) return <Card className="mx-auto max-w-sm text-center text-slate-400">Loading…</Card>;
+
   return (
     <Card className="mx-auto max-w-sm text-center">
       <h3 className="font-semibold">Counter QR</h3>
-      <p className="mb-4 text-sm text-slate-500">Print this and place it at your counter. Customers scan, enter the amount, and pay.</p>
-      <div className="mx-auto inline-block rounded-2xl border border-slate-200 bg-white p-4"><QRCodeSVG value={qr.url} size={220} /></div>
-      <a href={qr.url} target="_blank" rel="noreferrer" className="mt-3 block break-all text-xs text-brand-600 hover:underline">{qr.url}</a>
-      <Button className="mt-4" variant="secondary" onClick={() => window.print()}>Print</Button>
+      <p className="mb-4 text-sm text-slate-500">Print this and place it at your counter. Customers scan with their banking app and enter the amount.</p>
+
+      {currencies.length > 1 && (
+        <div className="mb-4 inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
+          {currencies.map((c) => (
+            <button key={c} onClick={() => setCurrency(c)} className={`rounded-md px-4 py-1.5 font-medium ${currency === c ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500'}`}>{c}</button>
+          ))}
+        </div>
+      )}
+
+      {khqr ? (
+        <>
+          {currencies.length === 1 && <p className="mb-2 text-xs font-medium text-emerald-700">{currencies[0]} account</p>}
+          <div className="mx-auto inline-block rounded-2xl border border-slate-200 bg-white p-4"><QRCodeSVG value={khqr} size={220} level="M" includeMargin /></div>
+          <p className="mt-2 text-xs text-slate-400">Pays your connected {currency} account directly.</p>
+          <Button className="mt-4" variant="secondary" onClick={() => window.print()}>Print</Button>
+        </>
+      ) : fallbackUrl ? (
+        <>
+          <div className="mx-auto inline-block rounded-2xl border border-slate-200 bg-white p-4"><QRCodeSVG value={fallbackUrl} size={220} /></div>
+          <p className="mt-3 text-xs text-amber-600">No bank account connected — this opens a checkout page instead of paying you directly. Connect your KHQR in Stores → Bank account for payments so a banking app can pay you.</p>
+          <Button className="mt-4" variant="secondary" onClick={() => window.print()}>Print</Button>
+        </>
+      ) : (
+        <p className="text-sm text-red-600">{err || 'Could not build the counter QR.'}</p>
+      )}
     </Card>
   );
 }
