@@ -145,6 +145,9 @@ export class PaymentsService {
         expiresAt,
       });
     } catch (err) {
+      // A provider ApiError (e.g. "no USD account connected") is user-actionable
+      // — surface it as-is rather than masking it behind a generic 502.
+      if (err instanceof ApiError) throw err;
       this.logger.error(`Provider createKhqr failed for ${paymentId}`, err as Error);
       throw ApiError.providerError('Failed to generate KHQR');
     }

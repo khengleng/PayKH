@@ -15,6 +15,7 @@ import { buildBakongKhqr } from './khqr.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../common/crypto.service';
 import { BakongAccount, readAccounts } from './bakong-credential';
+import { ApiError } from '../common/api-error';
 
 /** Legacy single-account shape, still accepted for the platform env blob. */
 interface BakongCredential {
@@ -90,7 +91,9 @@ export class BakongKhqrProvider implements PaymentProvider {
     const account = accounts[currency];
     if (!account) {
       const have = Object.keys(accounts).join(', ') || 'none';
-      throw new Error(`No ${currency} account imported for this store (imported: ${have}). Upload the ${currency} KHQR from your bank.`);
+      // User-actionable, not a server fault: surface as 400 with the real fix,
+      // rather than a generic 502 that reads like the platform is broken.
+      throw ApiError.invalidRequest(`No ${currency} account connected for this store (connected: ${have}). Upload your ${currency} KHQR in Stores → Bank account for payments.`);
     }
     const parsed = account;
     if (!parsed.bakongAccountId) {
