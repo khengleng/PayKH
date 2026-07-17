@@ -57,7 +57,7 @@ export class DashboardController {
 
   @Post('stores/:storeId/pos/charge')
   @ApiOperation({ summary: 'POS: charge an amount and get a KHQR to display' })
-  posCharge(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: { amount: string; currency?: 'USD' | 'KHR'; reference?: string }) {
+  posCharge(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: { amount: string; currency?: 'USD' | 'KHR'; reference?: string; customer_phone?: string; customer_email?: string; customer_name?: string }) {
     return this.dashboard.posCharge(user, storeId, dto);
   }
 

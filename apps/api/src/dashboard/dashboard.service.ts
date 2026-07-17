@@ -9,6 +9,7 @@ import { prefixedId } from '@paykh/security';
 import { formatAmount } from '../payments/amount.util';
 import { PaymentsService } from '../payments/payments.service';
 import { AccessService } from '../access/access.service';
+import { CustomersService } from '../customers/customers.service';
 
 @Injectable()
 export class DashboardService {
@@ -16,6 +17,7 @@ export class DashboardService {
     private readonly prisma: PrismaService,
     private readonly payments: PaymentsService,
     private readonly access: AccessService,
+    private readonly customers: CustomersService,
   ) {}
 
   /** Refund a payment from the dashboard (requires payment:write + ABAC policies). */
@@ -41,13 +43,18 @@ export class DashboardService {
   }
 
   /** POS: a cashier charges an amount on the spot → returns a KHQR to display. */
-  async posCharge(user: AuthUser, storeId: string, dto: { amount: string; currency?: 'USD' | 'KHR'; reference?: string }) {
+  async posCharge(user: AuthUser, storeId: string, dto: { amount: string; currency?: 'USD' | 'KHR'; reference?: string; customer_phone?: string; customer_email?: string; customer_name?: string }) {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
     if (!store) throw ApiError.paymentNotFound('Store not found');
     requirePermission(user, store.organizationId, 'payment:write');
     if (!dto.amount || Number(dto.amount) <= 0) throw ApiError.invalidRequest('Amount must be positive');
+    // Attach a customer (by phone/email) so a counter sale earns loyalty. A new
+    // contact is created, a returning one is reused — points accumulate.
+    const customerId = await this.customers.resolveOrCreateByContact(storeId, {
+      phone: dto.customer_phone, email: dto.customer_email, name: dto.customer_name,
+    });
     const ctx = { apiKeyId: '', storeId, organizationId: store.organizationId, mode: (store.liveMode ? 'live' : 'test') as 'live' | 'test' };
-    const body = { amount: Number(dto.amount).toFixed(2), currency: dto.currency ?? 'USD', reference_id: dto.reference, description: 'POS charge', metadata: { source: 'pos' } };
+    const body = { amount: Number(dto.amount).toFixed(2), currency: dto.currency ?? 'USD', reference_id: dto.reference, description: 'POS charge', metadata: { source: 'pos' }, ...(customerId ? { customer_id: customerId } : {}) };
     const { resource } = await this.payments.create(ctx, body, undefined, JSON.stringify(body));
     return { id: resource.id, status: resource.status, amount: resource.amount, currency: resource.currency, qr_string: resource.qr_string ?? null, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };
   }

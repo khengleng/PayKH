@@ -88,6 +88,41 @@ export class CustomersService {
     return c.id;
   }
 
+  /**
+   * Find a store's customer by phone/email, or create one — for attaching a
+   * customer to a counter (POS) charge so they earn loyalty. A repeat customer
+   * accumulates points instead of spawning duplicates.
+   *
+   * Phone/email are not DB-unique, so this matches on the first existing record
+   * and only creates when none is found. A rare concurrent double-create at the
+   * counter would make two records — acceptable for a cashier flow, and far
+   * better than rejecting the sale.
+   */
+  async resolveOrCreateByContact(storeId: string, contact: { phone?: string; email?: string; name?: string }): Promise<string | null> {
+    const phone = contact.phone?.trim() || undefined;
+    const email = contact.email?.trim().toLowerCase() || undefined;
+    if (!phone && !email) return null; // nothing to attach
+
+    const existing = await this.prisma.customer.findFirst({
+      where: { storeId, OR: [...(phone ? [{ phone }] : []), ...(email ? [{ email }] : [])] },
+      orderBy: { createdAt: 'asc' }, // stick to the oldest match
+    });
+    if (existing) {
+      // Backfill a missing contact field so the record gets more complete.
+      const patch: { phone?: string; email?: string; name?: string } = {};
+      if (phone && !existing.phone) patch.phone = phone;
+      if (email && !existing.email) patch.email = email;
+      if (contact.name && !existing.name) patch.name = contact.name;
+      if (Object.keys(patch).length) await this.prisma.customer.update({ where: { id: existing.id }, data: patch });
+      return existing.id;
+    }
+
+    const created = await this.prisma.customer.create({
+      data: { id: prefixedId('cus'), storeId, phone, email, name: contact.name ?? null, metadata: {} },
+    });
+    return created.id;
+  }
+
   // -------------------------------------------------------------- dashboard
   async dashboardList(user: AuthUser, storeId: string, search?: string, cursor?: string) {
     await this.assertStoreAccess(user, storeId);

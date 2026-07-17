@@ -55,10 +55,18 @@ function ChargeTab({ storeId }: { storeId: string }) {
     return (a + k).replace(/^0+(?=\d)/, '');
   });
 
+  // Optional: attach a customer by phone so the sale earns loyalty points.
+  const [phone, setPhone] = useState('');
+
   const start = async () => {
     if (!amount || Number(amount) <= 0) return;
     setBusy(true); setErr('');
-    try { setCharge(await api<Charge>(`/dashboard/stores/${storeId}/pos/charge`, { method: 'POST', body: { amount, currency } })); }
+    try {
+      setCharge(await api<Charge>(`/dashboard/stores/${storeId}/pos/charge`, {
+        method: 'POST',
+        body: { amount, currency, ...(phone.trim() ? { customer_phone: phone.trim() } : {}) },
+      }));
+    }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -90,7 +98,7 @@ function ChargeTab({ storeId }: { storeId: string }) {
     setDetection(null);
   };
 
-  const reset = () => { setCharge(null); setAmount(''); setDetection(null); };
+  const reset = () => { setCharge(null); setAmount(''); setDetection(null); setPhone(''); };
 
   if (charge) {
     const done = charge.status === 'paid';
@@ -141,6 +149,13 @@ function ChargeTab({ storeId }: { storeId: string }) {
           <button key={k} onClick={() => press(k)} className="rounded-xl bg-slate-50 py-4 text-xl font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200">{k}</button>
         ))}
       </div>
+      <input
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        placeholder="Customer phone (optional — earns loyalty)"
+        inputMode="tel"
+        className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+      />
       <button onClick={start} disabled={busy || !amount} className="w-full rounded-xl bg-brand-500 py-3.5 text-lg font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
         {busy ? 'Generating QR…' : 'Charge'}
       </button>
