@@ -84,12 +84,16 @@ export class KhqrImportService {
     // Prove we can reissue against this account BEFORE saving it. A credential
     // that stores cleanly but cannot produce a scannable QR would surface as a
     // failed checkout in front of a customer.
+    //
+    // No amount: the sample is STATIC, exactly like the QR the bank issued, so
+    // the payer types the figure. Fixing an amount here would only test a number
+    // PayKH invented, and it made the sample useless for a merchant who wants to
+    // send someone a real request.
     const probe = buildBakongKhqr({
       bakongAccountId: credential.bakongAccountId,
       accountInformation: credential.accountInformation,
       merchantName: credential.merchantName ?? 'Merchant',
       merchantCity: credential.merchantCity,
-      amount: '1.00',
       currency: credential.currency ?? 'USD',
       merchantId: credential.merchantId,
       acquiringBank: credential.acquiringBank,

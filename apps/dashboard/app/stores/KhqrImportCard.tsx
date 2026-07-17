@@ -9,6 +9,8 @@ import { api } from '@/lib/api';
 interface Imported {
   imported: boolean;
   bakong_account_id?: string;
+  account_information?: string | null;
+  currency?: 'USD' | 'KHR' | null;
   merchant_name?: string | null;
   merchant_city?: string | null;
   acquiring_bank?: string | null;
@@ -109,6 +111,8 @@ export function KhqrImportCard({ storeId }: { storeId: string }) {
           <div className="font-mono text-xs text-slate-600">{cur.bakong_account_id}</div>
           <div className="mt-1 text-xs text-slate-500">
             {cur.account_type} · {cur.merchant_city}
+            {cur.account_information ? ` · acct ${cur.account_information}` : ''}
+            {cur.currency ? ` · ${cur.currency}` : ' · any currency'}
             {cur.acquiring_bank ? ` · ${cur.acquiring_bank}` : ''}
           </div>
         </div>
@@ -152,10 +156,10 @@ export function KhqrImportCard({ storeId }: { storeId: string }) {
           ever sees a PayKH QR. */}
       {sample && (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-          <div className="text-sm font-medium text-emerald-800">Test it: scan this $1.00 QR with your banking app</div>
+          <div className="text-sm font-medium text-emerald-800">Test it: scan this QR with your banking app</div>
           <div className="mb-2 text-xs text-emerald-700">
-            It should show your own name. This is a real KHQR built from the account you just imported — paying it
-            sends $1.00 to you.
+            It should show your own name, and let you enter any amount — just like the QR your bank issued. This is a
+            real KHQR built from the account you just imported, so paying it sends money to you.
           </div>
           <div className="inline-block rounded-lg bg-white p-3">
             <QRCodeSVG value={sample} size={180} level="M" includeMargin />

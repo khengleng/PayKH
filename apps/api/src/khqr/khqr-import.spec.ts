@@ -56,15 +56,16 @@ describe('KhqrImportService.import', () => {
     expect(r.source_was_static).toBe(true);
   });
 
-  it('returns a sample QR that names the same account with an amount', async () => {
-    // The merchant should be able to scan this and see their own name before
-    // trusting it with live payments.
+  it('returns an amount-free sample QR naming the same account', async () => {
+    // The merchant scans this and sees their own name before trusting it with
+    // live payments. It carries NO amount: the payer types the figure, exactly
+    // like the QR their bank issued.
     const { svc, user } = make();
     const r = await svc.import(user, 's1', { qr_string: bankReceiveQr() });
     const sample = parseKhqr(r.sample_qr as string);
     expect(sample.bakongAccountId).toBe('khengleng@wing');
-    expect(sample.amount).toBe('1.00');
-    expect(sample.isStatic).toBe(false); // reissued as dynamic
+    expect(sample.amount).toBeUndefined();
+    expect(sample.isStatic).toBe(true);
   });
 
   it('encrypts the credential at rest', async () => {
