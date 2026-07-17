@@ -29,6 +29,12 @@ export class LedgerController {
     return this.recon.reconcile(user, storeId);
   }
 
+  @Get('stores/:storeId/ledger/points-drift')
+  @ApiOperation({ summary: 'Loyalty points: balance column vs ledger drift' })
+  pointsDrift(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.recon.storePointsDrift(user, storeId);
+  }
+
   // ------------------------------------------------------------- platform admin
   @Get('admin/ledger/trial-balance')
   @ApiOperation({ summary: 'Platform trial balance (admin)' })
@@ -40,6 +46,12 @@ export class LedgerController {
   @ApiOperation({ summary: 'Platform-wide reconciliation (admin)' })
   adminReconcile(@CurrentUser() user: AuthUser) {
     return this.recon.reconcile(user);
+  }
+
+  @Get('admin/ledger/points-drift')
+  @ApiOperation({ summary: 'Platform-wide loyalty points drift (admin)' })
+  adminPointsDrift(@CurrentUser() user: AuthUser) {
+    return this.recon.adminPointsDrift(user);
   }
 
   @Post('admin/ledger/backfill')

@@ -13,6 +13,7 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { BillingModule } from '../billing/billing.module';
 import { SettlementsModule } from '../settlements/settlements.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { BranchesModule } from '../branches/branches.module';
 import { CustomersModule } from '../customers/customers.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
@@ -46,6 +47,7 @@ import { WorkerScheduler } from './worker-scheduler';
     PaymentsModule,
     BillingModule,
     SettlementsModule,
+    LedgerModule,
     BranchesModule,
     CustomersModule,
     LoyaltyModule,

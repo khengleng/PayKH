@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
-import { LedgerService } from './ledger.service';
+import { LedgerService, POINTS_CURRENCY } from './ledger.service';
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 const TOL = 0.005; // rounding tolerance for tie-outs
@@ -174,5 +174,77 @@ export class ReconciliationService {
 
     const balanced = checks.every((c) => c.ok);
     return { scope: storeId ?? 'platform', balanced, checks, breaks };
+  }
+
+  // -------------------------------------------------- loyalty points drift
+  /**
+   * Compare each customer's denormalised `Customer.pointsBalance` against the
+   * points_liability position the ledger derives for them.
+   *
+   * These are written in one transaction, so a drift is never routine — it
+   * means a balance moved without a journal (or vice versa), and it is the
+   * signal that the two disagree BEFORE PayChain is added as a third opinion.
+   * Spec §30 stages 3-6 (read-only comparison → dual-run → reconciliation) are
+   * only meaningful if this is already clean.
+   *
+   * Points are whole units, so the tolerance is exact — unlike the money
+   * tie-outs above, any non-zero delta is a real break.
+   */
+  async pointsDrift(storeId?: string) {
+    const scope = storeId ? { storeId } : {};
+
+    // Ledger view: credits minus debits on points_liability, per customer.
+    const grouped = await this.prisma.ledgerEntry.groupBy({
+      by: ['customerId', 'direction'],
+      where: { accountCode: 'points_liability', currency: POINTS_CURRENCY, ...scope },
+      _sum: { amount: true },
+    });
+    const ledgerByCustomer = new Map<string, number>();
+    for (const g of grouped) {
+      if (!g.customerId) continue;
+      const signed = D(g._sum.amount ?? 0).toNumber() * (g.direction === 'CREDIT' ? 1 : -1);
+      ledgerByCustomer.set(g.customerId, (ledgerByCustomer.get(g.customerId) ?? 0) + signed);
+    }
+
+    // Column view. Include zero-balance customers that the ledger knows about:
+    // a customer whose column says 0 while the ledger says 100 is exactly the
+    // kind of break this exists to catch, and filtering on `pointsBalance != 0`
+    // would hide it.
+    const customers = await this.prisma.customer.findMany({
+      where: { OR: [{ pointsBalance: { not: 0 } }, { id: { in: [...ledgerByCustomer.keys()] } }], ...scope },
+      select: { id: true, storeId: true, pointsBalance: true },
+    });
+
+    const drifted: { customer_id: string; store_id: string; column: number; ledger: number; delta: number }[] = [];
+    for (const c of customers) {
+      const ledger = ledgerByCustomer.get(c.id) ?? 0;
+      if (ledger !== c.pointsBalance) {
+        drifted.push({ customer_id: c.id, store_id: c.storeId, column: c.pointsBalance, ledger, delta: ledger - c.pointsBalance });
+      }
+    }
+
+    const columnTotal = customers.reduce((s, c) => s + c.pointsBalance, 0);
+    const ledgerTotal = await this.ledger.pointsLiabilityFor(storeId);
+
+    return {
+      scope: storeId ?? 'platform',
+      ok: drifted.length === 0 && columnTotal === ledgerTotal,
+      customers_checked: customers.length,
+      liability_column: columnTotal,
+      liability_ledger: ledgerTotal,
+      liability_delta: ledgerTotal - columnTotal,
+      drifted: drifted.slice(0, 50), // cap the payload; `drift_count` carries the truth
+      drift_count: drifted.length,
+    };
+  }
+
+  async storePointsDrift(user: AuthUser, storeId: string) {
+    await this.assertStore(user, storeId);
+    return this.pointsDrift(storeId);
+  }
+
+  async adminPointsDrift(user: AuthUser) {
+    await this.assertAdmin(user.userId);
+    return this.pointsDrift();
   }
 }

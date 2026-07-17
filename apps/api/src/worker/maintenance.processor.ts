@@ -6,11 +6,14 @@ import { PaymentsService } from '../payments/payments.service';
 import { BillingService } from '../billing/billing.service';
 import { SettlementService } from '../settlements/settlement.service';
 import { WebhookEventsService } from '../webhooks/webhook-events.service';
+import { ReconciliationService } from '../ledger/reconciliation.service';
+import { AlertService } from '../observability/alert.service';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
 import {
   JOB_BILLING_SWEEP,
   JOB_EXPIRY_SWEEP,
   JOB_IDEMPOTENCY_CLEANUP,
+  JOB_POINTS_RECONCILE,
   JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
   JOB_WEBHOOK_RECONCILE,
@@ -35,6 +38,8 @@ export class MaintenanceProcessor extends WorkerHost {
     private readonly billing: BillingService,
     private readonly settlement: SettlementService,
     private readonly webhookEvents: WebhookEventsService,
+    private readonly reconciliation: ReconciliationService,
+    private readonly alerts: AlertService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {
     super();
@@ -55,9 +60,39 @@ export class MaintenanceProcessor extends WorkerHost {
       case JOB_WEBHOOK_RECONCILE:
         await this.webhookEvents.reconcilePending();
         return;
+      case JOB_POINTS_RECONCILE:
+        return this.pointsReconcile();
       default:
         return;
     }
+  }
+
+  /**
+   * Points drift watch: does every customer's balance column still agree with
+   * the ledger's points_liability position?
+   *
+   * They are written in one transaction, so a break is never routine — it means
+   * value moved without a journal, or a journal exists with no value behind it.
+   * Catching that here is what makes the PayChain migration's dual-run stages
+   * trustworthy: comparing PayKH against PayChain is meaningless if PayKH does
+   * not agree with itself first.
+   */
+  private async pointsReconcile(): Promise<void> {
+    const r = await this.reconciliation.pointsDrift();
+    if (r.ok) {
+      this.logger.debug(`points reconcile: ${r.customers_checked} customers, liability ${r.liability_ledger} — clean`);
+      return;
+    }
+    const sample = r.drifted
+      .slice(0, 5)
+      .map((d) => `${d.customer_id} column=${d.column} ledger=${d.ledger}`)
+      .join('; ');
+    this.logger.error(`points drift: ${r.drift_count} customer(s); liability column=${r.liability_column} ledger=${r.liability_ledger}`);
+    await this.alerts.critical(
+      'Loyalty points ledger drift',
+      `${r.drift_count} customer(s) disagree with the ledger. Liability: column ${r.liability_column} vs ledger ${r.liability_ledger} (delta ${r.liability_delta}). Sample: ${sample}`,
+      { drift_count: r.drift_count, liability_delta: r.liability_delta },
+    );
   }
 
   /** Settle each store's completed-day paid payments into daily batches. */
