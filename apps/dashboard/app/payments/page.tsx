@@ -5,6 +5,7 @@ import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle, StatusBadge } from '@/components/ui';
 import { api, API_BASE, tokenStore } from '@/lib/api';
 import { Payment } from '@/lib/types';
+import { DetectedPayments } from './DetectedPayments';
 
 interface PaymentList {
   data: Payment[];
@@ -61,6 +62,8 @@ function PaymentsContent({ storeId }: { storeId: string }) {
   return (
     <>
       <PageTitle title="Payments" action={<Button variant="secondary" onClick={exportCsv}>Export CSV</Button>} />
+
+      <DetectedPayments storeId={storeId} onConfirmed={load} />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <input
