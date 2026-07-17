@@ -6,16 +6,18 @@ import jsQR from 'jsqr';
 import { Button, Card } from '@/components/ui';
 import { api } from '@/lib/api';
 
-interface Imported {
-  imported: boolean;
-  bakong_account_id?: string;
+interface Account {
+  currency: 'USD' | 'KHR';
+  bakong_account_id: string;
   account_information?: string | null;
-  currency?: 'USD' | 'KHR' | null;
   merchant_name?: string | null;
   merchant_city?: string | null;
   acquiring_bank?: string | null;
   account_type?: 'individual' | 'merchant';
-  source_was_static?: boolean;
+}
+interface Imported {
+  imported: boolean;
+  accounts?: Account[];
   sample_qr?: string;
   unreadable?: boolean;
   detail?: string;
@@ -84,10 +86,10 @@ export function KhqrImportCard({ storeId }: { storeId: string }) {
     } finally { setBusy(false); }
   };
 
-  const remove = async () => {
-    if (!confirm('Remove this account? PayKH will stop issuing QR codes that pay it.')) return;
+  const removeCurrency = async (currency: 'USD' | 'KHR') => {
+    if (!confirm(`Remove the ${currency} account? PayKH will stop issuing ${currency} QR codes that pay it.`)) return;
     setBusy(true); setSample(null);
-    try { await api(`/dashboard/stores/${storeId}/khqr`, { method: 'DELETE' }); await load(); }
+    try { await api(`/dashboard/stores/${storeId}/khqr?currency=${currency}`, { method: 'DELETE' }); await load(); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -105,16 +107,26 @@ export function KhqrImportCard({ storeId }: { storeId: string }) {
         it and issues QR codes that pay <em>you</em> directly. No bank sign-up needed.
       </p>
 
-      {cur?.imported && !cur.unreadable && (
-        <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm">
-          <div className="font-medium text-slate-700">{cur.merchant_name ?? 'Account'}</div>
-          <div className="font-mono text-xs text-slate-600">{cur.bakong_account_id}</div>
-          <div className="mt-1 text-xs text-slate-500">
-            {cur.account_type} · {cur.merchant_city}
-            {cur.account_information ? ` · acct ${cur.account_information}` : ''}
-            {cur.currency ? ` · ${cur.currency}` : ' · any currency'}
-            {cur.acquiring_bank ? ` · ${cur.acquiring_bank}` : ''}
-          </div>
+      {cur?.imported && !cur.unreadable && cur.accounts && (
+        <div className="mb-3 space-y-2">
+          {cur.accounts.map((a) => (
+            <div key={a.currency} className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">{a.currency}</span>
+                <span className="font-medium text-slate-700">{a.merchant_name ?? 'Account'}</span>
+              </div>
+              <div className="mt-1 font-mono text-xs text-slate-600">{a.bakong_account_id}</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {a.account_type} · {a.merchant_city}
+                {a.account_information ? ` · acct ${a.account_information}` : ''}
+                {a.acquiring_bank ? ` · ${a.acquiring_bank}` : ''}
+              </div>
+              <button onClick={() => removeCurrency(a.currency)} disabled={busy} className="mt-1 text-xs text-red-600 hover:underline">Remove {a.currency}</button>
+            </div>
+          ))}
+          <p className="text-xs text-slate-400">
+            Upload a second QR to add the other currency — Wing gives you a separate KHR and USD account.
+          </p>
         </div>
       )}
       {cur?.unreadable && <p className="mb-3 text-sm text-amber-600">{cur.detail}</p>}
@@ -145,9 +157,8 @@ export function KhqrImportCard({ storeId }: { storeId: string }) {
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button onClick={doImport} disabled={busy || qrString.trim().length < 12}>
-          {busy ? 'Checking…' : cur?.imported ? 'Replace account' : 'Import account'}
+          {busy ? 'Checking…' : cur?.imported ? 'Add / replace a currency' : 'Import account'}
         </Button>
-        {cur?.imported && <Button variant="danger" onClick={remove} disabled={busy}>Remove</Button>}
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
         {err && <span className="text-sm text-red-600">{err}</span>}
       </div>

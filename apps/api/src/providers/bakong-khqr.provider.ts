@@ -14,8 +14,9 @@ import { CircuitBreaker, withResilience } from './resilience';
 import { buildBakongKhqr } from './khqr.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../common/crypto.service';
+import { BakongAccount, readAccounts } from './bakong-credential';
 
-/** Shape of the decrypted per-store Bakong credential blob (JSON). */
+/** Legacy single-account shape, still accepted for the platform env blob. */
 interface BakongCredential {
   bakongAccountId: string;
   /** Payee account/phone (tag 29 sub-tag 01) — the "receiver account" banks
@@ -60,8 +61,16 @@ export class BakongKhqrProvider implements PaymentProvider {
     return url.replace(/\/$/, '');
   }
 
-  private async loadCredential(storeId: string, mode: 'test' | 'live'): Promise<BakongCredential> {
-    // Platform subscription payments use a credential from env, not a store.
+  /**
+   * The payee account for a payment's currency. A store holds one account per
+   * currency (Wing issues separate KHR/USD accounts), so this selects by
+   * currency and refuses rather than misroute when that currency is not
+   * imported — paying a USD amount into a KHR account is the failure this
+   * exists to prevent.
+   */
+  private async loadCredential(storeId: string, mode: 'test' | 'live', currency: 'USD' | 'KHR'): Promise<BakongAccount> {
+    // Platform subscription payments use a single dedicated account from env,
+    // valid for whatever currency the invoice is in.
     if (storeId === '__platform__') {
       const raw = this.config.get<string>('bakongPlatformAccount');
       if (!raw) throw new Error('BAKONG_PLATFORM_ACCOUNT is not configured');
@@ -77,8 +86,13 @@ export class BakongKhqrProvider implements PaymentProvider {
     if (!cred) {
       throw new Error(`No Bakong ${mode} credential configured for store ${storeId}`);
     }
-    const decrypted = this.crypto.decrypt(cred.secretCiphertext);
-    const parsed = JSON.parse(decrypted) as BakongCredential;
+    const accounts = readAccounts(JSON.parse(this.crypto.decrypt(cred.secretCiphertext)));
+    const account = accounts[currency];
+    if (!account) {
+      const have = Object.keys(accounts).join(', ') || 'none';
+      throw new Error(`No ${currency} account imported for this store (imported: ${have}). Upload the ${currency} KHQR from your bank.`);
+    }
+    const parsed = account;
     if (!parsed.bakongAccountId) {
       throw new Error('Bakong credential is missing bakongAccountId');
     }
@@ -92,7 +106,7 @@ export class BakongKhqrProvider implements PaymentProvider {
   }
 
   async createKhqr(input: CreateKhqrInput): Promise<CreateKhqrResult> {
-    const cred = await this.loadCredential(input.storeId, input.mode);
+    const cred = await this.loadCredential(input.storeId, input.mode, input.currency);
     const { qrString, md5 } = buildBakongKhqr({
       bakongAccountId: cred.bakongAccountId,
       accountInformation: cred.accountInformation,
@@ -102,7 +116,6 @@ export class BakongKhqrProvider implements PaymentProvider {
       currency: input.currency,
       merchantId: cred.merchantId,
       acquiringBank: cred.acquiringBank,
-      mobileNumber: cred.mobileNumber,
       billNumber: input.referenceId ?? input.paymentId,
       storeLabel: input.merchantName,
       isMerchant: cred.isMerchant,
