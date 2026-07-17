@@ -9,6 +9,8 @@ export interface AppConfig {
   checkoutBaseUrl: string;
   dashboardBaseUrl: string;
   paymentProvider: 'mock' | 'bakong';
+  /** Digital-value provider (loyalty points). 'paychain' lands with credentials. */
+  digitalValueProvider: 'mock' | 'paychain';
   bakongApiBaseUrl?: string;
   bakongApiToken?: string;
   bakongPlatformAccount?: string;
@@ -50,6 +52,7 @@ export function loadConfig(): AppConfig {
     checkoutBaseUrl: process.env.CHECKOUT_BASE_URL ?? 'http://localhost:3001',
     dashboardBaseUrl: process.env.DASHBOARD_BASE_URL ?? 'http://localhost:3000',
     paymentProvider: (process.env.PAYMENT_PROVIDER as 'mock' | 'bakong') ?? 'mock',
+    digitalValueProvider: (process.env.DIGITAL_VALUE_PROVIDER as 'mock' | 'paychain') ?? 'mock',
     bakongApiBaseUrl: process.env.BAKONG_API_BASE_URL,
     bakongApiToken: process.env.BAKONG_API_TOKEN,
     bakongPlatformAccount: process.env.BAKONG_PLATFORM_ACCOUNT,
