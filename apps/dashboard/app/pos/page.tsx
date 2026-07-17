@@ -63,17 +63,34 @@ function ChargeTab({ storeId }: { storeId: string }) {
     finally { setBusy(false); }
   };
 
-  // Poll for payment until it settles.
+  // While a charge is open, also watch for a Telegram-detected bank payment
+  // that matches it — so the cashier can one-tap confirm without waiting on
+  // on-chain status. Assist mode: this only *offers* confirm, never auto-marks.
+  const [detection, setDetection] = useState<{ id: string; amount: string | null; currency: string | null } | null>(null);
+
+  // Poll for payment status + a matching detection until it settles.
   useEffect(() => {
     if (!charge || ['paid', 'expired', 'failed', 'cancelled'].includes(charge.status)) return;
     const t = setInterval(async () => {
       const p = await api<{ status: string }>(`/dashboard/payments/${charge.id}`).catch(() => null);
       if (p) setCharge((c) => (c ? { ...c, status: p.status } : c));
+      const dets = await api<{ id: string; payment_id: string | null; amount: string | null; currency: string | null; confirmed: boolean }[]>(
+        `/dashboard/stores/${storeId}/telegram-detection/recent`,
+      ).catch(() => null);
+      const m = dets?.find((d) => d.payment_id === charge.id && !d.confirmed);
+      if (m) setDetection({ id: m.id, amount: m.amount, currency: m.currency });
     }, 2500);
     return () => clearInterval(t);
-  }, [charge]);
+  }, [charge, storeId]);
 
-  const reset = () => { setCharge(null); setAmount(''); };
+  const confirmDetected = async () => {
+    if (!detection) return;
+    await api(`/dashboard/stores/${storeId}/telegram-detection/confirm`, { method: 'POST', body: { detection_id: detection.id } }).catch(() => {});
+    setCharge((c) => (c ? { ...c, status: 'paid' } : c));
+    setDetection(null);
+  };
+
+  const reset = () => { setCharge(null); setAmount(''); setDetection(null); };
 
   if (charge) {
     const done = charge.status === 'paid';
@@ -97,6 +114,15 @@ function ChargeTab({ storeId }: { storeId: string }) {
             <div className="mt-3 flex items-center justify-center gap-2 text-sm text-slate-500">
               <span className="h-2 w-2 animate-pulse rounded-full bg-brand-500" /> Ask the customer to scan with any Bakong app…
             </div>
+            {detection && (
+              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <div className="text-sm font-medium text-emerald-800">
+                  Looks received: {detection.amount} {detection.currency}
+                </div>
+                <div className="mt-0.5 text-xs text-emerald-700">Your bank alert matched this charge. Confirm to mark it paid.</div>
+                <Button className="mt-2" onClick={confirmDetected}>Confirm payment</Button>
+              </div>
+            )}
           </div>
         )}
         <Button variant={done ? 'primary' : 'secondary'} onClick={reset}>{done || dead ? 'New charge' : 'Cancel'}</Button>

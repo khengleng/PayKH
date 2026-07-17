@@ -1,5 +1,6 @@
 export interface AppConfig {
   nodeEnv: string;
+  telegramWebhookSecret?: string;
   port: number;
   databaseUrl: string;
   redisUrl?: string;
@@ -43,6 +44,7 @@ function required(name: string): string {
 export function loadConfig(): AppConfig {
   return {
     nodeEnv: process.env.NODE_ENV ?? 'development',
+    telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,
     port: Number(process.env.API_PORT ?? 4000),
     databaseUrl: required('DATABASE_URL'),
     redisUrl: process.env.REDIS_URL,

@@ -334,6 +334,7 @@ model Store {
   promotions           Promotion[]
   referralProgram      ReferralProgram?
   telegramConfig       TelegramConfig?
+  telegramSource       TelegramPaymentSource?
   notificationChannels NotificationChannel[]
   games                Game[]
   revenueShares        RevenueShareAgreement[]
@@ -429,6 +430,45 @@ model TelegramConfig {
   updatedAt     DateTime @updatedAt
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+/// The verified Telegram chat PayKH reads a store's bank payment alerts from.
+///
+/// Binding is proved by the merchant posting a one-time `verifyCode` into the
+/// chat (with the bot present); only after that is `chatId` trusted. Detection
+/// only ever acts on messages from this exact chat — the security boundary,
+/// since a Telegram message is otherwise spoofable.
+model TelegramPaymentSource {
+  id         String    @id
+  storeId    String    @unique
+  chatId     String? // set once verified
+  verifyCode String? // one-time code the merchant posts to bind the chat
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+}
+
+/// A bank payment alert seen in a store's verified chat, matched (or not) to a
+/// pending PayKH payment. Assist mode: this never marks a payment paid on its
+/// own — the cashier confirms. `updateKey` dedupes Telegram re-deliveries.
+model PaymentDetection {
+  id         String   @id
+  storeId    String
+  paymentId  String? // the matched pending payment, if exactly one fit
+  updateKey  String   @unique // telegram update id — processed once
+  amount     Decimal? @db.Decimal(20, 4)
+  currency   String?
+  rawText    String   @db.Text
+  matchCount Int      @default(0) // 0 = no match, 1 = unique, >1 = ambiguous
+  confirmed  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([storeId, createdAt])
+  @@index([paymentId])
 }
 
 /// Outbound message channel (WhatsApp / SMS / Signal) mirroring payment events.
