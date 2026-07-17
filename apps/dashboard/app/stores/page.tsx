@@ -5,6 +5,7 @@ import { Shell, ShellContext } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
 import { api, API_BASE } from '@/lib/api';
 import { Store } from '@/lib/types';
+import { KhqrImportCard } from './KhqrImportCard';
 
 export default function StoresPage() {
   return <Shell>{(ctx) => <StoresContent ctx={ctx} />}</Shell>;
@@ -152,6 +153,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
       </Card>
 
       <BranchesCard storeId={store.id} />
+      <KhqrImportCard storeId={store.id} />
       <LoyaltyCard storeId={store.id} />
       <TiersCard storeId={store.id} />
       <RewardsCard storeId={store.id} />
