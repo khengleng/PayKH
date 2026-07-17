@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
 import { api } from '@/lib/api';
+import { PayChainCard } from './PayChainCard';
 
 interface AuditEntry {
   id: string; action: string; entity: string | null; actor_email: string | null;
@@ -11,13 +12,20 @@ interface AuditEntry {
 }
 
 export default function SettingsPage() {
-  return <Shell>{({ me }) => <SettingsContent orgId={me.organizations[0]?.id} />}</Shell>;
+  return (
+    <Shell>
+      {({ me }) => (
+        <SettingsContent orgId={me.organizations[0]?.id} role={me.organizations[0]?.role} />
+      )}
+    </Shell>
+  );
 }
 
-function SettingsContent({ orgId }: { orgId?: string }) {
+function SettingsContent({ orgId, role }: { orgId?: string; role?: string }) {
   return (
     <>
-      <PageTitle title="Settings" subtitle="Verification, security, and audit." />
+      <PageTitle title="Settings" subtitle="Integrations, verification, security, and audit." />
+      <PayChainCard orgId={orgId} role={role} />
       <VerificationCard orgId={orgId} />
       <MfaCard />
       <AuditCard orgId={orgId} />
