@@ -122,6 +122,7 @@ export class BakongKhqrProvider implements PaymentProvider {
       billNumber: input.referenceId ?? input.paymentId,
       storeLabel: input.merchantName,
       isMerchant: cred.isMerchant,
+      expiresAt: input.expiresAt,
     });
     return { qrString, md5, billNumber: input.referenceId ?? input.paymentId };
   }

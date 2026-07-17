@@ -67,6 +67,15 @@ export interface BakongKhqrParams {
   storeLabel?: string;
   /** true → merchant (tag 30) with merchantId; false → individual (tag 29). */
   isMerchant?: boolean;
+  /**
+   * When a dynamic QR expires. NBC marks the expiration timestamp MANDATORY on
+   * dynamic QRs (tag 99). Without it ACLEDA reads the QR as already expired and
+   * ABA as invalid, while Wing tolerates its absence — so a dynamic QR that
+   * "works on Wing only" is this missing tag. Ignored for a static QR.
+   */
+  expiresAt?: Date;
+  /** Creation time (ms). Injectable so the payload is testable; defaults to now. */
+  createdAtMs?: number;
 }
 
 /**
@@ -107,6 +116,15 @@ export function buildBakongKhqr(p: BakongKhqrParams): { qrString: string; md5: s
     (p.mobileNumber ? tlv('02', p.mobileNumber.slice(0, 25)) : '') +
     (p.storeLabel ? tlv('03', p.storeLabel.slice(0, 25)) : '');
   if (additional) payload += tlv('62', additional);
+
+  // Tag 99: timestamps for a DYNAMIC QR. Sub-tag 00 = creation (ms epoch, 13
+  // digits), sub-tag 01 = expiration. NBC requires the expiration on dynamic
+  // QRs; a static QR (no amount) must not carry it. Placed just before the CRC.
+  if (p.amount !== undefined && p.expiresAt) {
+    const created = (p.createdAtMs ?? Date.now()).toString();
+    const expires = p.expiresAt.getTime().toString();
+    payload += tlv('99', tlv('00', created) + tlv('01', expires));
+  }
 
   payload += '6304';
   const qrString = payload + crc16(payload);
