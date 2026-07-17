@@ -52,6 +52,17 @@ export class LoyaltyDashboardController {
     return this.loyalty.ledger(user, id);
   }
 
+  @Get('stores/:storeId/loyalty/expiry-preview')
+  @ApiOperation({ summary: 'Dry run: what a given expiry window would take today' })
+  expiryPreview(
+    @CurrentUser() user: AuthUser,
+    @Param('storeId') storeId: string,
+    @Query('months') months: string,
+    @Query('warn_days') warnDays?: string,
+  ) {
+    return this.loyalty.expiryPreview(user, storeId, Number(months), warnDays ? Number(warnDays) : undefined);
+  }
+
   @Get('stores/:storeId/loyalty/liability')
   @ApiOperation({ summary: 'Outstanding points liability (pointValue = currency per point)' })
   liability(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Query('point_value') pointValue?: string) {

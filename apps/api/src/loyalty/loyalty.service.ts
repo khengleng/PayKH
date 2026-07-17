@@ -366,6 +366,60 @@ export class LoyaltyService {
     return { notified, points };
   }
 
+  /**
+   * Dry run: what would a given expiry window take, today?
+   *
+   * Turning expiry on is retroactive — every point older than the window dies
+   * on the next sweep. Without this an operator is choosing a number and
+   * finding out afterwards, from customers. Reuses atRiskBefore, so the preview
+   * is computed by the rule that will actually do it, not an approximation.
+   */
+  async expiryPreview(user: AuthUser, storeId: string, months: number, warnDays = 14) {
+    await this.assertStore(user, storeId, 'store:read');
+    if (!Number.isInteger(months) || months < 1) throw ApiError.invalidRequest('months must be a positive integer');
+
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - months);
+    const warnCutoff = new Date(cutoff);
+    warnCutoff.setDate(warnCutoff.getDate() + warnDays);
+
+    const customers = await this.prisma.customer.findMany({
+      where: { storeId, pointsBalance: { gt: 0 } },
+      select: { id: true, name: true, email: true, pointsBalance: true },
+    });
+
+    let immediateCustomers = 0;
+    let immediatePoints = 0;
+    let soonCustomers = 0;
+    let soonPoints = 0;
+    const sample: { customer: string; points: number }[] = [];
+
+    for (const c of customers) {
+      const txns = await this.prisma.pointsTransaction.findMany({
+        where: { customerId: c.id, status: 'CONFIRMED' },
+        select: { points: true, createdAt: true },
+      });
+      const due = this.atRiskBefore(txns, c.pointsBalance, cutoff);
+      const soon = this.atRiskBefore(txns, c.pointsBalance, warnCutoff) - due;
+      if (due > 0) {
+        immediateCustomers++;
+        immediatePoints += due;
+        if (sample.length < 10) sample.push({ customer: c.name ?? c.email ?? c.id, points: due });
+      }
+      if (soon > 0) { soonCustomers++; soonPoints += soon; }
+    }
+
+    return {
+      store_id: storeId,
+      months,
+      // What the next sweep would take if this were saved now.
+      expires_immediately: { customers: immediateCustomers, points: immediatePoints },
+      // What would go during the following warn window.
+      expires_within_warn_window: { customers: soonCustomers, points: soonPoints, warn_days: warnDays },
+      sample,
+    };
+  }
+
   /** Highest tier whose threshold the lifetime points satisfy (or null). */
   private async computeTierId(storeId: string, lifetimePoints: number): Promise<string | null> {
     const tier = await this.prisma.loyaltyTier.findFirst({

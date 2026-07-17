@@ -227,23 +227,65 @@ function BranchesCard({ storeId }: { storeId: string }) {
   );
 }
 
+interface Program { active: boolean; points_per_unit: string; expiry_months: number | null }
+interface ExpiryPreview {
+  months: number;
+  expires_immediately: { customers: number; points: number };
+  expires_within_warn_window: { customers: number; points: number; warn_days: number };
+  sample: { customer: string; points: number }[];
+}
+
 function LoyaltyCard({ storeId }: { storeId: string }) {
   const [active, setActive] = useState(false);
   const [ppu, setPpu] = useState('1');
   const [msg, setMsg] = useState('');
   const [pointValue, setPointValue] = useState('0.01');
   const [liab, setLiab] = useState<any>(null);
+  // null = never expire. Kept separate from the input so clearing the box does
+  // not read as "expire everything".
+  const [expiryMonths, setExpiryMonths] = useState<number | null>(null);
+  const [expiryOn, setExpiryOn] = useState(false);
+  const [preview, setPreview] = useState<ExpiryPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const loadLiab = async (pv: string) => setLiab(await api<any>(`/dashboard/stores/${storeId}/loyalty/liability?point_value=${pv}`));
   useEffect(() => {
-    api<{ active: boolean; points_per_unit: string }>(`/dashboard/stores/${storeId}/loyalty`).then((p) => { setActive(p.active); setPpu(p.points_per_unit); });
+    api<Program>(`/dashboard/stores/${storeId}/loyalty`).then((p) => {
+      setActive(p.active); setPpu(p.points_per_unit);
+      setExpiryMonths(p.expiry_months); setExpiryOn(p.expiry_months !== null);
+    });
     loadLiab('0.01');
   }, [storeId]);
 
+  // Preview whenever the window changes: enabling expiry is retroactive, so the
+  // operator should see the cost before saving, not after.
+  useEffect(() => {
+    if (!expiryOn || !expiryMonths || expiryMonths < 1) { setPreview(null); return; }
+    let cancelled = false;
+    setPreviewing(true);
+    const t = setTimeout(async () => {
+      try {
+        const p = await api<ExpiryPreview>(`/dashboard/stores/${storeId}/loyalty/expiry-preview?months=${expiryMonths}`);
+        if (!cancelled) setPreview(p);
+      } catch { if (!cancelled) setPreview(null); }
+      finally { if (!cancelled) setPreviewing(false); }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [storeId, expiryOn, expiryMonths]);
+
   const save = async () => {
-    const p = await api<{ active: boolean; points_per_unit: string }>(`/dashboard/stores/${storeId}/loyalty`, { method: 'PUT', body: { active, pointsPerUnit: ppu } });
-    setActive(p.active); setPpu(p.points_per_unit); setMsg('Saved'); setTimeout(() => setMsg(''), 1500);
+    const p = await api<Program>(`/dashboard/stores/${storeId}/loyalty`, {
+      method: 'PUT',
+      body: { active, pointsPerUnit: ppu, expiryMonths: expiryOn ? expiryMonths : null },
+    });
+    setActive(p.active); setPpu(p.points_per_unit);
+    setExpiryMonths(p.expiry_months); setExpiryOn(p.expiry_months !== null);
+    setMsg('Saved'); setTimeout(() => setMsg(''), 1500);
+    loadLiab(pointValue);
   };
+
+  const doomed = preview?.expires_immediately.points ?? 0;
+  const saveDisabled = expiryOn && (!expiryMonths || expiryMonths < 1);
 
   return (
     <Card>
@@ -257,8 +299,78 @@ function LoyaltyCard({ storeId }: { storeId: string }) {
           <div className="mb-1 text-slate-600">Points per currency unit</div>
           <input value={ppu} onChange={(e) => setPpu(e.target.value)} className="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
         </label>
-        <Button onClick={save}>Save</Button>
+        <Button onClick={save} disabled={saveDisabled}>Save</Button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
+      </div>
+
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={expiryOn}
+            onChange={(e) => { setExpiryOn(e.target.checked); if (e.target.checked && !expiryMonths) setExpiryMonths(12); }}
+          />
+          <span className="font-medium text-slate-700">Expire unused points</span>
+        </label>
+        <p className="mt-1 text-sm text-slate-500">
+          {expiryOn
+            ? 'Points expire this many months after they are earned. Customers are emailed 14 days before.'
+            : 'Off — points never expire, and your liability keeps growing.'}
+        </p>
+
+        {expiryOn && (
+          <div className="mt-2 flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              <div className="mb-1 text-slate-600">Expire after (months)</div>
+              <input
+                type="number"
+                min={1}
+                value={expiryMonths ?? ''}
+                onChange={(e) => setExpiryMonths(e.target.value ? Number(e.target.value) : null)}
+                className="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              />
+            </label>
+            {previewing && <span className="pb-2 text-sm text-slate-400">checking…</span>}
+          </div>
+        )}
+
+        {/* The load-bearing part: expiry is retroactive, so show what saving
+            would actually destroy before the operator commits to it. */}
+        {expiryOn && preview && (
+          <div className={`mt-3 rounded-lg border p-3 text-sm ${doomed > 0 ? 'border-red-200 bg-red-50' : 'border-slate-100'}`}>
+            {doomed > 0 ? (
+              <>
+                <div className="font-medium text-red-700">
+                  Saving this expires {doomed.toLocaleString()} point(s) across{' '}
+                  {preview.expires_immediately.customers} customer(s) on the next daily sweep.
+                </div>
+                <div className="mt-1 text-red-600">
+                  They are already older than {preview.months} month(s), so they will not get the{' '}
+                  {preview.expires_within_warn_window.warn_days}-day warning.
+                </div>
+                {preview.sample.length > 0 && (
+                  <ul className="mt-2 space-y-0.5 text-xs text-red-700/80">
+                    {preview.sample.map((s) => (
+                      <li key={s.customer}>• {s.customer} — {s.points.toLocaleString()} pt(s)</li>
+                    ))}
+                    {preview.expires_immediately.customers > preview.sample.length && (
+                      <li>• …and {preview.expires_immediately.customers - preview.sample.length} more</li>
+                    )}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <div className="text-slate-600">Nothing expires today at {preview.months} month(s).</div>
+            )}
+            {preview.expires_within_warn_window.points > 0 && (
+              <div className="mt-2 text-slate-600">
+                {preview.expires_within_warn_window.points.toLocaleString()} point(s) across{' '}
+                {preview.expires_within_warn_window.customers} customer(s) expire in the next{' '}
+                {preview.expires_within_warn_window.warn_days} days — those customers will be emailed.
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {liab && (
         <div className="mt-4 rounded-lg border border-slate-100 p-3 text-sm">
