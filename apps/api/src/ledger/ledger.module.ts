@@ -8,6 +8,8 @@ import { AuthModule } from '../auth/auth.module';
   imports: [AuthModule],
   controllers: [LedgerController],
   providers: [LedgerService, ReconciliationService],
-  exports: [LedgerService],
+  // ReconciliationService is exported for the worker's points-drift job, which
+  // runs the same check the controller exposes.
+  exports: [LedgerService, ReconciliationService],
 })
 export class LedgerModule {}
