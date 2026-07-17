@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Request } from 'express';
 import { LoyaltyService, AdjustDto, CreateRewardDto, CreateTierDto, RedeemDto, UpdateProgramDto, UpdateRewardDto, UpdateTierDto } from './loyalty.service';
@@ -147,9 +147,16 @@ export class LoyaltyController {
 
   @Post('redeem')
   @ApiOperation({ summary: 'Redeem a customer’s points (raw points)' })
-  redeem(@Req() req: Request, @Body() dto: ApiRedeemDto) {
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  async redeem(
+    @Req() req: Request,
+    @Body() dto: ApiRedeemDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
     const ctx = getApiKeyContext(req);
-    return this.loyalty.redeem(ctx.storeId, dto.customer_id, dto.points, dto.reason);
+    const rawBody = (req as Request & { rawBody?: string }).rawBody ?? JSON.stringify(dto);
+    const { resource } = await this.loyalty.redeemIdempotent(ctx.storeId, ctx.mode, dto.customer_id, dto.points, idempotencyKey, rawBody, dto.reason);
+    return resource;
   }
 
   @Get('rewards')

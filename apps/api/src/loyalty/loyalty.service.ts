@@ -8,6 +8,7 @@ import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { IdempotencyService } from '../idempotency/idempotency.module';
 
 export class UpdateProgramDto {
   @IsOptional() @IsBoolean() active?: boolean;
@@ -59,6 +60,7 @@ export class LoyaltyService {
     private readonly prisma: PrismaService,
     private readonly campaigns: CampaignsService,
     private readonly ledgerService: LedgerService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   // ------------------------------------------------------------- program
@@ -186,20 +188,52 @@ export class LoyaltyService {
     return this.mutate(customer.storeId, customerId, 'ADJUST', points, reason);
   }
 
-  private async mutate(storeId: string, customerId: string, type: 'REDEEM' | 'ADJUST', delta: number, reason?: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const customer = await tx.customer.findUnique({ where: { id: customerId } });
-      if (!customer || customer.storeId !== storeId) throw ApiError.invalidRequest('Unknown customer for this store');
-      const newBalance = customer.pointsBalance + delta;
-      if (newBalance < 0) throw ApiError.invalidRequest('Insufficient points balance');
-      const txnId = prefixedId('pts');
-      await tx.pointsTransaction.create({
-        data: { id: txnId, storeId, customerId, type, points: delta, reason: reason ?? null, confirmedAt: new Date() },
-      });
-      const updated = await tx.customer.update({ where: { id: customerId }, data: { pointsBalance: newBalance } });
-      await this.ledgerService.postPointsMovement(type, txnId, storeId, customerId, delta, tx);
-      return { customer_id: customerId, type: type.toLowerCase(), points: delta, balance: updated.pointsBalance };
+  /**
+   * Redeem via the public API with replay protection (spec §25: write APIs that
+   * issue or redeem value must be idempotent). A retried redeem returns the
+   * original result instead of deducting the points twice.
+   */
+  async redeemIdempotent(
+    storeId: string,
+    mode: string,
+    customerId: string,
+    points: number,
+    idempotencyKey: string | undefined,
+    rawBody: string,
+    reason?: string,
+  ) {
+    return this.idempotency.execute({
+      scopeId: storeId,
+      // Mode is part of the namespace so a test-mode key cannot replay a
+      // live-mode redemption within one store.
+      endpoint: `POST /v1/loyalty/redeem:${mode}`,
+      key: idempotencyKey,
+      rawBody,
+      run: async (tx) => ({
+        resource: await this.mutateIn(tx, storeId, customerId, 'REDEEM', -Math.abs(points), reason),
+        status: 200,
+      }),
     });
+  }
+
+  private async mutate(storeId: string, customerId: string, type: 'REDEEM' | 'ADJUST', delta: number, reason?: string) {
+    return this.prisma.$transaction((tx) => this.mutateIn(tx, storeId, customerId, type, delta, reason));
+  }
+
+  /** The balance mutation itself, on a caller-supplied transaction so it can be
+   *  composed with the idempotency record write in one atomic unit. */
+  private async mutateIn(tx: Prisma.TransactionClient, storeId: string, customerId: string, type: 'REDEEM' | 'ADJUST', delta: number, reason?: string) {
+    const customer = await tx.customer.findUnique({ where: { id: customerId } });
+    if (!customer || customer.storeId !== storeId) throw ApiError.invalidRequest('Unknown customer for this store');
+    const newBalance = customer.pointsBalance + delta;
+    if (newBalance < 0) throw ApiError.invalidRequest('Insufficient points balance');
+    const txnId = prefixedId('pts');
+    await tx.pointsTransaction.create({
+      data: { id: txnId, storeId, customerId, type, points: delta, reason: reason ?? null, confirmedAt: new Date() },
+    });
+    const updated = await tx.customer.update({ where: { id: customerId }, data: { pointsBalance: newBalance } });
+    await this.ledgerService.postPointsMovement(type, txnId, storeId, customerId, delta, tx);
+    return { customer_id: customerId, type: type.toLowerCase(), points: delta, balance: updated.pointsBalance };
   }
 
   // --------------------------------------------------------------- reads
