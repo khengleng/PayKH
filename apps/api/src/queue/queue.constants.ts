@@ -9,6 +9,7 @@ export const JOB_BILLING_SWEEP = 'billing-sweep';
 export const JOB_SETTLEMENT_SWEEP = 'settlement-sweep';
 export const JOB_WEBHOOK_RECONCILE = 'webhook-reconcile';
 export const JOB_POINTS_RECONCILE = 'points-reconcile';
+export const JOB_POINTS_EXPIRY = 'points-expiry';
 
 /** Webhook delivery retry policy. */
 export const WEBHOOK_MAX_ATTEMPTS = 6;

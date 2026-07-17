@@ -672,6 +672,11 @@ model LoyaltyProgram {
   storeId       String   @unique
   active        Boolean  @default(false)
   pointsPerUnit Decimal  @default(1) @db.Decimal(12, 4) // points earned per 1 unit of payment currency
+  /// Rolling expiry: points expire this many months after they were earned.
+  /// Null = never expire, which is every existing program's behaviour today —
+  /// switching it on retroactively expires real customer balances, so it must
+  /// be an explicit per-store decision rather than a default.
+  expiryMonths  Int?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

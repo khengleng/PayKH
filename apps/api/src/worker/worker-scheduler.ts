@@ -5,6 +5,7 @@ import {
   JOB_BILLING_SWEEP,
   JOB_EXPIRY_SWEEP,
   JOB_IDEMPOTENCY_CLEANUP,
+  JOB_POINTS_EXPIRY,
   JOB_POINTS_RECONCILE,
   JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
@@ -62,6 +63,12 @@ export class WorkerScheduler implements OnModuleInit {
     await this.queue.add(JOB_POINTS_RECONCILE, {}, {
       repeat: { every: 900_000 }, // every 15 min: points column vs ledger drift
       jobId: 'repeat:points-reconcile',
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+    await this.queue.add(JOB_POINTS_EXPIRY, {}, {
+      repeat: { every: 86_400_000 }, // daily: expiry is a date boundary, not a hot path
+      jobId: 'repeat:points-expiry',
       removeOnComplete: true,
       removeOnFail: true,
     });

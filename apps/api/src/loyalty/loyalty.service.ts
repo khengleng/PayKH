@@ -13,6 +13,8 @@ import { IdempotencyService } from '../idempotency/idempotency.module';
 export class UpdateProgramDto {
   @IsOptional() @IsBoolean() active?: boolean;
   @IsOptional() @IsString() pointsPerUnit?: string; // decimal string
+  /** Rolling expiry window in months. null clears it (points never expire). */
+  @IsOptional() @IsInt() @Min(1) expiryMonths?: number | null;
 }
 
 export class AdjustDto {
@@ -71,6 +73,7 @@ export class LoyaltyService {
       store_id: storeId,
       active: p?.active ?? false,
       points_per_unit: (p?.pointsPerUnit ?? new Prisma.Decimal(1)).toString(),
+      expiry_months: p?.expiryMonths ?? null,
     };
   }
 
@@ -79,13 +82,15 @@ export class LoyaltyService {
     const data = {
       active: dto.active,
       pointsPerUnit: dto.pointsPerUnit ? new Prisma.Decimal(dto.pointsPerUnit) : undefined,
+      // `null` clears the window; `undefined` leaves it alone.
+      expiryMonths: dto.expiryMonths === undefined ? undefined : dto.expiryMonths,
     };
     const p = await this.prisma.loyaltyProgram.upsert({
       where: { storeId },
-      create: { storeId, active: dto.active ?? false, pointsPerUnit: data.pointsPerUnit ?? new Prisma.Decimal(1) },
+      create: { storeId, active: dto.active ?? false, pointsPerUnit: data.pointsPerUnit ?? new Prisma.Decimal(1), expiryMonths: dto.expiryMonths ?? null },
       update: data,
     });
-    return { store_id: storeId, active: p.active, points_per_unit: p.pointsPerUnit.toString() };
+    return { store_id: storeId, active: p.active, points_per_unit: p.pointsPerUnit.toString(), expiry_months: p.expiryMonths };
   }
 
   /**
@@ -165,6 +170,98 @@ export class LoyaltyService {
 
     // Apply any active campaign promotions (bonus points on top of base earn).
     await this.campaigns.applyToPayment(payment, base);
+  }
+
+  // ------------------------------------------------------------- expiry
+  /**
+   * Expire points older than the program's rolling window (spec §10).
+   *
+   * Until now `PointsTxnType.EXPIRE` had no writers at all: points never
+   * expired, so loyalty liability could only ever grow. This closes that.
+   *
+   * FIFO without a lots table. A lot ledger would be the textbook model, but
+   * the same answer falls out of the transaction log: under FIFO every
+   * redemption consumes the oldest points first, so the points still alive from
+   * before the cutoff are simply `(earned before cutoff) - (everything consumed
+   * since)`, floored at zero. That avoids a schema migration that would have to
+   * invent lot boundaries for historical rows it cannot actually reconstruct.
+   *
+   * Naturally idempotent: the EXPIRE row it writes is itself consumption, so a
+   * second pass computes zero. Re-running cannot double-expire.
+   */
+  async expireForStore(storeId: string): Promise<{ customers: number; points: number }> {
+    const program = await this.prisma.loyaltyProgram.findUnique({ where: { storeId } });
+    if (!program?.active || !program.expiryMonths) return { customers: 0, points: 0 };
+
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - program.expiryMonths);
+
+    const customers = await this.prisma.customer.findMany({
+      where: { storeId, pointsBalance: { gt: 0 } },
+      select: { id: true },
+    });
+
+    let touched = 0;
+    let points = 0;
+    for (const c of customers) {
+      try {
+        const n = await this.expireCustomer(storeId, c.id, cutoff, program.expiryMonths);
+        if (n > 0) { touched++; points += n; }
+      } catch (e) {
+        // One customer's failure must not strand the rest of the store.
+        this.logger.error(`expiry failed for ${c.id}: ${e}`);
+      }
+    }
+    if (points > 0) this.logger.log(`expired ${points} pts across ${touched} customer(s) in ${storeId}`);
+    return { customers: touched, points };
+  }
+
+  private async expireCustomer(storeId: string, customerId: string, cutoff: Date, months: number): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.findUnique({ where: { id: customerId } });
+      if (!customer || customer.pointsBalance <= 0) return 0;
+
+      // Only CONFIRMED movements count — an unconfirmed earn is not yet the
+      // customer's, and must not be aged out as though it were.
+      const txns = await tx.pointsTransaction.findMany({
+        where: { customerId, status: 'CONFIRMED' },
+        select: { points: true, createdAt: true },
+      });
+
+      const earnedBeforeCutoff = txns
+        .filter((t) => t.points > 0 && t.createdAt < cutoff)
+        .reduce((s, t) => s + t.points, 0);
+      const consumed = txns
+        .filter((t) => t.points < 0)
+        .reduce((s, t) => s + Math.abs(t.points), 0);
+
+      const unconsumedOld = Math.max(0, earnedBeforeCutoff - consumed);
+      // Never expire more than they actually hold: an adjust-down could already
+      // have taken the balance below what the age arithmetic implies.
+      const expirable = Math.min(unconsumedOld, customer.pointsBalance);
+      if (expirable <= 0) return 0;
+
+      const txnId = prefixedId('pts');
+      await tx.pointsTransaction.create({
+        data: {
+          id: txnId,
+          storeId,
+          customerId,
+          type: 'EXPIRE',
+          points: -expirable,
+          reason: `expired (earned over ${months} month(s) ago)`,
+          confirmedAt: new Date(),
+        },
+      });
+      await tx.customer.update({
+        where: { id: customerId },
+        // lifetimePoints is deliberately untouched: it is the tier basis, and
+        // expiry must not silently demote someone for the passage of time.
+        data: { pointsBalance: customer.pointsBalance - expirable },
+      });
+      await this.ledgerService.postPointsMovement('EXPIRE', txnId, storeId, customerId, -expirable, tx);
+      return expirable;
+    });
   }
 
   /** Highest tier whose threshold the lifetime points satisfy (or null). */

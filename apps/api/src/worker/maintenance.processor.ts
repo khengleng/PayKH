@@ -7,12 +7,14 @@ import { BillingService } from '../billing/billing.service';
 import { SettlementService } from '../settlements/settlement.service';
 import { WebhookEventsService } from '../webhooks/webhook-events.service';
 import { ReconciliationService } from '../ledger/reconciliation.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { AlertService } from '../observability/alert.service';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
 import {
   JOB_BILLING_SWEEP,
   JOB_EXPIRY_SWEEP,
   JOB_IDEMPOTENCY_CLEANUP,
+  JOB_POINTS_EXPIRY,
   JOB_POINTS_RECONCILE,
   JOB_SETTLEMENT_SWEEP,
   JOB_STATUS_POLL,
@@ -39,6 +41,7 @@ export class MaintenanceProcessor extends WorkerHost {
     private readonly settlement: SettlementService,
     private readonly webhookEvents: WebhookEventsService,
     private readonly reconciliation: ReconciliationService,
+    private readonly loyalty: LoyaltyService,
     private readonly alerts: AlertService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {
@@ -62,6 +65,8 @@ export class MaintenanceProcessor extends WorkerHost {
         return;
       case JOB_POINTS_RECONCILE:
         return this.pointsReconcile();
+      case JOB_POINTS_EXPIRY:
+        return this.pointsExpiry();
       default:
         return;
     }
@@ -93,6 +98,22 @@ export class MaintenanceProcessor extends WorkerHost {
       `${r.drift_count} customer(s) disagree with the ledger. Liability: column ${r.liability_column} vs ledger ${r.liability_ledger} (delta ${r.liability_delta}). Sample: ${sample}`,
       { drift_count: r.drift_count, liability_delta: r.liability_delta },
     );
+  }
+
+  /** Age out points past each program's rolling expiry window. */
+  private async pointsExpiry(): Promise<void> {
+    // Only stores that have opted in have a window set; the rest are a no-op.
+    const programs = await this.prisma.loyaltyProgram.findMany({
+      where: { active: true, expiryMonths: { not: null } },
+      select: { storeId: true },
+    });
+    for (const p of programs) {
+      try {
+        await this.loyalty.expireForStore(p.storeId);
+      } catch (err) {
+        this.logger.warn(`points expiry failed for store ${p.storeId}: ${err}`);
+      }
+    }
   }
 
   /** Settle each store's completed-day paid payments into daily batches. */
