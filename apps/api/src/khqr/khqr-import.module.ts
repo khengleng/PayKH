@@ -67,6 +67,13 @@ export class KhqrImportService {
 
     const credential = {
       bakongAccountId: parsed.bakongAccountId,
+      // The payee's account/phone from tag 29 sub-tag 01. Banks surface this as
+      // the "receiver account" and at least one refuses a QR without it, so it
+      // must survive the round trip.
+      accountInformation: parsed.accountInformation,
+      // The currency the bank's own QR declared (tag 53). Dropping it let us
+      // issue a USD QR against a KHR-only account, which a bank may refuse.
+      currency: parsed.currency,
       merchantName: parsed.merchantName,
       merchantCity: parsed.merchantCity ?? 'Phnom Penh',
       merchantId: parsed.merchantId,
@@ -79,10 +86,11 @@ export class KhqrImportService {
     // failed checkout in front of a customer.
     const probe = buildBakongKhqr({
       bakongAccountId: credential.bakongAccountId,
+      accountInformation: credential.accountInformation,
       merchantName: credential.merchantName ?? 'Merchant',
       merchantCity: credential.merchantCity,
       amount: '1.00',
-      currency: 'USD',
+      currency: credential.currency ?? 'USD',
       merchantId: credential.merchantId,
       acquiringBank: credential.acquiringBank,
       isMerchant: credential.isMerchant,
@@ -115,6 +123,53 @@ export class KhqrImportService {
     };
   }
 
+  /**
+   * Build a KHQR for the imported account at an arbitrary amount.
+   *
+   * Same path checkout will use, so what the merchant scans here is what a
+   * customer would get. Amount is the caller's choice: an amount PayKH picked
+   * is only useful for proving the account reads back, and a merchant testing
+   * a real flow wants their own number.
+   *
+   * Omit the amount for a static QR — the payer types it in. That is what a
+   * bank's own "receive" QR is, and it is the right shape for tips or
+   * pay-what-you-want, where fixing the amount would be wrong.
+   */
+  async preview(user: AuthUser, storeId: string, amount: string | undefined, currency: 'USD' | 'KHR', mode: 'test' | 'live' = 'test') {
+    await this.assertStore(user, storeId, 'store:read');
+    const row = await this.prisma.providerCredential.findUnique({
+      where: { storeId_provider_mode: { storeId, provider: 'bakong', mode: mode === 'live' ? 'LIVE' : 'TEST' } },
+    });
+    if (!row) throw ApiError.invalidRequest('No KHQR imported for this store yet');
+
+    let cred: { bakongAccountId: string; accountInformation?: string; currency?: 'USD' | 'KHR'; merchantName?: string; merchantCity?: string; merchantId?: string; acquiringBank?: string; isMerchant?: boolean };
+    try {
+      cred = JSON.parse(this.crypto.decrypt(row.secretCiphertext));
+    } catch {
+      throw ApiError.invalidRequest('Stored credential could not be decrypted; re-import the KHQR.');
+    }
+
+    if (amount !== undefined) {
+      // A malformed amount would produce a QR a bank silently refuses, which is
+      // far worse to debug than a rejection here.
+      if (!/^\d+(\.\d{1,2})?$/.test(amount)) throw ApiError.invalidRequest('Amount must be a number like "12.50"');
+      if (Number(amount) <= 0) throw ApiError.invalidRequest('Amount must be greater than zero');
+    }
+
+    const { qrString, md5 } = buildBakongKhqr({
+      bakongAccountId: cred.bakongAccountId,
+      accountInformation: cred.accountInformation,
+      merchantName: cred.merchantName ?? 'Merchant',
+      merchantCity: cred.merchantCity ?? 'Phnom Penh',
+      amount,
+      currency,
+      merchantId: cred.merchantId,
+      acquiringBank: cred.acquiringBank,
+      isMerchant: cred.isMerchant,
+    });
+    return { qr_string: qrString, md5, amount: amount ?? null, currency, bakong_account_id: cred.bakongAccountId };
+  }
+
   async get(user: AuthUser, storeId: string, mode: 'test' | 'live' = 'test') {
     await this.assertStore(user, storeId, 'store:read');
     const row = await this.prisma.providerCredential.findUnique({
@@ -141,9 +196,12 @@ export class KhqrImportService {
   /** What we show back. The account id is not a secret — it is printed on the
    *  merchant's own QR — but it identifies where money lands, so it is worth
    *  showing in full for confirmation. */
-  private summarise(c: { bakongAccountId: string; merchantName?: string; merchantCity?: string; acquiringBank?: string; isMerchant?: boolean }, isStatic?: boolean) {
+  private summarise(c: { bakongAccountId: string; accountInformation?: string; currency?: 'USD' | 'KHR'; merchantName?: string; merchantCity?: string; acquiringBank?: string; isMerchant?: boolean }, isStatic?: boolean) {
     return {
       bakong_account_id: c.bakongAccountId,
+      account_information: c.accountInformation ?? null,
+      // Null when the bank's QR named no currency — then the payer's app decides.
+      currency: c.currency ?? null,
       merchant_name: c.merchantName ?? null,
       merchant_city: c.merchantCity ?? null,
       acquiring_bank: c.acquiringBank ?? null,

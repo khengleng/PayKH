@@ -47,8 +47,18 @@ export interface BakongKhqrParams {
   bakongAccountId: string;
   merchantName: string;
   merchantCity: string;
-  amount: string;
+  /**
+   * Omit for a STATIC qr — the payer enters the amount, which is what a bank's
+   * own "receive" QR is. Supplying one makes it dynamic and fixes the amount.
+   */
+  amount?: string;
   currency: 'USD' | 'KHR';
+  /**
+   * The payee's own account or phone number (tag 29 sub-tag 01) — what banking
+   * apps show as the "receiver account". Individual accounts only; merchants
+   * use merchantId in the same slot.
+   */
+  accountInformation?: string;
   /** Optional merchant id / acquiring bank for the merchant-present tag. */
   merchantId?: string;
   acquiringBank?: string;
@@ -67,18 +77,27 @@ export interface BakongKhqrParams {
 export function buildBakongKhqr(p: BakongKhqrParams): { qrString: string; md5: string } {
   const isMerchant = p.isMerchant ?? false;
   const accountTag = isMerchant ? '30' : '29';
+  // Sub-tag 01 is the payee's own account/phone number — what banking apps
+  // surface as the "receiver account". NBC lists it optional, but real issuers
+  // include it and at least one bank refuses a QR without it, so carry it
+  // whenever we have it. For a merchant (tag 30) the same sub-tag holds the
+  // merchant id instead.
   const accountInfo =
     tlv('00', p.bakongAccountId) +
-    (isMerchant && p.merchantId ? tlv('01', p.merchantId) : '') +
-    (isMerchant && p.acquiringBank ? tlv('02', p.acquiringBank) : '');
+    (isMerchant
+      ? p.merchantId ? tlv('01', p.merchantId) : ''
+      : p.accountInformation ? tlv('01', p.accountInformation) : '') +
+    (p.acquiringBank ? tlv('02', p.acquiringBank) : '');
 
   let payload = '';
   payload += tlv('00', '01');
-  payload += tlv('01', '12'); // dynamic
+  // No amount => static QR: the payer types the amount, exactly like a bank's
+  // own receive QR. An amount makes it dynamic and fixes the figure.
+  payload += tlv('01', p.amount === undefined ? '11' : '12');
   payload += tlv(accountTag, accountInfo);
   payload += tlv('52', '5999');
   payload += tlv('53', CURRENCY_CODE[p.currency]);
-  payload += tlv('54', p.amount);
+  if (p.amount !== undefined) payload += tlv('54', p.amount);
   payload += tlv('58', 'KH');
   payload += tlv('59', p.merchantName.slice(0, 25));
   payload += tlv('60', p.merchantCity.slice(0, 15));
