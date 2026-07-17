@@ -12,21 +12,21 @@ function bankReceiveQr(accountId = 'khengleng@wing', name = 'KHENGLENG TRY') {
 }
 
 function make(role = 'owner') {
-  const rows = new Map<string, { secretCiphertext: string; label: string; updatedAt: Date }>();
+  type Row = { secretCiphertext: string; label: string; updatedAt: Date };
+  const rows = new Map<string, Row>();
   const prisma = {
     store: { findUnique: jest.fn().mockResolvedValue({ id: 's1', organizationId: 'org_1' }) },
     providerCredential: {
-      upsert: jest.fn(({ where, create, update }: never) => {
-        const w = where as { storeId_provider_mode: { mode: string } };
-        const key = w.storeId_provider_mode.mode;
-        const data = rows.has(key) ? { ...rows.get(key), ...(update as object) } : (create as object);
-        rows.set(key, { updatedAt: new Date(0), ...(data as never) });
-        return Promise.resolve(rows.get(key));
+      upsert: jest.fn((args: { where: { storeId_provider_mode: { mode: string } }; create: Partial<Row>; update: Partial<Row> }) => {
+        const key = args.where.storeId_provider_mode.mode;
+        const prev = rows.get(key);
+        const next: Row = { updatedAt: new Date(0), secretCiphertext: '', label: '', ...(prev ?? {}), ...(prev ? args.update : args.create) };
+        rows.set(key, next);
+        return Promise.resolve(next);
       }),
-      findUnique: jest.fn(({ where }: never) => {
-        const w = where as { storeId_provider_mode: { mode: string } };
-        return Promise.resolve(rows.get(w.storeId_provider_mode.mode) ?? null);
-      }),
+      findUnique: jest.fn((args: { where: { storeId_provider_mode: { mode: string } } }) =>
+        Promise.resolve(rows.get(args.where.storeId_provider_mode.mode) ?? null),
+      ),
       deleteMany: jest.fn(() => { rows.clear(); return Promise.resolve({ count: 1 }); }),
     },
   };
@@ -37,8 +37,12 @@ function make(role = 'owner') {
     decrypt: jest.fn((s: string) => Buffer.from(String(s).replace(/^enc:/, ''), 'base64').toString('utf8')),
   };
   const svc = new KhqrImportService(prisma as never, crypto as never);
+  // get() returns a union (imported | not | unreadable); tests assert on the
+  // imported shape, so narrow once here rather than casting at every call.
+  const getImported = (u: never, s: string, m?: 'test' | 'live') =>
+    svc.get(u, s, m) as Promise<Record<string, unknown>>;
   const user = { userId: 'u1', memberships: [{ organizationId: 'org_1', role }] } as never;
-  return { svc, user, rows, crypto, prisma };
+  return { svc, user, rows, crypto, prisma, getImported };
 }
 
 describe('KhqrImportService.import', () => {
@@ -72,20 +76,20 @@ describe('KhqrImportService.import', () => {
   });
 
   it('keeps test and live accounts separate', async () => {
-    const { svc, user, rows } = make();
+    const { svc, user, rows, getImported } = make();
     await svc.import(user, 's1', { qr_string: bankReceiveQr('a@wing'), mode: 'test' });
     await svc.import(user, 's1', { qr_string: bankReceiveQr('b@aba'), mode: 'live' });
     expect(rows.size).toBe(2);
-    expect((await svc.get(user, 's1', 'test')).bakong_account_id).toBe('a@wing');
-    expect((await svc.get(user, 's1', 'live')).bakong_account_id).toBe('b@aba');
+    expect((await getImported(user, 's1', 'test')).bakong_account_id).toBe('a@wing');
+    expect((await getImported(user, 's1', 'live')).bakong_account_id).toBe('b@aba');
   });
 
   it('re-importing replaces the account rather than duplicating it', async () => {
-    const { svc, user, rows } = make();
+    const { svc, user, rows, getImported } = make();
     await svc.import(user, 's1', { qr_string: bankReceiveQr('old@wing') });
     await svc.import(user, 's1', { qr_string: bankReceiveQr('new@wing') });
     expect(rows.size).toBe(1);
-    expect((await svc.get(user, 's1')).bakong_account_id).toBe('new@wing');
+    expect((await getImported(user, 's1')).bakong_account_id).toBe('new@wing');
   });
 
   it('works for any bank — the point of the feature', async () => {
