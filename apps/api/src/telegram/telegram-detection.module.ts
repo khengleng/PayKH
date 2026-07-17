@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Injectable, Logger, Module, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
+import { IsString } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { prefixedId, randomBase58 } from '@paykh/security';
@@ -194,7 +195,10 @@ function hash(s: string): string {
 }
 
 class ConfirmDto {
-  detection_id!: string;
+  // Must carry a class-validator decorator: the global ValidationPipe runs with
+  // whitelist:true, which strips any undecorated property — leaving detection_id
+  // undefined and the lookup malformed.
+  @IsString() detection_id!: string;
 }
 
 @ApiTags('telegram-detection')
