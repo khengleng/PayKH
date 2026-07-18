@@ -5,12 +5,13 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
 import { api } from '@/lib/api';
+import { PayeeCard, Payee } from '@/lib/bank';
 
 export default function PosPage() {
   return <Shell>{({ activeStore }) => (activeStore ? <Content storeId={activeStore.id} /> : <Card className="text-slate-600">Create a store first.</Card>)}</Shell>;
 }
 
-type Charge = { id: string; status: string; amount: string; currency: string; qr_string: string | null };
+type Charge = { id: string; status: string; amount: string; currency: string; qr_string: string | null; payee?: Payee | null };
 
 function Content({ storeId }: { storeId: string }) {
   const [tab, setTab] = useState<'charge' | 'counter'>('charge');
@@ -119,6 +120,7 @@ function ChargeTab({ storeId }: { storeId: string }) {
             <div className="mx-auto inline-block rounded-2xl border border-slate-200 bg-white p-4">
               {charge.qr_string ? <QRCodeSVG value={charge.qr_string} size={220} /> : <span className="text-slate-400">No QR</span>}
             </div>
+            {charge.payee && <div className="mt-4"><PayeeCard payee={charge.payee} /></div>}
             <div className="mt-3 flex items-center justify-center gap-2 text-sm text-slate-500">
               <span className="h-2 w-2 animate-pulse rounded-full bg-brand-500" /> Ask the customer to scan with any Bakong app…
             </div>
@@ -168,6 +170,7 @@ function CounterTab({ storeId }: { storeId: string }) {
   const [currencies, setCurrencies] = useState<('USD' | 'KHR')[] | null>(null);
   const [currency, setCurrency] = useState<'USD' | 'KHR'>('KHR');
   const [khqr, setKhqr] = useState<string | null>(null);
+  const [payee, setPayee] = useState<Payee | null>(null);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const [err, setErr] = useState('');
 
@@ -186,7 +189,7 @@ function CounterTab({ storeId }: { storeId: string }) {
   // banking app scans it and the customer types the amount. Falls back to the
   // checkout link only when no bank account is connected.
   const load = useCallback(async () => {
-    setErr(''); setKhqr(null); setFallbackUrl(null);
+    setErr(''); setKhqr(null); setPayee(null); setFallbackUrl(null);
     if (currencies === null) return;
     if (currencies.length === 0) {
       const r = await api<{ url: string }>(`/dashboard/stores/${storeId}/pos/counter-qr`).catch(() => null);
@@ -194,8 +197,9 @@ function CounterTab({ storeId }: { storeId: string }) {
       return;
     }
     try {
-      const r = await api<{ qr_string: string }>(`/dashboard/stores/${storeId}/khqr/counter?currency=${currency}`);
+      const r = await api<{ qr_string: string; payee?: Payee | null }>(`/dashboard/stores/${storeId}/khqr/counter?currency=${currency}`);
       setKhqr(r.qr_string);
+      setPayee(r.payee ?? null);
     } catch (e) { setErr((e as Error).message); }
   }, [storeId, currency, currencies]);
   useEffect(() => { load(); }, [load]);
@@ -219,6 +223,7 @@ function CounterTab({ storeId }: { storeId: string }) {
         <>
           {currencies.length === 1 && <p className="mb-2 text-xs font-medium text-emerald-700">{currencies[0]} account</p>}
           <div className="mx-auto inline-block rounded-2xl border border-slate-200 bg-white p-4"><QRCodeSVG value={khqr} size={220} level="M" includeMargin /></div>
+          {payee && <div className="mt-4"><PayeeCard payee={payee} /></div>}
           <p className="mt-2 text-xs text-slate-400">Pays your connected {currency} account directly.</p>
           <Button className="mt-4" variant="secondary" onClick={() => window.print()}>Print</Button>
         </>

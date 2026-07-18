@@ -6,6 +6,7 @@ import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requireMembership, requirePermission } from '../auth/rbac';
 import { prefixedId } from '@paykh/security';
+import { KhqrImportService } from '../khqr/khqr-import.module';
 import { formatAmount } from '../payments/amount.util';
 import { PaymentsService } from '../payments/payments.service';
 import { AccessService } from '../access/access.service';
@@ -18,6 +19,7 @@ export class DashboardService {
     private readonly payments: PaymentsService,
     private readonly access: AccessService,
     private readonly customers: CustomersService,
+    private readonly khqr: KhqrImportService,
   ) {}
 
   /** Refund a payment from the dashboard (requires payment:write + ABAC policies). */
@@ -56,7 +58,9 @@ export class DashboardService {
     const ctx = { apiKeyId: '', storeId, organizationId: store.organizationId, mode: (store.liveMode ? 'live' : 'test') as 'live' | 'test' };
     const body = { amount: Number(dto.amount).toFixed(2), currency: dto.currency ?? 'USD', reference_id: dto.reference, description: 'POS charge', metadata: { source: 'pos' }, ...(customerId ? { customer_id: customerId } : {}) };
     const { resource } = await this.payments.create(ctx, body, undefined, JSON.stringify(body));
-    return { id: resource.id, status: resource.status, amount: resource.amount, currency: resource.currency, qr_string: resource.qr_string ?? null, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };
+    // Tell the payer who they're paying (owner + bank), from the imported KHQR.
+    const payee = await this.khqr.payeeFor(storeId, (dto.currency ?? 'USD'), store.liveMode ? 'live' : 'test').catch(() => null);
+    return { id: resource.id, status: resource.status, amount: resource.amount, currency: resource.currency, qr_string: resource.qr_string ?? null, payee, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };
   }
 
   /** The store's durable counter QR — an open-amount reusable payment link (created once). */

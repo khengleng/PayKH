@@ -27,6 +27,7 @@ import { QuotaService } from '../billing/quota.service';
 import { AuditService } from '../audit/audit.service';
 import { BranchesService } from '../branches/branches.service';
 import { CustomersService } from '../customers/customers.service';
+import { KhqrImportService } from '../khqr/khqr-import.module';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { GamesService } from '../games/games.service';
@@ -62,6 +63,7 @@ export class PaymentsService {
     private readonly risk: RiskService,
     private readonly ledger: LedgerService,
     private readonly receipts: ReceiptsService,
+    private readonly khqr: KhqrImportService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -501,6 +503,11 @@ export class PaymentsService {
     if (!payment) throw ApiError.paymentNotFound();
     const refreshed = await this.applyLazyExpiry(payment);
     const b = payment.store.branding;
+    // Who the payer is actually paying (owner + bank), from the merchant's
+    // imported KHQR. Null when the store pays via mock/no imported account.
+    const payee = await this.khqr
+      .payeeFor(payment.storeId, refreshed.currency as 'USD' | 'KHR', payment.mode === 'LIVE' ? 'live' : 'test')
+      .catch(() => null);
     return {
       id: refreshed.id,
       status: toApiStatus(refreshed.status),
@@ -509,6 +516,7 @@ export class PaymentsService {
       reference_id: refreshed.referenceId,
       description: refreshed.description,
       qr_string: refreshed.qrString,
+      payee,
       created_at: refreshed.createdAt.toISOString(),
       expires_at: refreshed.expiresAt.toISOString(),
       paid_at: refreshed.paidAt?.toISOString() ?? null,

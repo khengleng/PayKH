@@ -5,9 +5,10 @@ import { AuthModule } from '../auth/auth.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { AccessModule } from '../access/access.module';
 import { CustomersModule } from '../customers/customers.module';
+import { KhqrImportModule } from '../khqr/khqr-import.module';
 
 @Module({
-  imports: [AuthModule, PaymentsModule, AccessModule, CustomersModule],
+  imports: [AuthModule, PaymentsModule, AccessModule, CustomersModule, KhqrImportModule],
   controllers: [DashboardController],
   providers: [DashboardService],
 })

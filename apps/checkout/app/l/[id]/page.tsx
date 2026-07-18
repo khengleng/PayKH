@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useT, money, LangToggle } from '@/lib/i18n';
+import { Logo, LogoMark } from '@/lib/logo';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -41,7 +42,7 @@ export default function PayLinkPage({ params }: { params: { id: string } }) {
   return (
     <main style={s.wrap}>
       <div style={s.card}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}><LangToggle className="text-slate-500 !border-slate-200" /></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}><Logo /><LangToggle className="text-slate-500 !border-slate-200" /></div>
         {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
         {link && (
           <>
@@ -81,7 +82,7 @@ export default function PayLinkPage({ params }: { params: { id: string } }) {
                 </button>
               </>
             )}
-            <p style={s.foot}>{t('secured_by')} <b>PayKH</b> · Bakong KHQR</p>
+            <p style={s.foot}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, verticalAlign: 'middle' }}>{t('secured_by')} <LogoMark size={13} /> <b>PayKH</b></span> · Bakong KHQR</p>
           </>
         )}
       </div>

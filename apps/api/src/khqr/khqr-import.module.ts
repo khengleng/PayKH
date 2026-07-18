@@ -10,6 +10,7 @@ import { AuthModule } from '../auth/auth.module';
 import { requirePermission } from '../auth/rbac';
 import { parseKhqr, buildBakongKhqr } from '../providers/khqr.util';
 import { BakongAccount, Currency, currenciesOf, readAccounts, withAccount } from '../providers/bakong-credential';
+import { Payee, payeeFromAccount } from '../providers/payee-display';
 
 export class ImportKhqrDto {
   /** The raw KHQR payload, e.g. decoded from the QR the merchant's bank issued. */
@@ -191,7 +192,19 @@ export class KhqrImportService {
       acquiringBank: account.acquiringBank,
       isMerchant: account.isMerchant,
     });
-    return { qr_string: qrString, md5, amount: amount ?? null, currency, bakong_account_id: account.bakongAccountId };
+    return { qr_string: qrString, md5, amount: amount ?? null, currency, bakong_account_id: account.bakongAccountId, payee: payeeFromAccount(account) };
+  }
+
+  /**
+   * The payer-facing "who you're paying" block (owner name + bank) for a
+   * store's account in a given currency, or null if none is imported. Shared by
+   * POS, the counter QR, and the hosted checkout so every surface names the
+   * payee the same way.
+   */
+  async payeeFor(storeId: string, currency: Currency, mode: 'test' | 'live' = 'test'): Promise<Payee | null> {
+    const { accounts } = await this.loadAccounts(storeId, mode);
+    const account = accounts[currency];
+    return account ? payeeFromAccount(account) : null;
   }
 
   async get(user: AuthUser, storeId: string, mode: 'test' | 'live' = 'test') {

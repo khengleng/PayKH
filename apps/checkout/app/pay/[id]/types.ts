@@ -17,6 +17,13 @@ export interface CheckoutView {
   created_at: string;
   expires_at: string;
   paid_at: string | null;
+  payee: {
+    name: string | null;
+    account_id: string;
+    bank_code: string | null;
+    bank_name: string | null;
+    account_type: 'merchant' | 'individual';
+  } | null;
   merchant: {
     name: string;
     logo_url: string | null;

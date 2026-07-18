@@ -10,6 +10,8 @@ import {
   SuccessScreen,
 } from './StatusScreens';
 import { useT, money, LangToggle } from '@/lib/i18n';
+import { PayeeCard } from '@/lib/bank';
+import { Logo, LogoMark } from '@/lib/logo';
 
 type ConnState = 'live' | 'polling' | 'connecting';
 
@@ -139,7 +141,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
 
   return (
     <Shell accent={accent}>
-      <div className="mb-1 flex justify-end"><LangToggle className="!border-slate-200 text-slate-500" /></div>
+      <div className="mb-1 flex items-center justify-between"><Logo /><LangToggle className="!border-slate-200 text-slate-500" /></div>
       {/* Merchant header */}
       <div className="flex flex-col items-center border-b border-slate-100 pb-5">
         {view.merchant.logo_url ? (
@@ -165,6 +167,11 @@ export default function PayPage({ params }: { params: { id: string } }) {
 
       {(view.status === 'pending' || view.status === 'scanned') && (
         <div className="pt-6">
+          {view.payee && (
+            <div className="mb-4">
+              <PayeeCard payee={view.payee} label={t('paying_to')} />
+            </div>
+          )}
           <div className="flex flex-col items-center">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <QRCodeSVG value={view.qr_string} size={220} level="M" includeMargin />
@@ -229,9 +236,10 @@ function Shell({ children, accent }: { children: React.ReactNode; accent?: strin
     <main className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl ring-1 ring-slate-100">
         {children}
-        <div className="mt-6 flex items-center justify-center gap-1 text-[11px] text-slate-400">
+        <div className="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
           <span>Secured by</span>
-          <span className="font-semibold" style={{ color: accent ?? '#4F46E5' }}>PayKH</span>
+          <LogoMark size={14} />
+          <span className="font-semibold text-slate-500">PayKH</span>
         </div>
       </div>
     </main>

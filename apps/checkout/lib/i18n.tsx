@@ -21,6 +21,7 @@ export function useLang(): Lang { return useSyncExternalStore(subscribe, read, (
 const DICT = {
   pay_with_khqr: { en: 'Pay with KHQR', km: 'បង់ប្រាក់ជាមួយ KHQR' },
   scan_to_pay: { en: 'Scan to pay with any Bakong app', km: 'ស្កេនដើម្បីបង់ប្រាក់ជាមួយកម្មវិធី Bakong' },
+  paying_to: { en: 'Paying to', km: 'បង់ប្រាក់ទៅ' },
   amount: { en: 'Amount', km: 'ចំនួនទឹកប្រាក់' },
   your_name: { en: 'Your name (optional)', km: 'ឈ្មោះរបស់អ្នក (មិនចាំបាច់)' },
   name: { en: 'Name', km: 'ឈ្មោះ' },
