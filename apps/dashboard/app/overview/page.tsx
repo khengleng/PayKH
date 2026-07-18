@@ -33,21 +33,28 @@ export default function OverviewPage() {
 const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.paykh.cambobia.com';
 
 const QUICK_ACTIONS = [
+  { href: '/pos', icon: '🧾', label: 'Point of Sale', desc: 'Charge & redeem' },
   { href: '/payments', icon: '💳', label: 'Payments', desc: 'View & refund' },
   { href: '/customers', icon: '👤', label: 'Customers', desc: 'Customer 360' },
-  { href: '/campaigns', icon: '📣', label: 'Campaigns', desc: 'Run a promo' },
-  { href: '/copilot', icon: '✨', label: 'AI Copilot', desc: 'Get insights' },
+  { href: '/loyalty', icon: '🎁', label: 'Loyalty', desc: 'Rewards & points' },
 ];
+
+interface LoyaltySummary { active: boolean; outstanding_points: number; members_with_points: number; rewards_active: number; vouchers_to_fulfil: number }
+interface KhqrStatus { imported: boolean }
 
 function OverviewContent({ storeId, live, storeName, email }: { storeId: string; live: boolean; storeName: string; email: string }) {
   const [data, setData] = useState<Overview | null>(null);
   const [series, setSeries] = useState<Series | null>(null);
+  const [loyalty, setLoyalty] = useState<LoyaltySummary | null>(null);
+  const [khqr, setKhqr] = useState<KhqrStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setData(null); setError(null); setSeries(null);
+    setData(null); setError(null); setSeries(null); setLoyalty(null); setKhqr(null);
     api<Overview>(`/dashboard/stores/${storeId}/overview`).then(setData).catch((e) => setError(e.message));
     api<Series>(`/dashboard/stores/${storeId}/analytics/timeseries`).then(setSeries).catch(() => {});
+    api<LoyaltySummary>(`/dashboard/stores/${storeId}/loyalty/summary`).then(setLoyalty).catch(() => {});
+    api<KhqrStatus>(`/dashboard/stores/${storeId}/khqr`).then(setKhqr).catch(() => {});
   }, [storeId]);
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; })();
@@ -65,6 +72,16 @@ function OverviewContent({ storeId, live, storeName, email }: { storeId: string;
       {!live && (
         <div className="mb-5 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
           <span>🧪</span> You’re in <b>test mode</b> — payments use the mock provider. Activate live mode in <Link href="/stores" className="font-medium underline">Stores</Link>.
+        </div>
+      )}
+
+      {khqr && !khqr.imported && (
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2 text-sm text-brand-900">
+            <span>🏦</span>
+            <span>Connect your bank’s KHQR so customers pay your account directly — the first step to getting paid. No bank onboarding needed.</span>
+          </div>
+          <Link href="/stores" className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-center text-sm font-medium text-white hover:bg-brand-600">Connect bank account →</Link>
         </div>
       )}
 
@@ -98,6 +115,33 @@ function OverviewContent({ storeId, live, storeName, email }: { storeId: string;
             <Stat label="Expired" value={data.expired_count} icon="⌛" accent="slate" />
             <Stat label="Webhook failures" value={data.recent_webhook_failures} icon="🔔" accent={data.recent_webhook_failures > 0 ? 'red' : 'slate'} />
           </div>
+
+          {loyalty && loyalty.active && (
+            <>
+              <h2 className="mb-3 mt-8 flex items-center justify-between text-sm font-semibold uppercase tracking-wider text-slate-400">
+                <span>Loyalty</span>
+                <Link href="/loyalty" className="text-xs font-medium normal-case tracking-normal text-brand-600 hover:underline">Manage →</Link>
+              </h2>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <Stat label="Members with points" value={loyalty.members_with_points} icon="👥" accent="brand" />
+                <Stat label="Points outstanding" value={loyalty.outstanding_points.toLocaleString()} icon="⭐" accent="brand" hint="unredeemed" />
+                <Stat label="Active rewards" value={loyalty.rewards_active} icon="🎁" accent="slate" />
+                <Link href="/loyalty" className="block">
+                  <Stat label="Vouchers to fulfil" value={loyalty.vouchers_to_fulfil} icon="🎫" accent={loyalty.vouchers_to_fulfil > 0 ? 'amber' : 'slate'} hint={loyalty.vouchers_to_fulfil > 0 ? 'action needed' : 'all done'} />
+                </Link>
+              </div>
+            </>
+          )}
+
+          {loyalty && !loyalty.active && (
+            <div className="mt-8 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-2 text-sm text-slate-600">
+                <span>🎁</span>
+                <span>Turn sales into repeat customers — switch on loyalty points and rewards.</span>
+              </div>
+              <Link href="/loyalty" className="shrink-0 rounded-lg border border-slate-200 bg-white px-4 py-2 text-center text-sm font-medium text-slate-700 hover:border-slate-300">Set up loyalty →</Link>
+            </div>
+          )}
 
           <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">Quick actions</h2>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

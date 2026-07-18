@@ -101,6 +101,25 @@ export class LoyaltyService {
    * lifetime earned/redeemed context and the largest holders. No schema change —
    * pointValue is supplied per query.
    */
+  /** At-a-glance loyalty numbers for the merchant overview. One cheap query set. */
+  async summary(user: AuthUser, storeId: string) {
+    await this.assertStore(user, storeId, 'payment:read');
+    const [program, balAgg, members, rewardsActive, toFulfil] = await Promise.all([
+      this.prisma.loyaltyProgram.findUnique({ where: { storeId } }),
+      this.prisma.customer.aggregate({ where: { storeId }, _sum: { pointsBalance: true } }),
+      this.prisma.customer.count({ where: { storeId, pointsBalance: { gt: 0 } } }),
+      this.prisma.reward.count({ where: { storeId, active: true } }),
+      this.prisma.redemption.count({ where: { storeId, status: 'ISSUED' } }),
+    ]);
+    return {
+      active: !!program?.active,
+      outstanding_points: balAgg._sum.pointsBalance ?? 0,
+      members_with_points: members,
+      rewards_active: rewardsActive,
+      vouchers_to_fulfil: toFulfil,
+    };
+  }
+
   async liability(user: AuthUser, storeId: string, pointValue = 0.01) {
     await this.assertStore(user, storeId, 'payment:read');
     const [balAgg, holders, earned, redeemed, topHolders] = await Promise.all([

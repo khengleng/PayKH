@@ -52,6 +52,12 @@ export class LoyaltyDashboardController {
     return this.loyalty.ledger(user, id);
   }
 
+  @Get('stores/:storeId/loyalty/summary')
+  @ApiOperation({ summary: 'At-a-glance loyalty numbers for the overview' })
+  loyaltySummary(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.loyalty.summary(user, storeId);
+  }
+
   @Get('stores/:storeId/loyalty/expiry-preview')
   @ApiOperation({ summary: 'Dry run: what a given expiry window would take today' })
   expiryPreview(
