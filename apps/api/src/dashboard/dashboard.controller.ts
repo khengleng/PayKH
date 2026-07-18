@@ -67,6 +67,12 @@ export class DashboardController {
     return this.dashboard.counterQr(user, storeId);
   }
 
+  @Get('stores/:storeId/shop-link')
+  @ApiOperation({ summary: 'The public demo-storefront URL for this store' })
+  shopLink(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string) {
+    return this.dashboard.shopLink(user, storeId);
+  }
+
   @Get('orgs/:orgId/audit-logs')
   @ApiOperation({ summary: 'Read-only audit log (owner/admin)' })
   auditLogs(

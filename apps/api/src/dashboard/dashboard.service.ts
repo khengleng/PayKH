@@ -78,6 +78,15 @@ export class DashboardService {
     return { url: `${process.env.CHECKOUT_BASE_URL ?? ''}/l/${link.id}`, link_id: link.id };
   }
 
+  /** The public demo-storefront URL for this store — a shareable shop the
+   *  merchant (or a prospect) can experience the full browse→pay→earn flow in. */
+  async shopLink(user: AuthUser, storeId: string) {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) throw ApiError.paymentNotFound('Store not found');
+    requirePermission(user, store.organizationId, 'store:read');
+    return { url: `${process.env.CHECKOUT_BASE_URL ?? ''}/shop/${storeId}` };
+  }
+
   private async assertStoreAccess(user: AuthUser, storeId: string) {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
     if (!store) throw ApiError.paymentNotFound('Store not found');

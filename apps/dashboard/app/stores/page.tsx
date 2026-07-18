@@ -176,6 +176,8 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
       </div>
 
       {tab === 'general' && (
+        <div className="space-y-4">
+        <DemoShopCard storeId={store.id} />
         <Card>
           <h3 className="mb-3 font-semibold">Checkout branding</h3>
           <p className="mb-3 text-sm text-slate-500">How your store looks on the hosted checkout and receipts.</p>
@@ -202,6 +204,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
             {saved && <span className="text-sm text-emerald-600">{saved}</span>}
           </div>
         </Card>
+        </div>
       )}
 
       {tab === 'payments' && (
@@ -818,6 +821,31 @@ function ChannelsCard({ storeId }: { storeId: string }) {
             <span className="self-center text-xs text-slate-400">{c.provider_configured ? 'provider ready' : 'log-only'}</span>
           </div>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+function DemoShopCard({ storeId }: { storeId: string }) {
+  const [url, setUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api<{ url: string }>(`/dashboard/stores/${storeId}/shop-link`).then((r) => setUrl(r.url)).catch(() => setUrl(''));
+  }, [storeId]);
+  if (!url) return null;
+  const copy = async () => { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-semibold">🛍️ Demo storefront</h3>
+          <p className="text-sm text-slate-500">A shareable sample shop — browse, pay by KHQR, earn points. Great for a demo or to feel the customer flow.</p>
+          <div className="mt-1 truncate font-mono text-xs text-slate-400">{url}</div>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="secondary" onClick={copy}>{copied ? 'Copied ✓' : 'Copy link'}</Button>
+          <a href={url} target="_blank" rel="noreferrer"><Button>Open shop →</Button></a>
+        </div>
       </div>
     </Card>
   );

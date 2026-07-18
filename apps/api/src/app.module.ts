@@ -24,6 +24,7 @@ import { RiskModule } from './risk/risk.module';
 import { AiModule } from './ai/ai.module';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { WalletModule } from './wallet/wallet.module';
+import { ShopModule } from './shop/shop.module';
 import { SecurityModule } from './security/security.module';
 import { EcosystemModule } from './ecosystem/ecosystem.module';
 import { LedgerModule } from './ledger/ledger.module';
@@ -76,6 +77,7 @@ import { RequestIdMiddleware } from './common/request-context';
     AiModule,
     ConnectorsModule,
     WalletModule,
+    ShopModule,
     SecurityModule,
     EcosystemModule,
     LedgerModule,
