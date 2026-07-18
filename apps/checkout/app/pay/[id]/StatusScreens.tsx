@@ -62,6 +62,15 @@ export function SuccessScreen({ view }: { view: CheckoutView }) {
         </div>
       </div>
 
+      {view.wallet_url && (
+        <a
+          href={view.wallet_url}
+          className="mt-4 flex items-center justify-center gap-1.5 rounded-lg bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 print:hidden"
+        >
+          🎁 View your points &amp; rewards →
+        </a>
+      )}
+
       <div className="mt-4 flex items-center justify-center gap-2 print:hidden">
         <button
           onClick={() => window.print()}

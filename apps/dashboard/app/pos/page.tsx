@@ -11,7 +11,7 @@ export default function PosPage() {
   return <Shell>{({ activeStore }) => (activeStore ? <Content storeId={activeStore.id} /> : <Card className="text-slate-600">Create a store first.</Card>)}</Shell>;
 }
 
-type Charge = { id: string; status: string; amount: string; currency: string; qr_string: string | null; payee?: Payee | null };
+type Charge = { id: string; status: string; amount: string; currency: string; qr_string: string | null; payee?: Payee | null; wallet_url?: string | null };
 
 function Content({ storeId }: { storeId: string }) {
   const [tab, setTab] = useState<'charge' | 'counter' | 'redeem'>('charge');
@@ -113,6 +113,15 @@ function ChargeTab({ storeId }: { storeId: string }) {
           <div className="my-8">
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-4xl text-emerald-600">✓</div>
             <div className="mt-3 text-lg font-semibold text-emerald-700">Payment received</div>
+            {charge.wallet_url && (
+              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-medium text-slate-700">Show the customer their rewards</div>
+                <div className="mx-auto mt-3 inline-block rounded-xl border border-slate-200 bg-white p-3">
+                  <QRCodeSVG value={charge.wallet_url} size={132} />
+                </div>
+                <div className="mt-2 text-xs text-slate-500">Scan to see points earned &amp; what they can redeem.</div>
+              </div>
+            )}
           </div>
         ) : dead ? (
           <div className="my-8 text-slate-500">Payment {charge.status}.</div>

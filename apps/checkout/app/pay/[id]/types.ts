@@ -24,6 +24,7 @@ export interface CheckoutView {
     bank_name: string | null;
     account_type: 'merchant' | 'individual';
   } | null;
+  wallet_url: string | null;
   merchant: {
     name: string;
     logo_url: string | null;

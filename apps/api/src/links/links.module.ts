@@ -6,6 +6,7 @@ import { AuthUser, CurrentUser } from '../auth/current-user';
 import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 import { AuthModule } from '../auth/auth.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { CustomersModule } from '../customers/customers.module';
 
 /** Dashboard payment-link / invoice management (JWT). */
 @ApiTags('payment-links')
@@ -62,7 +63,7 @@ export class LinksPublicController {
 }
 
 @Module({
-  imports: [AuthModule, PaymentsModule],
+  imports: [AuthModule, PaymentsModule, CustomersModule],
   controllers: [LinksDashboardController, LinksPublicController],
   providers: [LinksService],
   exports: [LinksService],

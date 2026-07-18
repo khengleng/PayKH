@@ -60,7 +60,10 @@ export class DashboardService {
     const { resource } = await this.payments.create(ctx, body, undefined, JSON.stringify(body));
     // Tell the payer who they're paying (owner + bank), from the imported KHQR.
     const payee = await this.khqr.payeeFor(storeId, (dto.currency ?? 'USD'), store.liveMode ? 'live' : 'test').catch(() => null);
-    return { id: resource.id, status: resource.status, amount: resource.amount, currency: resource.currency, qr_string: resource.qr_string ?? null, payee, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };
+    // When a customer is attached, hand back their loyalty wallet link so the
+    // cashier can show them a QR to their points + rewards after the sale.
+    const walletUrl = customerId ? `${process.env.CHECKOUT_BASE_URL ?? ''}/wallet/${customerId}` : null;
+    return { id: resource.id, status: resource.status, amount: resource.amount, currency: resource.currency, qr_string: resource.qr_string ?? null, payee, customer_id: customerId ?? null, wallet_url: walletUrl, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };
   }
 
   /** The store's durable counter QR — an open-amount reusable payment link (created once). */

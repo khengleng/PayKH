@@ -517,6 +517,9 @@ export class PaymentsService {
       description: refreshed.description,
       qr_string: refreshed.qrString,
       payee,
+      // A customer attached to this payment can reach their loyalty wallet from
+      // the receipt. Only when known — an anonymous QR payment has no wallet.
+      wallet_url: payment.customerId ? `${process.env.CHECKOUT_BASE_URL ?? ''}/wallet/${payment.customerId}` : null,
       created_at: refreshed.createdAt.toISOString(),
       expires_at: refreshed.expiresAt.toISOString(),
       paid_at: refreshed.paidAt?.toISOString() ?? null,

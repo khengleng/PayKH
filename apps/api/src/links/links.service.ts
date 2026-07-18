@@ -7,6 +7,7 @@ import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
 import { PaymentsService } from '../payments/payments.service';
+import { CustomersService } from '../customers/customers.service';
 
 export class CreateLinkDto {
   @IsString() @MaxLength(140) title!: string;
@@ -28,7 +29,7 @@ export class PayLinkDto {
 
 @Injectable()
 export class LinksService {
-  constructor(private readonly prisma: PrismaService, private readonly payments: PaymentsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly payments: PaymentsService, private readonly customers: CustomersService) {}
 
   private async assertStore(user: AuthUser, storeId: string, perm: 'payment:read' | 'payment:write') {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
@@ -129,11 +130,19 @@ export class LinksService {
       organizationId: link.store.organizationId,
       mode: (link.store.liveMode ? 'live' : 'test') as 'live' | 'test',
     };
+    // Attach a customer when the link carries a stable contact (an invoice's
+    // email, say) so the payer earns loyalty and gets a wallet on the receipt.
+    // A bare payer-typed name has no stable key, so it stays metadata-only.
+    const customerId = await this.customers.resolveOrCreateByContact(link.storeId, {
+      email: link.customerEmail ?? undefined,
+      name: dto.name ?? link.customerName ?? undefined,
+    });
     const body = {
       amount,
       currency: link.currency as 'USD' | 'KHR',
       description: link.title,
       metadata: { payment_link_id: link.id, ...(dto.name ? { payer_name: dto.name } : {}), ...(link.customerEmail ? { customer_email: link.customerEmail } : {}) },
+      ...(customerId ? { customer_id: customerId } : {}),
     };
     const { resource } = await this.payments.create(ctx, body, undefined, JSON.stringify(body));
     return { payment_id: resource.id, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };
