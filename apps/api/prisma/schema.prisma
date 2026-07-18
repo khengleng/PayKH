@@ -1127,6 +1127,21 @@ model TrusteeArtifact {
   @@index([scope, createdAt])
 }
 
+/// Inbound events delivered by the trustee to PayKH's receiver
+/// (POST /api/v1/trustee/events). Each row is one verified event, stored
+/// idempotently on its source id so at-least-once delivery / replay never
+/// double-records. Signature is checked before insert, so a persisted row is,
+/// by construction, an authenticated event.
+model TrusteeInboundEvent {
+  id         String   @id // the delivered event id (X-Payment-Id / payload.id)
+  type       String
+  payload    Json
+  receivedAt DateTime @default(now())
+
+  @@index([type, receivedAt])
+  @@index([receivedAt])
+}
+
 /// A tenant's own connection to PayChain (wallet-as-a-service), configured by
 /// the organization owner rather than by a platform administrator — each tenant
 /// brings their own PayChain client credentials and loyalty asset.

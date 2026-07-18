@@ -35,6 +35,27 @@ Returns the public keys PayKH exposes for trustee verification. These are
 derived from the configured private keys and intended for verifier key
 discovery.
 
+- `POST /api/v1/trustee/events`
+
+Inbound receiver for events the trustee delivers to PayKH. Each delivery is
+signed with the PayKH webhook scheme
+(`X-Payment-Signature: t=<ts>,v1=<hmac>`, HMAC-SHA256 over `${ts}.${rawBody}`);
+the receiver verifies the raw body against the configured signing secret, then
+stores the event idempotently on its id (`X-Payment-Id` / payload `id`) and acks
+`200`. It is public but signature-authenticated — a stored event is, by
+construction, one that verified.
+
+Responses: `200` (`{ok, id, type, duplicate}`), `400` (missing signature / bad
+body / missing id+type), `401` (signature mismatch or stale timestamp), `503`
+(no signing secret configured — deliveries stay queued rather than being marked
+delivered).
+
+Configure the shared secret as the `TRUSTEE_EVENTS_WEBHOOK_SECRET` env var on the
+api service, or as the encrypted `trustee_events_webhook_secret` system setting.
+Set it to the signing secret (`whsec_…`) of the webhook endpoint that delivers to
+this receiver. See [`webhook-receiver-example.md`](./webhook-receiver-example.md)
+for the verification contract.
+
 ### Platform admin
 
 - `GET /admin/trustee/status`
@@ -110,7 +131,10 @@ For a regulator demo:
 
 ## Current boundary
 
-This repository prepares PayKH for trustee integration. It does **not** by
-itself implement live request/response flows against the trustee service. That
-requires the trustee-side API contract, auth rules, and business decision
-endpoints to be available.
+This repository prepares PayKH for trustee integration and now accepts inbound
+trustee deliveries at `POST /api/v1/trustee/events` (signature-verified,
+stored idempotently). It does **not** yet act on those events — persisting is
+deliberately separate from business processing. Outbound live request/response
+flows against the trustee service (asserting reserves, requesting mint
+authorization, etc.) remain out of scope pending the trustee-side API contract,
+auth rules, and business decision endpoints.

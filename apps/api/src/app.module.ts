@@ -55,6 +55,7 @@ import { VerificationModule } from './verification/verification.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { TrusteeModule } from './trustee/trustee.module';
+import { TrusteeEventsModule } from './trustee/trustee-events.module';
 import { RequestIdMiddleware } from './common/request-context';
 
 @Module({
@@ -112,6 +113,7 @@ import { RequestIdMiddleware } from './common/request-context';
     DashboardModule,
     HealthModule,
     TrusteeModule,
+    TrusteeEventsModule,
   ],
   providers: [
     // Global per-IP anti-flood backstop on every route (RedisModule is @Global).
