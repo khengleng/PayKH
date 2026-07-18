@@ -24,7 +24,7 @@ export default function OverviewPage() {
             </Card>
           );
         }
-        return <OverviewContent storeId={activeStore.id} live={activeStore.live_mode} storeName={activeStore.name} email={me.email} />;
+        return <OverviewContent storeId={activeStore.id} live={activeStore.live_mode} storeName={activeStore.branding?.display_name || activeStore.name} email={me.email} />;
       }}
     </Shell>
   );

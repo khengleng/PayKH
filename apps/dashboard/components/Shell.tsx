@@ -252,7 +252,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
                     onChange={(e) => { setActiveId(e.target.value); storeStore.set(e.target.value); }}
                     className="appearance-none rounded-lg border border-slate-200 bg-white py-1.5 pl-3 pr-8 text-sm font-medium text-slate-700 hover:border-slate-300"
                   >
-                    {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {stores.map((s) => <option key={s.id} value={s.id}>{s.branding?.display_name || s.name}</option>)}
                   </select>
                   <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">▾</span>
                 </div>
