@@ -28,6 +28,7 @@ import { AuditService } from '../audit/audit.service';
 import { BranchesService } from '../branches/branches.service';
 import { CustomersService } from '../customers/customers.service';
 import { KhqrImportService } from '../khqr/khqr-import.module';
+import { IdempotencyService } from '../idempotency/idempotency.module';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { GamesService } from '../games/games.service';
@@ -64,6 +65,7 @@ export class PaymentsService {
     private readonly ledger: LedgerService,
     private readonly receipts: ReceiptsService,
     private readonly khqr: KhqrImportService,
+    private readonly idempotency: IdempotencyService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -154,14 +156,20 @@ export class PaymentsService {
       throw ApiError.providerError('Failed to generate KHQR');
     }
 
-    let payment: Payment;
-    try {
-      // Create the payment and (atomically) reserve the idempotency key in one
-      // transaction. The unique constraint on the idempotency record is what
-      // prevents two concurrent requests with the same key from both creating a
-      // payment: the loser's insert throws P2002 and the whole tx rolls back.
-      payment = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.payment.create({
+    // Create the payment and (atomically) reserve the idempotency key in one
+    // transaction, via the shared guard: its unique constraint on the record is
+    // what stops two concurrent same-key requests from both creating a payment —
+    // the loser's insert throws P2002, its whole tx (payment included) rolls
+    // back, and the winner's response is replayed. The KHQR is generated above,
+    // outside the tx, so a slow provider call never holds a row lock.
+    let created: Payment | null = null;
+    const { resource, replayed } = await this.idempotency.execute<PaymentResource>({
+      scopeId: ctx.storeId,
+      endpoint,
+      key: idempotencyKey,
+      rawBody,
+      run: async (tx) => {
+        const row = await tx.payment.create({
           data: {
             id: paymentId,
             storeId: ctx.storeId,
@@ -191,49 +199,16 @@ export class PaymentsService {
             rawResponse: (providerResult.raw ?? {}) as Prisma.InputJsonValue,
           },
         });
-        if (idempotencyKey) {
-          await tx.idempotencyRecord.create({
-            data: {
-              storeId: ctx.storeId,
-              endpoint,
-              idempotencyKey,
-              requestHash,
-              responseStatus: 201,
-              responseBody: this.serialize(created) as unknown as Prisma.InputJsonValue,
-              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            },
-          });
-        }
-        return created;
-      });
-    } catch (err) {
-      if (
-        idempotencyKey &&
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        // A concurrent request with the same key won the race — return its result.
-        const existing = await this.prisma.idempotencyRecord.findUnique({
-          where: { storeId_endpoint_idempotencyKey: { storeId: ctx.storeId, endpoint, idempotencyKey } },
-        });
-        if (existing) {
-          if (existing.requestHash !== requestHash) {
-            throw ApiError.idempotencyConflict(
-              'Idempotency-Key already used with a different request body',
-            );
-          }
-          return {
-            resource: existing.responseBody as unknown as PaymentResource,
-            status: existing.responseStatus,
-          };
-        }
-      }
-      throw err;
-    }
+        created = row;
+        return { resource: this.serialize(row), status: 201 };
+      },
+    });
 
-    const resource = this.serialize(payment);
-    this.logger.log(`payment.created ${paymentId} amount=${resource.amount} ${resource.currency}`);
-    await this.webhookEvents.emitCreated(payment);
+    // Fire the created webhook only for a genuine first creation, never a replay.
+    if (!replayed && created) {
+      this.logger.log(`payment.created ${paymentId} amount=${resource.amount} ${resource.currency}`);
+      await this.webhookEvents.emitCreated(created);
+    }
     return { resource, status: 201 };
   }
 
@@ -360,9 +335,16 @@ export class PaymentsService {
     // reserved in the SAME transaction (via its unique constraint) so a
     // *sequential* retry with the same key can't slip past the top-of-method
     // pre-check and issue a second refund.
-    let refund: Refund;
-    try {
-      refund = await this.prisma.$transaction(async (tx) => {
+    // Reserve the refund + idempotency key atomically via the shared guard. The
+    // optimistic-locked updateMany (refundedAmount unchanged) is what stops two
+    // concurrent refunds from over-refunding: the loser matches 0 rows and its
+    // tx aborts. The provider refund is issued above, outside the tx.
+    const { resource, replayed } = await this.idempotency.execute<RefundResource>({
+      scopeId: ctx.storeId,
+      endpoint,
+      key: idempotencyKey,
+      rawBody,
+      run: async (tx) => {
         const updated = await tx.payment.updateMany({
           where: { id: paymentId, refundedAmount: alreadyRefunded },
           data: { refundedAmount: newRefunded },
@@ -389,67 +371,39 @@ export class PaymentsService {
             reason: `refund ${formatAmount(refundAmount, payment.currency)}${providerResult.manual ? ' (manual settlement)' : ''}`,
           },
         });
-        if (idempotencyKey) {
-          await tx.idempotencyRecord.create({
-            data: {
-              storeId: ctx.storeId,
-              endpoint,
-              idempotencyKey,
-              requestHash,
-              responseStatus: 201,
-              responseBody: this.serializeRefund(created) as unknown as Prisma.InputJsonValue,
-              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            },
-          });
-        }
-        return created;
-      });
-    } catch (err) {
-      // A concurrent request with the same key won the reservation — replay it.
-      if (
-        idempotencyKey &&
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        const existing = await this.prisma.idempotencyRecord.findUnique({
-          where: { storeId_endpoint_idempotencyKey: { storeId: ctx.storeId, endpoint, idempotencyKey } },
-        });
-        if (existing) {
-          if (existing.requestHash !== requestHash) {
-            throw ApiError.idempotencyConflict('Idempotency-Key already used with a different request body');
-          }
-          return { resource: existing.responseBody as unknown as RefundResource, status: existing.responseStatus };
-        }
-      }
-      throw err;
-    }
-
-    // Double-entry ledger: post this refund slice (best-effort, idempotent by refundId).
-    try {
-      const store = await this.prisma.store.findUnique({ where: { id: payment.storeId }, select: { feeBps: true } });
-      await this.ledger.postRefund(payment, refundAmount, store?.feeBps ?? 0, refundId);
-    } catch (e) {
-      this.logger.warn(`ledger postRefund failed for ${paymentId}: ${e}`);
-    }
-
-    // Full refund → transition to refunded (emits payment.refunded). Partial →
-    // status stays paid, so emit the refund event directly.
-    if (fullyRefunded) {
-      await this.transition(paymentId, 'refunded', 'fully refunded');
-    } else {
-      const refreshed = await this.prisma.payment.findUnique({ where: { id: paymentId } });
-      if (refreshed) await this.webhookEvents.emitRefunded(refreshed);
-    }
-
-    const resource = this.serializeRefund(refund);
-    await this.audit.record({
-      organizationId: ctx.organizationId,
-      storeId: ctx.storeId,
-      action: 'payment.refund',
-      entity: `payment:${paymentId}`,
-      afterValue: { refund_id: refundId, amount: resource.amount, fully_refunded: fullyRefunded, reason: dto.reason },
+        return { resource: this.serializeRefund(created), status: 201 };
+      },
     });
-    this.logger.log(`refund ${refundId} ${resource.amount} ${resource.currency} for ${paymentId}`);
+
+    // Everything below is a one-time effect of a genuine refund — a replay must
+    // not re-post the ledger, re-transition the payment, or re-audit.
+    if (!replayed) {
+      // Double-entry ledger: post this refund slice (best-effort, idempotent by refundId).
+      try {
+        const store = await this.prisma.store.findUnique({ where: { id: payment.storeId }, select: { feeBps: true } });
+        await this.ledger.postRefund(payment, refundAmount, store?.feeBps ?? 0, refundId);
+      } catch (e) {
+        this.logger.warn(`ledger postRefund failed for ${paymentId}: ${e}`);
+      }
+
+      // Full refund → transition to refunded (emits payment.refunded). Partial →
+      // status stays paid, so emit the refund event directly.
+      if (fullyRefunded) {
+        await this.transition(paymentId, 'refunded', 'fully refunded');
+      } else {
+        const refreshed = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+        if (refreshed) await this.webhookEvents.emitRefunded(refreshed);
+      }
+
+      await this.audit.record({
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        action: 'payment.refund',
+        entity: `payment:${paymentId}`,
+        afterValue: { refund_id: refundId, amount: resource.amount, fully_refunded: fullyRefunded, reason: dto.reason },
+      });
+      this.logger.log(`refund ${refundId} ${resource.amount} ${resource.currency} for ${paymentId}`);
+    }
     return { resource, status: 201 };
   }
 
