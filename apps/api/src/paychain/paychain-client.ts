@@ -98,14 +98,36 @@ export class PayChainClient {
   }
 
   // ------------------------------------------------------------ value moves
-  /** Mint `amount` of the loyalty asset into a wallet. `eventId` scopes the
-   *  Idempotency-Key so re-issuing the same PayKH points txn is a no-op. */
+  /**
+   * Purchase reward. PayChain's guidance is that a spend-driven loyalty award
+   * goes through `earn` — PayChain runs the asset's earn rules against the
+   * spend, rather than the caller minting a fixed amount (`issue` is reserved for
+   * referrals / games). `eventId` scopes the Idempotency-Key so re-earning the
+   * same PayKH points txn is a no-op.
+   */
+  async earn(
+    conn: PayChainConnection,
+    walletId: string,
+    spendAmount: string,
+    currency: string,
+    merchantId: string,
+    eventId: string,
+  ): Promise<PayChainTxn> {
+    return this.post<PayChainTxn>(
+      conn.baseUrl,
+      `/assets/${encodeURIComponent(conn.loyaltyAssetId)}/earn`,
+      { walletId, spendAmount, currency, merchantId },
+      { token: await this.token(conn), idempotencyKey: `paykh:earn:${eventId}`, correlationId: eventId },
+    );
+  }
+
+  /** Mint a fixed `amount` into a wallet — for referrals / scratch games. */
   async issue(conn: PayChainConnection, walletId: string, amount: string, eventId: string): Promise<PayChainTxn> {
     return this.post<PayChainTxn>(
       conn.baseUrl,
       `/assets/${encodeURIComponent(conn.loyaltyAssetId)}/issue`,
       { destinationWalletId: walletId, amount },
-      { token: await this.token(conn), idempotencyKey: `paykh:earn:${eventId}` },
+      { token: await this.token(conn), idempotencyKey: `paykh:issue:${eventId}`, correlationId: eventId },
     );
   }
 
@@ -115,7 +137,7 @@ export class PayChainClient {
       conn.baseUrl,
       `/assets/${encodeURIComponent(conn.loyaltyAssetId)}/redeem`,
       { sourceWalletId: walletId, amount },
-      { token: await this.token(conn), idempotencyKey: `paykh:redeem:${eventId}` },
+      { token: await this.token(conn), idempotencyKey: `paykh:redeem:${eventId}`, correlationId: eventId },
     );
   }
 
@@ -149,11 +171,14 @@ export class PayChainClient {
     baseUrl: string,
     path: string,
     body: unknown,
-    opts: { token?: string; auth?: boolean; idempotencyKey?: string } = {},
+    opts: { token?: string; auth?: boolean; idempotencyKey?: string; correlationId?: string } = {},
   ): Promise<T> {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (opts.token) headers.authorization = `Bearer ${opts.token}`;
     if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
+    // Optional but recommended by PayChain — echoed through the pipeline + into
+    // webhook payloads, so a movement can be traced back to its PayKH event.
+    if (opts.correlationId) headers['X-Correlation-Id'] = opts.correlationId;
     const res = await fetch(`${this.base(baseUrl)}${path}`, {
       method: 'POST',
       headers,
