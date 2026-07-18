@@ -38,23 +38,30 @@ discovery.
 - `POST /api/v1/trustee/events`
 
 Inbound receiver for events the trustee delivers to PayKH. Each delivery is
-signed with the PayKH webhook scheme
-(`X-Payment-Signature: t=<ts>,v1=<hmac>`, HMAC-SHA256 over `${ts}.${rawBody}`);
-the receiver verifies the raw body against the configured signing secret, then
-stores the event idempotently on its id (`X-Payment-Id` / payload `id`) and acks
-`200`. It is public but signature-authenticated — a stored event is, by
-construction, one that verified.
+signed with the trustee's **Ed25519** key:
 
-Responses: `200` (`{ok, id, type, duplicate}`), `400` (missing signature / bad
-body / missing id+type), `401` (signature mismatch or stale timestamp), `503`
-(no signing secret configured — deliveries stay queued rather than being marked
-delivered).
+```
+X-Signature: <base64( ed25519_sign(privkey, `${X-Timestamp}.${rawBody}`) )>
+X-Timestamp: <unix seconds>
+X-Key-Id:    webhook-v1
+```
 
-Configure the shared secret as the `TRUSTEE_EVENTS_WEBHOOK_SECRET` env var on the
-api service, or as the encrypted `trustee_events_webhook_secret` system setting.
-Set it to the signing secret (`whsec_…`) of the webhook endpoint that delivers to
-this receiver. See [`webhook-receiver-example.md`](./webhook-receiver-example.md)
-for the verification contract.
+The receiver verifies the raw body against the trustee's published Ed25519
+**public** key (PayKH holds only the public half), enforces a 5-minute timestamp
+window against replay, then stores the event idempotently on its id
+(`X-Payment-Id` or payload `id`) and acks `200`. It is public but
+signature-authenticated — a stored event is, by construction, one that verified.
+
+Responses: `200` (`{ok, id, type, duplicate}`), `400` (missing signature/timestamp,
+bad body, or missing id+type), `401` (signature mismatch, unknown key id, or stale
+timestamp), `503` (no verification key configured — deliveries stay queued rather
+than being marked delivered).
+
+Configure the verification key as the `TRUSTEE_EVENTS_ED25519_PUBLIC_KEY` env var
+on the api service (PEM; `\n`-escaped or base64-encoded is accepted) or the
+encrypted `trustee_events_ed25519_public_key` system setting. The expected key id
+defaults to `webhook-v1` (override with `TRUSTEE_EVENTS_ED25519_KEY_ID`). Rotate
+by swapping the key and id together.
 
 ### Platform admin
 

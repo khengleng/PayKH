@@ -16,25 +16,33 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 import { Request } from 'express';
-import { verifySignature } from '@paykh/security';
+import { verifyEd25519 } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.module';
 import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
+const MAX_SKEW_SECONDS = 5 * 60;
+const DEFAULT_KEY_ID = 'webhook-v1';
+
 /**
  * Receiver for events the trustee delivers to PayKH
- * (POST /api/v1/trustee/events). The trustee signs each delivery with the PayKH
- * webhook scheme — `X-Payment-Signature: t=<ts>,v1=<hmac>`,
- * HMAC-SHA256(secret, `${t}.${rawBody}`) — so this verifies the raw body against
- * the configured signing secret, then stores the event idempotently on its id
- * and acks 200. It is public (the trustee calls it) but authenticated by the
- * signature; it never trusts a payload it could not verify.
+ * (POST /api/v1/trustee/events). The trustee signs each delivery with Ed25519:
  *
- * Configure the shared signing secret as `TRUSTEE_EVENTS_WEBHOOK_SECRET` (env on
- * the api service) or as the encrypted `trustee_events_webhook_secret` system
- * setting — set it to the signing secret of the webhook endpoint that targets
- * this receiver. Until it is set the receiver replies 503 (so the trustee keeps
- * the events queued rather than treating them as delivered).
+ *   X-Signature: <base64(ed25519_sign(privkey, `${X-Timestamp}.${rawBody}`))>
+ *   X-Timestamp: <unix seconds>
+ *   X-Key-Id:    webhook-v1
+ *
+ * PayKH verifies the raw body against the trustee's published Ed25519 public key
+ * (asymmetric — PayKH only holds the public half), enforces a 5-minute timestamp
+ * window against replay, then stores the event idempotently on its id and acks
+ * 200. Public but signature-authenticated; a stored event is one that verified.
+ *
+ * Configure the public key (PEM) as `TRUSTEE_EVENTS_ED25519_PUBLIC_KEY` (env on
+ * the api service, `\n`-escaped or base64-encoded is fine) or the encrypted
+ * `trustee_events_ed25519_public_key` system setting. The expected key id
+ * defaults to `webhook-v1` (override via `TRUSTEE_EVENTS_ED25519_KEY_ID`). Until
+ * a key is configured the receiver replies 503 (so the trustee keeps events
+ * queued rather than treating them as delivered).
  */
 @Injectable()
 export class TrusteeEventsService {
@@ -45,28 +53,75 @@ export class TrusteeEventsService {
     private readonly settings: SettingsService,
   ) {}
 
-  private async signingSecret(): Promise<string | undefined> {
-    // Encrypted system setting takes precedence, then the env var.
-    return (await this.settings.resolve('trustee_events_webhook_secret')) ?? process.env.TRUSTEE_EVENTS_WEBHOOK_SECRET;
+  /** Configured Ed25519 verification key (PEM), from setting or env. */
+  private async publicKeyPem(): Promise<string | undefined> {
+    const raw =
+      (await this.settings.resolve('trustee_events_ed25519_public_key')) ??
+      process.env.TRUSTEE_EVENTS_ED25519_PUBLIC_KEY;
+    if (!raw) return undefined;
+    const s = raw.trim();
+    // Accept a real PEM, a `\n`-escaped PEM (common in env vars), or base64(PEM).
+    if (s.includes('BEGIN')) return s.replace(/\\n/g, '\n');
+    try {
+      const decoded = Buffer.from(s, 'base64').toString('utf8');
+      return decoded.includes('BEGIN') ? decoded : s;
+    } catch {
+      return s;
+    }
+  }
+
+  private async expectedKeyId(): Promise<string> {
+    return (
+      (await this.settings.resolve('trustee_events_ed25519_key_id')) ??
+      process.env.TRUSTEE_EVENTS_ED25519_KEY_ID ??
+      DEFAULT_KEY_ID
+    );
   }
 
   async ingest(
     rawBody: string,
     signature: string | undefined,
+    timestamp: string | undefined,
+    keyId: string | undefined,
     headerEventId: string | undefined,
     headerEventType: string | undefined,
   ): Promise<{ ok: true; id: string; type: string; duplicate: boolean }> {
-    const secret = await this.signingSecret();
-    if (!secret) {
-      this.logger.error('trustee events receiver has no signing secret configured — rejecting delivery');
+    const pem = await this.publicKeyPem();
+    if (!pem) {
+      this.logger.error('trustee events receiver has no verification key configured — rejecting delivery');
       throw new ServiceUnavailableException('trustee events receiver is not configured');
     }
-    if (!signature) throw new BadRequestException('missing X-Payment-Signature');
+    if (!signature || !timestamp) throw new BadRequestException('missing X-Signature or X-Timestamp');
 
-    const result = verifySignature(secret, rawBody, signature);
-    if (!result.valid) {
-      this.logger.warn(`trustee event signature ${result.reason}`);
-      throw new UnauthorizedException(`signature ${result.reason}`);
+    // Reject a delivery signed by an unexpected key id (supports rotation: swap
+    // the key + id together). A missing X-Key-Id is tolerated — the single
+    // configured key still governs.
+    const expectedKid = await this.expectedKeyId();
+    if (keyId && keyId !== expectedKid) {
+      this.logger.warn(`trustee event unknown key id ${keyId}`);
+      throw new UnauthorizedException('unknown key id');
+    }
+
+    // Timestamp tolerance (replay protection). Accept second- or ms-epoch.
+    const ts = Number(timestamp);
+    const tsMs = timestamp.trim().length <= 10 ? ts * 1000 : ts;
+    if (!Number.isFinite(ts) || Math.abs(Date.now() - tsMs) > MAX_SKEW_SECONDS * 1000) {
+      throw new UnauthorizedException('timestamp outside tolerance');
+    }
+
+    // Verify Ed25519 over the exact signed string `${timestamp}.${rawBody}`,
+    // using the raw header timestamp (not a reparsed value) and the raw body.
+    const message = `${timestamp}.${rawBody}`;
+    let valid = false;
+    try {
+      valid = verifyEd25519(pem, message, signature);
+    } catch (e) {
+      this.logger.warn(`trustee event verify error: ${e instanceof Error ? e.message : e}`);
+      valid = false;
+    }
+    if (!valid) {
+      this.logger.warn('trustee event signature mismatch');
+      throw new UnauthorizedException('signature mismatch');
     }
 
     let parsed: { id?: string; type?: string };
@@ -75,8 +130,6 @@ export class TrusteeEventsService {
     } catch {
       throw new BadRequestException('body is not valid JSON');
     }
-    // Trust the header ids (they are covered by the signature over the raw body
-    // only if the sender includes them; the payload id is the source of truth).
     const id = headerEventId || parsed.id;
     const type = headerEventType || parsed.type;
     if (!id || !type) throw new BadRequestException('event id and type are required');
@@ -109,16 +162,18 @@ export class TrusteeEventsController {
   @Post('events')
   @HttpCode(200)
   @RateLimit({ limit: 120, windowSec: 10, by: 'ip' })
-  @ApiOperation({ summary: 'Receiver for trustee-delivered events (signature-verified)' })
+  @ApiOperation({ summary: 'Receiver for trustee-delivered events (Ed25519 signature-verified)' })
   async events(
     @Req() req: Request,
-    @Headers('x-payment-signature') signature: string | undefined,
+    @Headers('x-signature') signature: string | undefined,
+    @Headers('x-timestamp') timestamp: string | undefined,
+    @Headers('x-key-id') keyId: string | undefined,
     @Headers('x-payment-id') eventId: string | undefined,
     @Headers('x-payment-event') eventType: string | undefined,
     @Body() _body: unknown,
   ) {
     const rawBody = (req as Request & { rawBody?: string }).rawBody ?? '';
-    return this.svc.ingest(rawBody, signature, eventId, eventType);
+    return this.svc.ingest(rawBody, signature, timestamp, keyId, eventId, eventType);
   }
 }
 
