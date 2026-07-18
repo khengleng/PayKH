@@ -68,6 +68,8 @@ export interface ShellContext {
   stores: Store[];
   activeStore: Store | null;
   reloadStores: () => Promise<void>;
+  /** Make a store the active one across the dashboard (persists the choice). */
+  selectStore: (id: string) => void;
 }
 
 export function Shell({ children }: { children: (ctx: ShellContext) => React.ReactNode }) {
@@ -163,6 +165,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
   }
 
   const activeStore = stores.find((s) => s.id === activeId) ?? null;
+  const selectStore = (id: string) => { setActiveId(id); storeStore.set(id); };
   const logout = () => { tokenStore.clear(); router.replace('/login'); };
   const initials = (me.email ?? '?').slice(0, 2).toUpperCase();
 
@@ -270,7 +273,7 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
         </header>
 
         {/* Mobile bottom-nav removed in favor of the drawer; keep content roomy */}
-        <main className="mx-auto w-full max-w-6xl flex-1 animate-fade-in p-4 md:p-6">{children({ me, stores, activeStore, reloadStores })}</main>
+        <main className="mx-auto w-full max-w-6xl flex-1 animate-fade-in p-4 md:p-6">{children({ me, stores, activeStore, reloadStores, selectStore })}</main>
       </div>
     </div>
   );

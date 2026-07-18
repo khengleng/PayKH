@@ -13,18 +13,24 @@ export default function StoresPage() {
 }
 
 function StoresContent({ ctx }: { ctx: ShellContext }) {
-  const { me, stores, activeStore, reloadStores } = ctx;
+  const { me, stores, activeStore, reloadStores, selectStore } = ctx;
   const orgId = me.organizations[0]?.id;
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
 
   const createStore = async () => {
     if (!newName || !orgId) return;
-    setBusy(true);
+    setBusy(true); setErr('');
     try {
-      await api('/stores', { method: 'POST', body: { organizationId: orgId, name: newName } });
+      const created = await api<Store>('/stores', { method: 'POST', body: { organizationId: orgId, name: newName } });
       setNewName('');
       await reloadStores();
+      // Make the new store the active one so it shows immediately — no approval,
+      // no waiting: a created store is live in the dashboard at once.
+      if (created?.id) selectStore(created.id);
+    } catch (e) {
+      setErr((e as Error).message || 'Could not create the store.');
     } finally {
       setBusy(false);
     }
@@ -38,15 +44,45 @@ function StoresContent({ ctx }: { ctx: ShellContext }) {
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex-1 text-sm">
             <div className="mb-1 text-slate-600">New store name</div>
-            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="My Shop" className="w-full rounded-lg border border-slate-200 px-3 py-2" />
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createStore()} placeholder="My Shop" className="w-full rounded-lg border border-slate-200 px-3 py-2" />
           </label>
-          <Button onClick={createStore} disabled={busy || !newName}>Create store</Button>
+          <Button onClick={createStore} disabled={busy || !newName}>{busy ? 'Creating…' : 'Create store'}</Button>
         </div>
+        {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+        {!orgId && <p className="mt-2 text-sm text-amber-600">No organization found on your account — sign out and back in, or contact support.</p>}
       </Card>
 
-      {stores.length === 0 && <Card className="text-slate-500">No stores yet — create your first one above.</Card>}
+      {stores.length === 0 ? (
+        <Card className="text-slate-500">No stores yet — create your first one above.</Card>
+      ) : (
+        <Card className="mb-4 p-0">
+          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">Your stores ({stores.length})</div>
+          <ul className="divide-y divide-slate-50">
+            {stores.map((s) => {
+              const isActive = s.id === activeStore?.id;
+              return (
+                <li key={s.id} className={`flex items-center justify-between gap-3 px-4 py-3 ${isActive ? 'bg-brand-50/40' : ''}`}>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium text-slate-800">{s.branding?.display_name || s.name}</span>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${s.live_mode ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{s.live_mode ? 'Live' : 'Test'}</span>
+                      {isActive && <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-medium text-brand-700">Selected</span>}
+                    </div>
+                    <div className="font-mono text-[11px] text-slate-400">{s.id}</div>
+                  </div>
+                  {isActive ? (
+                    <span className="text-xs text-slate-400">Editing below</span>
+                  ) : (
+                    <Button size="sm" variant="secondary" onClick={() => selectStore(s.id)}>Manage</Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
 
-      {activeStore && <StoreEditor store={activeStore} onChange={reloadStores} />}
+      {activeStore && <StoreEditor key={activeStore.id} store={activeStore} onChange={reloadStores} />}
     </>
   );
 }
