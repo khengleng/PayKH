@@ -1,15 +1,18 @@
-import { Controller, Get, Param, Req, Res } from '@nestjs/common';
+import { Controller, Get, Param, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { PaymentsService } from './payments.service';
 import { PaymentEventsService } from './payment-events.service';
+import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
 /**
  * Public, unauthenticated endpoints for the hosted checkout page. These expose
  * only secret-free payment data + merchant branding. No API key or provider
- * credential is ever returned here.
+ * credential is ever returned here. IP rate-limited like the other public
+ * surfaces (wallet/shop/links) — the SSE stream also holds an open connection.
  */
 @ApiTags('checkout')
+@UseGuards(RateLimitGuard)
 @Controller('checkout')
 export class CheckoutController {
   constructor(
@@ -18,12 +21,14 @@ export class CheckoutController {
   ) {}
 
   @Get(':id')
+  @RateLimit({ limit: 60, windowSec: 10, by: 'ip' })
   @ApiOperation({ summary: 'Public checkout view for a payment (no secrets)' })
   view(@Param('id') id: string) {
     return this.payments.publicView(id);
   }
 
   @Get(':id/events')
+  @RateLimit({ limit: 20, windowSec: 10, by: 'ip' })
   @ApiOperation({ summary: 'Server-Sent Events stream of live payment status' })
   async stream(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
     // Validate the payment exists (and lazily expire) before opening the stream.

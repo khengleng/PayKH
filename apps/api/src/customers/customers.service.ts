@@ -219,7 +219,9 @@ export class CustomersService {
   async setPreferencesDashboard(user: AuthUser, customerId: string, prefs: Record<string, boolean>) {
     const c = await this.prisma.customer.findUnique({ where: { id: customerId } });
     if (!c) throw ApiError.paymentNotFound('Customer not found');
-    await this.assertStoreAccess(user, c.storeId);
+    // Changing consent is a mutation — require write, not the read default (an
+    // analyst must not be able to flip a customer's communication preferences).
+    await this.assertStoreAccess(user, c.storeId, 'store:write');
     await this.applyPreferences(c.id, prefs, 'dashboard');
     return { customer_id: c.id, preferences: await this.currentPreferences(c.id) };
   }
