@@ -134,6 +134,12 @@ export class LoyaltyDashboardController {
     return this.loyalty.listRedemptions(user, storeId);
   }
 
+  @Get('stores/:storeId/redemptions/lookup')
+  @ApiOperation({ summary: 'Find a voucher by its code (counter fulfilment)' })
+  lookup(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Query('code') code: string) {
+    return this.loyalty.lookupByCode(user, storeId, code ?? '');
+  }
+
   @Post('redemptions/:id/fulfill')
   @ApiOperation({ summary: 'Mark a redemption fulfilled' })
   fulfill(@CurrentUser() user: AuthUser, @Param('id') id: string) {

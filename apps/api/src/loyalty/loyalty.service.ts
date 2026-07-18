@@ -647,6 +647,25 @@ export class LoyaltyService {
     return this.serializeRedemption(r, r.reward);
   }
 
+  /**
+   * Find a voucher by its code within a store — for the counter, where a
+   * customer shows the code from their wallet and the cashier fulfils it on the
+   * spot. Codes are unique, but scope to the store so one merchant can't read
+   * another's. Returns the customer name too, so the cashier can sanity-check
+   * who it belongs to before handing over the reward.
+   */
+  async lookupByCode(user: AuthUser, storeId: string, code: string) {
+    await this.assertStore(user, storeId, 'payment:read');
+    const normalized = code.trim().toUpperCase();
+    if (!normalized) throw ApiError.invalidRequest('Enter a voucher code');
+    const r = await this.prisma.redemption.findFirst({
+      where: { storeId, code: normalized },
+      include: { reward: true, customer: true },
+    });
+    if (!r) throw ApiError.paymentNotFound('No voucher with that code in this store');
+    return { ...this.serializeRedemption(r, r.reward), customer_name: r.customer.name, customer_email: r.customer.email };
+  }
+
   async listRedemptions(user: AuthUser, storeId: string) {
     await this.assertStore(user, storeId, 'payment:read');
     const rows = await this.prisma.redemption.findMany({ where: { storeId }, include: { reward: true, customer: true }, orderBy: { createdAt: 'desc' }, take: 100 });

@@ -14,18 +14,19 @@ export default function PosPage() {
 type Charge = { id: string; status: string; amount: string; currency: string; qr_string: string | null; payee?: Payee | null };
 
 function Content({ storeId }: { storeId: string }) {
-  const [tab, setTab] = useState<'charge' | 'counter'>('charge');
+  const [tab, setTab] = useState<'charge' | 'counter' | 'redeem'>('charge');
+  const labels = { charge: 'Charge', counter: 'Counter QR', redeem: 'Redeem voucher' } as const;
   return (
     <>
-      <PageTitle title="Point of Sale" subtitle="Take a payment at the counter — charge an amount for a one-time QR, or print a reusable counter QR." />
+      <PageTitle title="Point of Sale" subtitle="Take a payment at the counter — charge an amount, print a reusable counter QR, or redeem a loyalty voucher." />
       <div className="mb-5 inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
-        {(['charge', 'counter'] as const).map((t) => (
+        {(['charge', 'counter', 'redeem'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`rounded-md px-4 py-1.5 font-medium ${tab === t ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500'}`}>
-            {t === 'charge' ? 'Charge' : 'Counter QR'}
+            {labels[t]}
           </button>
         ))}
       </div>
-      {tab === 'charge' ? <ChargeTab storeId={storeId} /> : <CounterTab storeId={storeId} />}
+      {tab === 'charge' ? <ChargeTab storeId={storeId} /> : tab === 'counter' ? <CounterTab storeId={storeId} /> : <RedeemTab storeId={storeId} />}
     </>
   );
 }
@@ -235,6 +236,77 @@ function CounterTab({ storeId }: { storeId: string }) {
         </>
       ) : (
         <p className="text-sm text-red-600">{err || 'Could not build the counter QR.'}</p>
+      )}
+    </Card>
+  );
+}
+
+type Voucher = { id: string; reward_name: string | null; points_spent: number; code: string; status: string; customer_name: string | null };
+
+function RedeemTab({ storeId }: { storeId: string }) {
+  const [code, setCode] = useState('');
+  const [voucher, setVoucher] = useState<Voucher | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState(false);
+
+  const lookup = async () => {
+    if (!code.trim()) return;
+    setBusy(true); setErr(''); setVoucher(null); setDone(false);
+    try {
+      setVoucher(await api<Voucher>(`/dashboard/stores/${storeId}/redemptions/lookup?code=${encodeURIComponent(code.trim())}`));
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const fulfil = async () => {
+    if (!voucher) return;
+    setBusy(true); setErr('');
+    try {
+      await api(`/dashboard/redemptions/${voucher.id}/fulfill`, { method: 'POST' });
+      setVoucher({ ...voucher, status: 'fulfilled' });
+      setDone(true);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const reset = () => { setCode(''); setVoucher(null); setErr(''); setDone(false); };
+
+  return (
+    <Card className="mx-auto max-w-sm">
+      <h3 className="font-semibold">Redeem a voucher</h3>
+      <p className="mb-4 text-sm text-slate-500">Enter the code the customer shows from their loyalty wallet, then mark it used.</p>
+
+      <div className="flex gap-2">
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === 'Enter' && lookup()}
+          placeholder="Voucher code"
+          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm uppercase tracking-wider"
+        />
+        <Button onClick={lookup} disabled={busy || !code.trim()}>{busy && !voucher ? '…' : 'Look up'}</Button>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+
+      {voucher && (
+        <div className="mt-4 rounded-xl border border-slate-200 p-4">
+          <div className="text-lg font-semibold text-slate-800">{voucher.reward_name ?? 'Reward'}</div>
+          <div className="mt-1 text-sm text-slate-500">{voucher.customer_name ?? 'Customer'} · {voucher.points_spent.toLocaleString()} pts</div>
+          <div className="mt-1 font-mono text-xs text-slate-400">{voucher.code}</div>
+
+          {done || voucher.status === 'fulfilled' ? (
+            <div className="mt-4 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
+              <span>✓</span> Fulfilled — hand over the reward.
+            </div>
+          ) : voucher.status === 'issued' ? (
+            <Button className="mt-4 w-full" onClick={fulfil} disabled={busy}>{busy ? 'Marking…' : 'Mark fulfilled'}</Button>
+          ) : (
+            <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">This voucher is {voucher.status} and can’t be fulfilled.</div>
+          )}
+
+          <button onClick={reset} className="mt-3 w-full text-center text-sm text-slate-500 hover:text-slate-700">Redeem another</button>
+        </div>
       )}
     </Card>
   );
