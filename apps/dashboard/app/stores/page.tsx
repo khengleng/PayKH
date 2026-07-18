@@ -1,12 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Shell, ShellContext } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
 import { api, API_BASE } from '@/lib/api';
 import { Store } from '@/lib/types';
 import { KhqrImportCard } from './KhqrImportCard';
 import { TelegramDetectionCard } from './TelegramDetectionCard';
+
+type EditorTab = 'general' | 'payments' | 'loyalty' | 'notifications' | 'developer';
+const EDITOR_TABS: { key: EditorTab; label: string }[] = [
+  { key: 'general', label: 'General' },
+  { key: 'payments', label: 'Bank & payments' },
+  { key: 'loyalty', label: 'Loyalty' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'developer', label: 'Developer' },
+];
 
 export default function StoresPage() {
   return <Shell>{(ctx) => <StoresContent ctx={ctx} />}</Shell>;
@@ -98,6 +108,7 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
   const [customMessage, setCustomMessage] = useState(b?.custom_message ?? '');
   const [secret, setSecret] = useState('');
   const [saved, setSaved] = useState('');
+  const [tab, setTab] = useState<EditorTab>('general');
 
   const saveBranding = async () => {
     await api(`/stores/${store.id}/branding`, {
@@ -135,13 +146,15 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
 
   return (
     <div className="space-y-4">
+      {/* Store header — always visible so go-live is one tap from any tab. */}
       <Card>
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold">{store.name}</h3>
-            <p className="text-sm text-slate-500">
-              {store.live_mode ? 'Live mode active' : 'Test mode — using mock provider'}
-            </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate font-semibold">{store.branding?.display_name || store.name}</h3>
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${store.live_mode ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{store.live_mode ? 'Live' : 'Test'}</span>
+            </div>
+            <p className="text-sm text-slate-500">{store.live_mode ? 'Accepting real payments.' : 'Test mode — using the mock provider.'}</p>
           </div>
           <Button variant={store.live_mode ? 'danger' : 'primary'} onClick={toggleLive}>
             {store.live_mode ? 'Switch to test' : 'Activate live mode'}
@@ -149,60 +162,95 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
         </div>
       </Card>
 
-      <Card>
-        <h3 className="mb-3 font-semibold">Checkout branding</h3>
-        <div className="grid gap-3 md:grid-cols-2">
-          <TextField label="Display name" value={displayName} onChange={setDisplayName} />
-          <label className="text-sm">
-            <div className="mb-1 text-slate-600">Primary color</div>
-            <div className="flex items-center gap-2">
-              <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-9 w-12 rounded border" />
-              <input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="w-28 rounded-lg border border-slate-200 px-2 py-2 text-sm" />
+      {/* Tabs — one focused section at a time instead of one long scroll. */}
+      <div className="flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 text-sm">
+        {EDITOR_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`whitespace-nowrap rounded-lg px-3.5 py-1.5 font-medium transition-colors ${tab === t.key ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'general' && (
+        <Card>
+          <h3 className="mb-3 font-semibold">Checkout branding</h3>
+          <p className="mb-3 text-sm text-slate-500">How your store looks on the hosted checkout and receipts.</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <TextField label="Display name" value={displayName} onChange={setDisplayName} />
+            <label className="text-sm">
+              <div className="mb-1 text-slate-600">Primary color</div>
+              <div className="flex items-center gap-2">
+                <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-9 w-12 rounded border" />
+                <input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="w-28 rounded-lg border border-slate-200 px-2 py-2 text-sm" />
+              </div>
+            </label>
+            <TextField label="Logo URL" value={logoUrl} onChange={setLogoUrl} placeholder="https://…" />
+            <TextField label="Support email" value={supportEmail} onChange={setSupportEmail} />
+            <TextField label="Success redirect URL" value={successUrl} onChange={setSuccessUrl} placeholder="https://…" />
+            <TextField label="Failure redirect URL" value={failureUrl} onChange={setFailureUrl} placeholder="https://…" />
+          </div>
+          <label className="mt-3 block text-sm">
+            <div className="mb-1 text-slate-600">Custom message</div>
+            <textarea value={customMessage} onChange={(e) => setCustomMessage(e.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <div className="mt-3 flex items-center gap-3">
+            <Button onClick={saveBranding}>Save branding</Button>
+            {saved && <span className="text-sm text-emerald-600">{saved}</span>}
+          </div>
+        </Card>
+      )}
+
+      {tab === 'payments' && (
+        <div className="space-y-4">
+          {/* The primary way a merchant gets paid — first. */}
+          <KhqrImportCard storeId={store.id} />
+          <BranchesCard storeId={store.id} />
+          <details className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-card">
+            <summary className="cursor-pointer text-sm font-medium text-slate-600">Advanced: Bakong API token</summary>
+            <p className="mb-3 mt-2 text-sm text-slate-500">
+              Optional. Stored encrypted (AES-256-GCM) and used only if you run the real Bakong provider directly. Most merchants just upload their KHQR above.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex-1 text-sm">
+                <div className="mb-1 text-slate-600">{store.live_mode ? 'Live' : 'Test'} secret / token</div>
+                <input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Bakong API token" className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm" />
+              </label>
+              <Button variant="secondary" onClick={saveCredential} disabled={!secret}>Save credential</Button>
             </div>
-          </label>
-          <TextField label="Logo URL" value={logoUrl} onChange={setLogoUrl} placeholder="https://…" />
-          <TextField label="Support email" value={supportEmail} onChange={setSupportEmail} />
-          <TextField label="Success redirect URL" value={successUrl} onChange={setSuccessUrl} placeholder="https://…" />
-          <TextField label="Failure redirect URL" value={failureUrl} onChange={setFailureUrl} placeholder="https://…" />
+          </details>
         </div>
-        <label className="mt-3 block text-sm">
-          <div className="mb-1 text-slate-600">Custom message</div>
-          <textarea value={customMessage} onChange={(e) => setCustomMessage(e.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-        </label>
-        <div className="mt-3 flex items-center gap-3">
-          <Button onClick={saveBranding}>Save branding</Button>
-          {saved && <span className="text-sm text-emerald-600">{saved}</span>}
+      )}
+
+      {tab === 'loyalty' && (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-brand-900">Manage rewards, redemptions and reporting on the dedicated Loyalty page.</span>
+            <Link href="/loyalty" className="shrink-0 rounded-lg bg-brand-500 px-3 py-1.5 text-center font-medium text-white hover:bg-brand-600">Open Loyalty →</Link>
+          </div>
+          <LoyaltyCard storeId={store.id} />
+          <TiersCard storeId={store.id} />
+          <RewardsCard storeId={store.id} />
+          <ReferralsCard storeId={store.id} />
         </div>
-      </Card>
+      )}
 
-      <Card>
-        <h3 className="mb-1 font-semibold">Bakong provider credentials</h3>
-        <p className="mb-3 text-sm text-slate-500">
-          Stored encrypted (AES-256-GCM). Used by the real Bakong provider in Phase 2. In Phase 1 the mock provider is used regardless.
-        </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex-1 text-sm">
-            <div className="mb-1 text-slate-600">{store.live_mode ? 'Live' : 'Test'} secret / token</div>
-            <input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Bakong API token" className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm" />
-          </label>
-          <Button variant="secondary" onClick={saveCredential} disabled={!secret}>Save credential</Button>
+      {tab === 'notifications' && (
+        <div className="space-y-4">
+          <TelegramDetectionCard storeId={store.id} />
+          <TelegramCard storeId={store.id} />
+          <ChannelsCard storeId={store.id} />
         </div>
-      </Card>
+      )}
 
-      <BranchesCard storeId={store.id} />
-      <KhqrImportCard storeId={store.id} />
-      <TelegramDetectionCard storeId={store.id} />
-      <LoyaltyCard storeId={store.id} />
-      <TiersCard storeId={store.id} />
-      <RewardsCard storeId={store.id} />
-      <ReferralsCard storeId={store.id} />
-      <TelegramCard storeId={store.id} />
-      <ChannelsCard storeId={store.id} />
-
-      <Card>
-        <h3 className="mb-1 font-semibold">Run a test payment</h3>
-        <p className="mb-3 text-sm text-slate-500">Create a test payment with your <code>bk_test_</code> key, then open its checkout URL.</p>
-        <pre className="overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100">{`curl -X POST ${API_BASE}/v1/payments \\
+      {tab === 'developer' && (
+        <Card>
+          <h3 className="mb-1 font-semibold">Run a test payment</h3>
+          <p className="mb-3 text-sm text-slate-500">Create a test payment with your <code>bk_test_</code> key, then open its checkout URL.</p>
+          <pre className="overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100">{`curl -X POST ${API_BASE}/v1/payments \\
   -H "Authorization: Bearer bk_test_..." \\
   -H "Content-Type: application/json" \\
   -d '{"amount":"1.50","currency":"USD","reference_id":"order_1024"}'
@@ -211,7 +259,8 @@ function StoreEditor({ store, onChange }: { store: Store; onChange: () => Promis
 curl -X POST ${API_BASE}/v1/payments/PAY_ID/simulate \\
   -H "Authorization: Bearer bk_test_..." \\
   -d '{"status":"paid"}'`}</pre>
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }
