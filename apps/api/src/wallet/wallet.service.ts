@@ -25,6 +25,11 @@ export class WalletService {
       this.prisma.reward.findMany({ where: { storeId: customer.storeId, active: true }, orderBy: { pointsCost: 'asc' } }),
       this.prisma.redemption.findMany({ where: { customerId }, include: { reward: true }, orderBy: { createdAt: 'desc' }, take: 20 }),
     ]);
+    const giftCards = await this.prisma.giftCard.findMany({
+      where: { customerId, active: true, balance: { gt: 0 } },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
 
     let referral: { code: string; share_url: string; qr_png_data_url: string } | null = null;
     if (customer.referralCode) {
@@ -43,6 +48,7 @@ export class WalletService {
       referrals: referralCount,
       referral,
       scratch_cards: issuedCards.map((c) => ({ play_id: c.id, game: c.game.name, play_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/play/${c.id}` })),
+      gift_cards: giftCards.map((g) => ({ code: g.code, currency: g.currency, balance: g.balance.toString() })),
       // What the points can buy, cheapest first, with whether this customer can
       // afford each right now — so the wallet shows a clear "you can get this".
       rewards: program?.active

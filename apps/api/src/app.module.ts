@@ -26,6 +26,7 @@ import { ConnectorsModule } from './connectors/connectors.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ShopModule } from './shop/shop.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { GiftCardsModule } from './giftcards/giftcards.module';
 import { SecurityModule } from './security/security.module';
 import { EcosystemModule } from './ecosystem/ecosystem.module';
 import { LedgerModule } from './ledger/ledger.module';
@@ -80,6 +81,7 @@ import { RequestIdMiddleware } from './common/request-context';
     WalletModule,
     ShopModule,
     CouponsModule,
+    GiftCardsModule,
     SecurityModule,
     EcosystemModule,
     LedgerModule,

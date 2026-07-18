@@ -19,6 +19,7 @@ interface Wallet {
   scratch_cards: { play_id: string; game: string; play_url: string }[];
   rewards: Reward[];
   redemptions: Redemption[];
+  gift_cards: { code: string; currency: string; balance: string }[];
 }
 
 export default function WalletPage({ params }: { params: { customerId: string } }) {
@@ -68,6 +69,21 @@ export default function WalletPage({ params }: { params: { customerId: string } 
             </div>
 
             {notice && <div style={s.notice}>{notice}</div>}
+
+            {w.gift_cards.length > 0 && (
+              <div style={s.section}>
+                <div style={s.secTitle}>💳 Gift cards</div>
+                {w.gift_cards.map((g) => (
+                  <div key={g.code} style={s.rewardRow}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={s.voucherCode}>{g.code}</div>
+                      <div style={s.rewardDesc}>Store credit</div>
+                    </div>
+                    <span style={{ ...s.vStatus, ...s.vIssued }}>{g.currency === 'KHR' ? `${Math.round(Number(g.balance)).toLocaleString()}៛` : `$${Number(g.balance).toFixed(2)}`}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {w.rewards.length > 0 && (
               <div style={s.section}>

@@ -50,6 +50,12 @@ export class CreatePaymentDto {
   @IsString()
   @MaxLength(40)
   coupon_code?: string;
+
+  /** A gift card / store-credit code — covers part or all of the amount. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  gift_card_code?: string;
 }
 
 export class ListPaymentsDto {

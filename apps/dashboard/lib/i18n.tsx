@@ -33,6 +33,7 @@ const DICT: Record<string, { en: string; km: string }> = {
   'nav.Segments': { en: 'Segments', km: 'ក្រុមអតិថិជន' },
   'nav.Loyalty': { en: 'Loyalty', km: 'ភក្ដីភាព' },
   'nav.Coupons': { en: 'Coupons', km: 'គូប៉ុង' },
+  'nav.Gift Cards': { en: 'Gift Cards', km: 'ប័ណ្ណអំណោយ' },
   'nav.Campaigns': { en: 'Campaigns', km: 'យុទ្ធនាការ' },
   'nav.Games': { en: 'Games', km: 'ហ្គេម' },
   'nav.Marketplace': { en: 'Marketplace', km: 'ផ្សារកម្មវិធី' },

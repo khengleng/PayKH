@@ -16,9 +16,10 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { ReceiptsModule } from '../receipts/receipts.module';
 import { KhqrImportModule } from '../khqr/khqr-import.module';
 import { CouponsModule } from '../coupons/coupons.module';
+import { GiftCardsModule } from '../giftcards/giftcards.module';
 
 @Module({
-  imports: [WebhooksModule, BillingModule, BranchesModule, CustomersModule, LoyaltyModule, ReferralsModule, GamesModule, RiskModule, LedgerModule, ReceiptsModule, KhqrImportModule, CouponsModule],
+  imports: [WebhooksModule, BillingModule, BranchesModule, CustomersModule, LoyaltyModule, ReferralsModule, GamesModule, RiskModule, LedgerModule, ReceiptsModule, KhqrImportModule, CouponsModule, GiftCardsModule],
   controllers: [PaymentsController, CheckoutController],
   providers: [PaymentsService, PaymentEventsService, ApiKeyGuard],
   exports: [PaymentsService],

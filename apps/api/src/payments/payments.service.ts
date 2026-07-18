@@ -30,6 +30,7 @@ import { CustomersService } from '../customers/customers.service';
 import { KhqrImportService } from '../khqr/khqr-import.module';
 import { IdempotencyService } from '../idempotency/idempotency.module';
 import { CouponsService } from '../coupons/coupons.module';
+import { GiftCardsService } from '../giftcards/giftcards.module';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { GamesService } from '../games/games.service';
@@ -68,6 +69,7 @@ export class PaymentsService {
     private readonly khqr: KhqrImportService,
     private readonly idempotency: IdempotencyService,
     private readonly coupons: CouponsService,
+    private readonly giftcards: GiftCardsService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -140,33 +142,48 @@ export class PaymentsService {
       metadata = { ...metadata, coupon: { id: q.coupon_id, code: q.code, discount: q.discount, amount_before: q.amount_before } };
     }
 
+    // Optional gift card / store credit: covers part or all of the (post-coupon)
+    // amount. If it covers everything, there is no QR to scan — the payment is
+    // captured immediately below and the card is debited on the paid transition.
+    let giftCoversFully = false;
+    if (dto.gift_card_code) {
+      const g = await this.giftcards.quote(ctx.storeId, dto.gift_card_code, { amount: chargeAmount, currency: dto.currency });
+      chargeAmount = new Prisma.Decimal(g.remaining);
+      metadata = { ...metadata, gift_card: { id: g.gift_card_id, code: g.code, applied: g.applied } };
+      giftCoversFully = chargeAmount.lte(0);
+    }
+
     const paymentId = ids.payment();
     const now = new Date();
     const expiresAt = new Date(
       now.getTime() + (dto.expires_in_seconds ?? DEFAULT_EXPIRY_SECONDS) * 1000,
     );
 
-    // Generate the KHQR payload via the provider abstraction.
-    let providerResult;
-    try {
-      providerResult = await this.provider.createKhqr({
-        paymentId,
-        storeId: ctx.storeId,
-        mode: ctx.mode,
-        amount: formatAmount(chargeAmount, dto.currency),
-        currency: dto.currency,
-        referenceId: dto.reference_id ?? null,
-        description: dto.description ?? null,
-        merchantName: store.branding?.displayName || store.name,
-        merchantCity: 'Phnom Penh',
-        expiresAt,
-      });
-    } catch (err) {
-      // A provider ApiError (e.g. "no USD account connected") is user-actionable
-      // — surface it as-is rather than masking it behind a generic 502.
-      if (err instanceof ApiError) throw err;
-      this.logger.error(`Provider createKhqr failed for ${paymentId}`, err as Error);
-      throw ApiError.providerError('Failed to generate KHQR');
+    // Generate the KHQR payload via the provider abstraction — but only when
+    // there is something to pay by QR. A payment fully covered by store credit
+    // needs no QR and is captured immediately after creation.
+    let providerResult: Awaited<ReturnType<PaymentProvider['createKhqr']>> | null = null;
+    if (chargeAmount.gt(0)) {
+      try {
+        providerResult = await this.provider.createKhqr({
+          paymentId,
+          storeId: ctx.storeId,
+          mode: ctx.mode,
+          amount: formatAmount(chargeAmount, dto.currency),
+          currency: dto.currency,
+          referenceId: dto.reference_id ?? null,
+          description: dto.description ?? null,
+          merchantName: store.branding?.displayName || store.name,
+          merchantCity: 'Phnom Penh',
+          expiresAt,
+        });
+      } catch (err) {
+        // A provider ApiError (e.g. "no USD account connected") is user-actionable
+        // — surface it as-is rather than masking it behind a generic 502.
+        if (err instanceof ApiError) throw err;
+        this.logger.error(`Provider createKhqr failed for ${paymentId}`, err as Error);
+        throw ApiError.providerError('Failed to generate KHQR');
+      }
     }
 
     // Create the payment and (atomically) reserve the idempotency key in one
@@ -194,7 +211,7 @@ export class PaymentsService {
             referenceId: dto.reference_id ?? null,
             description: dto.description ?? null,
             metadata: metadata as Prisma.InputJsonValue,
-            qrString: providerResult.qrString,
+            qrString: providerResult?.qrString ?? '',
             branchId,
             customerId,
             expiresAt,
@@ -203,15 +220,17 @@ export class PaymentsService {
         await tx.paymentStatusHistory.create({
           data: { paymentId, fromStatus: null, toStatus: 'PENDING', reason: 'created' },
         });
-        await tx.paymentProviderReference.create({
-          data: {
-            paymentId,
-            provider: this.provider.name,
-            md5: providerResult.md5,
-            billNumber: providerResult.billNumber ?? null,
-            rawResponse: (providerResult.raw ?? {}) as Prisma.InputJsonValue,
-          },
-        });
+        if (providerResult) {
+          await tx.paymentProviderReference.create({
+            data: {
+              paymentId,
+              provider: this.provider.name,
+              md5: providerResult.md5,
+              billNumber: providerResult.billNumber ?? null,
+              rawResponse: (providerResult.raw ?? {}) as Prisma.InputJsonValue,
+            },
+          });
+        }
         created = row;
         return { resource: this.serialize(row), status: 201 };
       },
@@ -221,6 +240,12 @@ export class PaymentsService {
     if (!replayed && created) {
       this.logger.log(`payment.created ${paymentId} amount=${resource.amount} ${resource.currency}`);
       await this.webhookEvents.emitCreated(created);
+      // Fully covered by store credit → nothing to scan; capture it now. The
+      // paid transition debits the gift card and runs the usual paid effects.
+      if (giftCoversFully) {
+        const paid = await this.transition(paymentId, 'paid', 'covered by store credit');
+        return { resource: this.serialize(paid), status: 201 };
+      }
     }
     return { resource, status: 201 };
   }
@@ -552,6 +577,7 @@ export class PaymentsService {
       if (to === 'paid') {
         await this.quota.recordPaidForStore(result.storeId);
         await this.coupons.onPaid(result); // count a coupon redemption (idempotent)
+        await this.giftcards.onPaid(result); // debit store credit (idempotent)
         await this.loyalty.awardForPayment(result); // earn loyalty points
         await this.referrals.onPaidPayment(result); // reward pending referral
         await this.referrals.accrueCommission(result); // affiliate commission

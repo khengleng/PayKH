@@ -50,6 +50,7 @@ class ShopCheckoutDto {
   @IsOptional() @IsString() @MaxLength(120) email?: string;
   @IsOptional() @IsString() @MaxLength(80) name?: string;
   @IsOptional() @IsString() @MaxLength(40) coupon_code?: string;
+  @IsOptional() @IsString() @MaxLength(40) gift_card_code?: string;
 }
 
 @Injectable()
@@ -120,6 +121,7 @@ export class ShopService {
       metadata: { source: 'shop', items: lineItems },
       ...(customerId ? { customer_id: customerId } : {}),
       ...(dto.coupon_code ? { coupon_code: dto.coupon_code } : {}),
+      ...(dto.gift_card_code ? { gift_card_code: dto.gift_card_code } : {}),
     };
     const { resource } = await this.payments.create(ctx, body, undefined, JSON.stringify(body));
     return { payment_id: resource.id, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };
