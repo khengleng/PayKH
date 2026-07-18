@@ -98,3 +98,54 @@ export class RateLimitGuard implements CanActivate {
     return req.ip ?? req.socket.remoteAddress ?? 'unknown';
   }
 }
+
+/**
+ * Global per-IP anti-flood backstop, registered as an APP_GUARD so it runs on
+ * EVERY request — including the authenticated dashboard routes that carry no
+ * per-route `@RateLimit`. Its bucket is per-IP across ALL paths (not per-path),
+ * so a broad sweep of many endpoints from one source is caught, not just a
+ * hammer on a single route.
+ *
+ * The ceiling is deliberately generous (a burst limit, not a fair-use quota):
+ * it sits above the busiest legitimate client — the /v1 API's 100/10s per-key —
+ * so real integrations and dashboard users never see it, while a single-source
+ * flood is capped. Per-route limits (login, checkout, …) stay tighter and bite
+ * first. Health/ready/metrics are skipped so a probe can never be throttled into
+ * a restart loop. Fails open on any Redis error, exactly like RateLimitGuard.
+ */
+@Injectable()
+export class GlobalThrottleGuard implements CanActivate {
+  private readonly logger = new Logger('GlobalThrottle');
+  private static readonly LIMIT = 200; // requests
+  private static readonly WINDOW = 10; // seconds  (200/10s = 20 rps per IP)
+  private static readonly SKIP = /^\/(health|ready|metrics)\b/;
+
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: IORedis) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (context.getType() !== 'http') return true;
+    const req = context.switchToHttp().getRequest<Request>();
+    if (GlobalThrottleGuard.SKIP.test(req.path)) return true;
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    const key = `rl:global:${ip}`;
+    try {
+      const [count, ttlRaw] = (await this.redis.eval(
+        FIXED_WINDOW_LUA,
+        1,
+        key,
+        GlobalThrottleGuard.WINDOW,
+      )) as [number, number];
+      if (count > GlobalThrottleGuard.LIMIT) {
+        const res = context.switchToHttp().getResponse<Response>();
+        const ttl = ttlRaw < 0 ? GlobalThrottleGuard.WINDOW : ttlRaw;
+        res.setHeader('Retry-After', Math.max(1, ttl));
+        throw new ApiError('rate_limit_exceeded', 'Too many requests, slow down');
+      }
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      this.logger.warn(`global throttle unavailable, allowing request: ${err}`);
+      return true;
+    }
+  }
+}

@@ -1,5 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { GlobalThrottleGuard } from './ratelimit/rate-limit';
 import { loadConfig } from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
@@ -106,6 +108,10 @@ import { RequestIdMiddleware } from './common/request-context';
     VerificationModule,
     DashboardModule,
     HealthModule,
+  ],
+  providers: [
+    // Global per-IP anti-flood backstop on every route (RedisModule is @Global).
+    { provide: APP_GUARD, useClass: GlobalThrottleGuard },
   ],
 })
 export class AppModule implements NestModule {
