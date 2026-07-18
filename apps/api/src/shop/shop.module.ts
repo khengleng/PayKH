@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Injectable, Module, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsInt, IsOptional, IsString, Max, Min, MaxLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsOptional, IsString, Max, Min, MaxLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
@@ -45,7 +45,7 @@ class ShopItemDto {
   @IsInt() @Min(1) @Max(50) qty!: number;
 }
 class ShopCheckoutDto {
-  @IsArray() @ValidateNested({ each: true }) @Type(() => ShopItemDto) items!: ShopItemDto[];
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => ShopItemDto) items!: ShopItemDto[];
   @IsOptional() @IsString() @MaxLength(30) phone?: string;
   @IsOptional() @IsString() @MaxLength(120) email?: string;
   @IsOptional() @IsString() @MaxLength(80) name?: string;

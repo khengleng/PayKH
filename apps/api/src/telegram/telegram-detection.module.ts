@@ -130,7 +130,10 @@ export class TelegramDetectionService {
     if (!source) return;
 
     const dedupeKey = update.update_id !== undefined ? `tg:${update.update_id}` : `tg:${chat}:${hash(text)}`;
-    const parsed = parseBankAlert(text);
+    // A real bank alert is short; cap the untrusted text before the parser (its
+    // label scan is ~O(n²) in the number of digit groups) so a giant message
+    // can't burn CPU. A verified chat is required to reach here, but defend anyway.
+    const parsed = parseBankAlert(text.slice(0, 2000));
 
     // Match a pending payment: same store, same currency, same amount, recent.
     let paymentId: string | null = null;

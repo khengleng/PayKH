@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateApiKeyDto {
   @IsString()
@@ -15,5 +15,6 @@ export class CreateApiKeyDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
+  @ArrayMaxSize(50)
   scopes?: string[];
 }

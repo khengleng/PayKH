@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUrl } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUrl } from 'class-validator';
 import { ConnectorType, Payment } from '@prisma/client';
 import { WebhookEventType } from '@paykh/shared-types';
 import { prefixedId } from '@paykh/security';
@@ -23,7 +23,7 @@ export class ConnectorDto {
   @IsIn(TYPES) type!: ConnectorType;
   @IsUrl({ require_tld: false }) targetUrl!: string;
   @IsOptional() @IsBoolean() enabled?: boolean;
-  @IsOptional() @IsArray() @IsString({ each: true }) enabledEvents?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(50) @IsString({ each: true }) enabledEvents?: string[];
 }
 
 @Injectable()

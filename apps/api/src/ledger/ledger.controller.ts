@@ -3,10 +3,15 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ReconciliationService } from './reconciliation.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
+import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
+// Reconciliation / trial-balance / drift scan a store's whole ledger history, so
+// on top of the global backstop they get a tight per-IP cap — one tenant can't
+// pin DB CPU by looping these.
 @ApiTags('ledger')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RateLimitGuard)
+@RateLimit({ limit: 20, windowSec: 10, by: 'ip' })
 @Controller('dashboard')
 export class LedgerController {
   constructor(private readonly recon: ReconciliationService) {}

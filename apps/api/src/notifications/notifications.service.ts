@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IsArray, IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 import { NotificationChannelType, Payment } from '@prisma/client';
 import { WebhookEventType } from '@paykh/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,7 +13,7 @@ import { formatAmount } from '../payments/amount.util';
 export class UpdateTelegramDto {
   @IsOptional() @IsString() chatId?: string;
   @IsOptional() @IsBoolean() enabled?: boolean;
-  @IsOptional() @IsArray() @IsString({ each: true }) enabledEvents?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(50) @IsString({ each: true }) enabledEvents?: string[];
 }
 
 const CHANNELS: NotificationChannelType[] = ['WHATSAPP', 'SMS', 'SIGNAL'];

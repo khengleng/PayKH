@@ -61,7 +61,12 @@ export class RateLimitGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<Request>();
     const res = context.switchToHttp().getResponse<Response>();
     const subject = this.subject(req, options.by);
-    const key = `rl:${options.by}:${subject}:${req.path}`;
+    // Key on the ROUTE (controller.handler), not req.path. req.path is the
+    // materialised URL, so `/checkout/pay_A/events` and `/checkout/pay_B/events`
+    // would otherwise get separate buckets — letting an attacker reset the limit
+    // by varying a path param. The handler identity is stable across all values.
+    const route = `${context.getClass().name}.${context.getHandler().name}`;
+    const key = `rl:${options.by}:${subject}:${route}`;
 
     try {
       const [count, ttlRaw] = (await this.redis.eval(

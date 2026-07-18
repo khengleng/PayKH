@@ -1,4 +1,4 @@
-import { IsArray, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class SubmitVerificationDto {
   @IsString()
@@ -35,6 +35,7 @@ export class SubmitVerificationDto {
   /** References to uploaded documents: [{ type, name, url }]. */
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(30)
   documents?: { type: string; name?: string; url?: string }[];
 }
 

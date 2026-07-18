@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayUnique,
   IsArray,
   IsBoolean,
@@ -26,6 +27,7 @@ export class CreateWebhookDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(20)
   @ArrayUnique()
   @IsIn(EVENT_TYPES, { each: true })
   enabledEvents?: string[];
@@ -38,6 +40,7 @@ export class UpdateWebhookDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(20)
   @ArrayUnique()
   @IsIn(EVENT_TYPES, { each: true })
   enabledEvents?: string[];

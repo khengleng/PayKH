@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Req } from '@nestjs/common';
+import { Controller, Get, Inject, Req, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -8,12 +8,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QUEUE_MAINTENANCE, QUEUE_WEBHOOK } from '../queue/queue.constants';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../providers/payment-provider.interface';
 import { ApiError } from '../common/api-error';
+import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
 /**
  * Operational metrics (aggregate, no PII). Suitable for a status board or a
  * lightweight scrape. Prometheus text format can be added later if needed.
  */
 @ApiTags('health')
+@UseGuards(RateLimitGuard)
 @Controller('metrics')
 export class MetricsController {
   constructor(
@@ -31,13 +33,21 @@ export class MetricsController {
    */
   private authorize(req: Request): void {
     const token = this.config.get<string>('metricsToken');
-    if (!token) return;
+    if (!token) {
+      // No token configured: open in dev for convenience, but FAIL CLOSED in
+      // production — these are unauthenticated cross-tenant totals otherwise.
+      if (this.config.get<string>('nodeEnv') === 'production') {
+        throw ApiError.unauthorized('Metrics scrape token required');
+      }
+      return;
+    }
     const header = req.header('authorization') ?? '';
     const provided = /^Bearer\s+(.+)$/i.exec(header)?.[1];
     if (provided !== token) throw ApiError.unauthorized('Metrics scrape token required');
   }
 
   @Get()
+  @RateLimit({ limit: 30, windowSec: 10, by: 'ip' })
   @ApiOperation({ summary: 'Aggregate operational metrics (requires METRICS_TOKEN)' })
   async metrics(@Req() req: Request) {
     this.authorize(req);

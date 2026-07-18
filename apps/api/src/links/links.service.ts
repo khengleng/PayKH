@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { IsArray, IsBoolean, IsEmail, IsIn, IsNumberString, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsEmail, IsIn, IsNumberString, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Currency, PaymentLink, PaymentLinkType, Prisma } from '@prisma/client';
 import { prefixedId } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,7 +19,7 @@ export class CreateLinkDto {
   @IsOptional() @IsString() customerName?: string;
   @IsOptional() @IsEmail() customerEmail?: string;
   @IsOptional() @IsString() dueAt?: string;
-  @IsOptional() @IsArray() lineItems?: { name: string; qty: number; price: number }[];
+  @IsOptional() @IsArray() @ArrayMaxSize(100) lineItems?: { name: string; qty: number; price: number }[];
 }
 
 export class PayLinkDto {
