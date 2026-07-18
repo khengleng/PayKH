@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle, StatusBadge } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -28,9 +28,16 @@ function WebhooksContent({ storeId }: { storeId: string }) {
   const [openDeliveries, setOpenDeliveries] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState('');
+  const [deadCount, setDeadCount] = useState(0);
+  const [replaying, setReplaying] = useState(false);
 
   const load = useCallback(async () => {
-    setEndpoints(await api<WebhookEndpoint[]>(`/webhook-endpoints?store_id=${storeId}`));
+    const [eps, dead] = await Promise.all([
+      api<WebhookEndpoint[]>(`/webhook-endpoints?store_id=${storeId}`),
+      api<{ count: number }>(`/webhook-endpoints/dead-lettered/count?store_id=${storeId}`),
+    ]);
+    setEndpoints(eps);
+    setDeadCount(dead.count);
   }, [storeId]);
 
   useEffect(() => {
@@ -82,6 +89,23 @@ function WebhooksContent({ storeId }: { storeId: string }) {
     await api(`/webhook-endpoints/${id}/test`, { method: 'POST' });
     flashMsg('Test event queued');
   };
+  const replayDeadLettered = async () => {
+    setReplaying(true);
+    try {
+      const r = await api<{ replayed: number; remaining: number }>(
+        `/webhook-endpoints/replay-dead-lettered?store_id=${storeId}`,
+        { method: 'POST' },
+      );
+      flashMsg(
+        r.remaining > 0
+          ? `Re-queued ${r.replayed} — ${r.remaining} still pending, click again to continue`
+          : `Re-queued ${r.replayed} dead-lettered ${r.replayed === 1 ? 'delivery' : 'deliveries'}`,
+      );
+      await load();
+    } finally {
+      setReplaying(false);
+    }
+  };
 
   return (
     <>
@@ -113,6 +137,19 @@ function WebhooksContent({ storeId }: { storeId: string }) {
           </span>
         </div>
       </Card>
+
+      {deadCount > 0 && (
+        <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-amber-200 bg-amber-50">
+          <div className="text-sm text-amber-900">
+            <span className="font-medium">{deadCount}</span> dead-lettered{' '}
+            {deadCount === 1 ? 'delivery' : 'deliveries'} exhausted every retry. Once the receiver is
+            live, replay to flush the backlog.
+          </div>
+          <Button onClick={replayDeadLettered} disabled={replaying}>
+            {replaying ? 'Replaying…' : 'Replay all dead-lettered'}
+          </Button>
+        </Card>
+      )}
 
       {revealed && (
         <Card className="mb-4 border border-emerald-200 bg-emerald-50">
@@ -159,6 +196,7 @@ function WebhooksContent({ storeId }: { storeId: string }) {
 
 function Deliveries({ endpointId, onResent }: { endpointId: string; onResent: () => void }) {
   const [rows, setRows] = useState<WebhookDelivery[] | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const load = useCallback(async () => {
     setRows(await api<WebhookDelivery[]>(`/webhook-endpoints/${endpointId}/deliveries`));
   }, [endpointId]);
@@ -183,19 +221,75 @@ function Deliveries({ endpointId, onResent }: { endpointId: string; onResent: ()
             <tr><th className="py-1">Event</th><th>Status</th><th>Attempt</th><th>HTTP</th><th>When</th><th></th></tr>
           </thead>
           <tbody>
-            {rows.map((d) => (
-              <tr key={d.id} className="border-t border-slate-50">
-                <td className="py-1">{d.event_type ?? '—'}</td>
-                <td><StatusBadge status={d.status === 'succeeded' ? 'paid' : d.status === 'failed' ? 'failed' : 'pending'} /></td>
-                <td>{d.attempt}</td>
-                <td>{d.response_status ?? (d.error ? 'err' : '—')}</td>
-                <td className="text-slate-400">{new Date(d.created_at).toLocaleTimeString()}</td>
-                <td className="text-right"><button onClick={() => resend(d.id)} className="text-brand-600 hover:underline">Resend</button></td>
-              </tr>
-            ))}
+            {rows.map((d) => {
+              const isOpen = expanded === d.id;
+              return (
+                <Fragment key={d.id}>
+                  <tr className="border-t border-slate-50">
+                    <td className="py-1">
+                      <button
+                        onClick={() => setExpanded(isOpen ? null : d.id)}
+                        className="flex items-center gap-1 text-left hover:text-brand-600"
+                        title="Show delivery detail"
+                      >
+                        <span className="text-slate-400">{isOpen ? '▾' : '▸'}</span>
+                        {d.event_type ?? '—'}
+                      </button>
+                    </td>
+                    <td><StatusBadge status={d.status === 'succeeded' ? 'paid' : d.status === 'failed' ? 'failed' : 'pending'} /></td>
+                    <td>{d.attempt}</td>
+                    <td>{d.response_status ?? (d.error ? 'err' : '—')}</td>
+                    <td className="text-slate-400">{new Date(d.created_at).toLocaleTimeString()}</td>
+                    <td className="text-right"><button onClick={() => resend(d.id)} className="text-brand-600 hover:underline">Resend</button></td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="bg-slate-50">
+                      <td colSpan={6} className="px-3 py-2">
+                        <DeliveryDetail d={d} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}
     </div>
+  );
+}
+
+function DeliveryDetail({ d }: { d: WebhookDelivery }) {
+  return (
+    <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1 text-xs text-slate-600">
+      <dt className="text-slate-400">Event ID</dt>
+      <dd className="font-mono break-all">{d.event_id}</dd>
+      <dt className="text-slate-400">Delivery ID</dt>
+      <dd className="font-mono break-all">{d.id}</dd>
+      {d.next_attempt_at && (
+        <>
+          <dt className="text-slate-400">Next retry</dt>
+          <dd>{new Date(d.next_attempt_at).toLocaleString()}</dd>
+        </>
+      )}
+      {d.error && (
+        <>
+          <dt className="text-slate-400">Error</dt>
+          <dd className="text-red-600">{d.error}</dd>
+        </>
+      )}
+      <dt className="text-slate-400">Last response</dt>
+      <dd>
+        {d.response_body ? (
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-white p-2 font-mono text-[11px] text-slate-700">
+            {d.response_body}
+          </pre>
+        ) : (
+          <span className="text-slate-400">
+            {d.response_status != null ? '(empty response body)' : 'no response received'}
+          </span>
+        )}
+      </dd>
+    </dl>
   );
 }

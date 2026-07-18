@@ -129,4 +129,33 @@ export class WebhooksController {
   resend(@CurrentUser() user: AuthUser, @Param('deliveryId') deliveryId: string) {
     return this.webhooks.resend(user, deliveryId);
   }
+
+  @Get('dead-lettered/count')
+  @ApiOperation({ summary: 'Count dead-lettered (failed) deliveries for a store' })
+  deadLetteredCount(@CurrentUser() user: AuthUser, @Query('store_id') storeId: string) {
+    if (!storeId) throw ApiError.invalidRequest('store_id query parameter is required');
+    return this.webhooks.deadLetteredCount(user, storeId);
+  }
+
+  @Post('replay-dead-lettered')
+  @ApiOperation({ summary: 'Re-enqueue every dead-lettered delivery for a store' })
+  async replayDeadLettered(
+    @CurrentUser() user: AuthUser,
+    @Query('store_id') storeId: string,
+    @Req() req: Request,
+  ) {
+    if (!storeId) throw ApiError.invalidRequest('store_id query parameter is required');
+    const result = await this.webhooks.replayDeadLettered(user, storeId);
+    await this.audit.record({
+      storeId,
+      actorUserId: user.userId,
+      action: 'webhook.replay_dead_lettered',
+      entity: `store:${storeId}`,
+      afterValue: { replayed: result.replayed, remaining: result.remaining },
+      ipAddress: req.ip,
+      userAgent: req.header('user-agent'),
+      requestId: getRequestId(req),
+    });
+    return result;
+  }
 }

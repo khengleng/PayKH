@@ -154,6 +154,58 @@ export class WebhooksService {
     return { id: deliveryId, resent: true };
   }
 
+  /** How many dead-lettered (permanently FAILED) deliveries a store has. */
+  async deadLetteredCount(user: AuthUser, storeId: string) {
+    const orgId = await this.storeOrgId(storeId);
+    requirePermission(user, orgId, 'webhook:write');
+    const count = await this.prisma.webhookDelivery.count({
+      where: { status: 'FAILED', endpoint: { storeId } },
+    });
+    return { store_id: storeId, count };
+  }
+
+  /**
+   * Re-enqueue every dead-lettered (FAILED) delivery for a store in one shot —
+   * the "flush the backlog" action once a receiver is finally live. Re-enables
+   * any endpoint that got auto-disabled by the failure burst, resets each row to
+   * PENDING, and enqueues a fresh delivery job. Bounded per call; the caller can
+   * repeat while `remaining > 0`.
+   */
+  async replayDeadLettered(user: AuthUser, storeId: string) {
+    const orgId = await this.storeOrgId(storeId);
+    requirePermission(user, orgId, 'webhook:write');
+
+    const BATCH = 1000;
+    const failed = await this.prisma.webhookDelivery.findMany({
+      where: { status: 'FAILED', endpoint: { storeId } },
+      select: { id: true, endpointId: true },
+      orderBy: { createdAt: 'asc' },
+      take: BATCH,
+    });
+    if (failed.length === 0) return { store_id: storeId, replayed: 0, remaining: 0 };
+
+    const endpointIds = [...new Set(failed.map((d) => d.endpointId))];
+    const deliveryIds = failed.map((d) => d.id);
+    await this.prisma.$transaction([
+      // Un-disable endpoints shut off by the failures — else the processor just
+      // re-fails every replayed delivery against a disabled endpoint.
+      this.prisma.webhookEndpoint.updateMany({
+        where: { id: { in: endpointIds }, disabled: true },
+        data: { disabled: false },
+      }),
+      this.prisma.webhookDelivery.updateMany({
+        where: { id: { in: deliveryIds } },
+        data: { status: 'PENDING', error: null, nextAttemptAt: null },
+      }),
+    ]);
+    for (const id of deliveryIds) await this.events.enqueue(id);
+
+    const remaining = await this.prisma.webhookDelivery.count({
+      where: { status: 'FAILED', endpoint: { storeId } },
+    });
+    return { store_id: storeId, replayed: failed.length, remaining };
+  }
+
   /** Send a synthetic test event to an endpoint. */
   async sendTest(user: AuthUser, endpointId: string) {
     const endpoint = await this.loadEndpointForUser(user, endpointId);
@@ -209,6 +261,7 @@ export class WebhooksService {
       status: d.status.toLowerCase(),
       attempt: d.attempt,
       response_status: d.responseStatus,
+      response_body: d.responseBody ?? null,
       error: d.error,
       next_attempt_at: d.nextAttemptAt?.toISOString() ?? null,
       created_at: d.createdAt.toISOString(),

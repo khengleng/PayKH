@@ -66,6 +66,7 @@ export interface WebhookDelivery {
   status: string;
   attempt: number;
   response_status: number | null;
+  response_body: string | null;
   error: string | null;
   next_attempt_at: string | null;
   created_at: string;
