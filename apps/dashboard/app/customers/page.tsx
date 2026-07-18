@@ -5,7 +5,7 @@ import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle, Stat, StatusBadge } from '@/components/ui';
 import { api, API_BASE, tokenStore } from '@/lib/api';
 
-interface Customer { id: string; name: string | null; email: string | null; phone: string | null; external_id: string | null; created_at: string }
+interface Customer { id: string; name: string | null; email: string | null; phone: string | null; external_id: string | null; created_at: string; points_balance: number; lifetime_points: number }
 
 export default function CustomersPage() {
   return (
@@ -38,7 +38,7 @@ function Content({ storeId }: { storeId: string }) {
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-100 text-left text-slate-500">
-            <tr><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">External ID</th><th className="px-4 py-3">Since</th></tr>
+            <tr><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3 text-right">Points</th><th className="px-4 py-3">Since</th></tr>
           </thead>
           <tbody>
             {items.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">No customers yet. Create them via the API (POST /v1/customers) or attach a customer_id to a payment.</td></tr>}
@@ -47,7 +47,7 @@ function Content({ storeId }: { storeId: string }) {
                 <td className="px-4 py-3">{c.name ?? <span className="text-slate-400">—</span>}<div className="font-mono text-[10px] text-slate-400">{c.id}</div></td>
                 <td className="px-4 py-3 text-slate-600">{c.email ?? '—'}</td>
                 <td className="px-4 py-3 text-slate-500">{c.phone ?? '—'}</td>
-                <td className="px-4 py-3 text-slate-500">{c.external_id ?? '—'}</td>
+                <td className="px-4 py-3 text-right tabular-nums font-medium text-slate-700">{c.points_balance.toLocaleString()}<div className="text-[10px] font-normal text-slate-400">{c.lifetime_points.toLocaleString()} lifetime</div></td>
                 <td className="px-4 py-3 text-slate-400">{new Date(c.created_at).toLocaleDateString()}</td>
               </tr>
             ))}
@@ -115,6 +115,11 @@ function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
               <Stat label="Paid payments" value={data.metrics.paid_count} />
               <Stat label="Paid volume" value={`$${data.metrics.paid_volume}`} />
             </div>
+            <PointsManager
+              customerId={id}
+              balance={data.points_balance ?? 0}
+              onBalance={(bal) => setData((prev: any) => ({ ...prev, points_balance: bal }))}
+            />
             <div>
               <div className="mb-2 font-medium text-slate-700">Recent payments</div>
               <ul className="divide-y divide-slate-100">
@@ -162,6 +167,92 @@ function Customer360({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+interface PointsTxn { id: string; type: string; points: number; payment_id: string | null; reason: string | null; created_at: string }
+
+/**
+ * Manual points control + ledger for one customer. A merchant can grant or
+ * deduct points (goodwill, a correction, an in-store reward) and see every
+ * movement — the adjust and ledger endpoints existed but had no UI.
+ */
+function PointsManager({ customerId, balance, onBalance }: { customerId: string; balance: number; onBalance: (bal: number) => void }) {
+  const [txns, setTxns] = useState<PointsTxn[]>([]);
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const loadLedger = useCallback(async () => {
+    const r = await api<{ balance: number; transactions: PointsTxn[] }>(`/dashboard/customers/${customerId}/loyalty`);
+    setTxns(r.transactions);
+    onBalance(r.balance);
+  }, [customerId, onBalance]);
+  useEffect(() => { loadLedger(); }, [loadLedger]);
+
+  const adjust = async (sign: 1 | -1) => {
+    const n = Number(amount);
+    if (!n || n <= 0) return;
+    setBusy(true); setErr('');
+    try {
+      const r = await api<{ balance: number }>(`/dashboard/customers/${customerId}/loyalty/adjust`, {
+        method: 'POST',
+        body: { points: sign * n, reason: reason.trim() || undefined },
+      });
+      onBalance(r.balance);
+      setAmount(''); setReason('');
+      await loadLedger();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-medium text-slate-700">Loyalty points</span>
+        <span className="tabular-nums text-lg font-semibold text-slate-800">{balance.toLocaleString()}</span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={amount}
+          onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
+          inputMode="numeric"
+          placeholder="Points"
+          className="w-24 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm"
+        />
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Reason (optional)"
+          className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm"
+        />
+        <Button size="sm" onClick={() => adjust(1)} disabled={busy || !amount}>Grant</Button>
+        <Button size="sm" variant="danger" onClick={() => adjust(-1)} disabled={busy || !amount}>Deduct</Button>
+      </div>
+      {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
+
+      <button onClick={() => setOpen((o) => !o)} className="mt-2 text-xs text-slate-500 hover:text-slate-700">
+        {open ? 'Hide' : 'Show'} points history ({txns.length})
+      </button>
+      {open && (
+        <ul className="mt-2 max-h-56 divide-y divide-slate-100 overflow-y-auto">
+          {txns.length === 0 && <li className="py-2 text-xs text-slate-400">No points activity yet.</li>}
+          {txns.map((t) => (
+            <li key={t.id} className="flex items-center justify-between py-1.5 text-xs">
+              <div>
+                <span className="font-medium capitalize text-slate-700">{t.type}</span>
+                {t.reason && <span className="text-slate-400"> · {t.reason}</span>}
+                <div className="text-[10px] text-slate-400">{new Date(t.created_at).toLocaleString()}</div>
+              </div>
+              <span className={`tabular-nums font-medium ${t.points >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{t.points >= 0 ? '+' : ''}{t.points.toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
