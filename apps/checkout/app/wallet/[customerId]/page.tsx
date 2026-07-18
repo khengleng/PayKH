@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 
+interface Reward { id: string; name: string; description: string | null; points_cost: number; in_stock: boolean; affordable: boolean }
+interface Redemption { id: string; reward_name: string | null; points_spent: number; code: string; status: string; created_at: string }
+
 interface Wallet {
   name: string | null;
   store_name: string;
@@ -14,17 +17,36 @@ interface Wallet {
   referrals: number;
   referral: { code: string; share_url: string; qr_png_data_url: string } | null;
   scratch_cards: { play_id: string; game: string; play_url: string }[];
+  rewards: Reward[];
+  redemptions: Redemption[];
 }
 
 export default function WalletPage({ params }: { params: { customerId: string } }) {
   const [w, setW] = useState<Wallet | null>(null);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState('');
   const load = useCallback(async () => {
     const r = await fetch(`${API_BASE}/wallet/${params.customerId}`, { cache: 'no-store' });
     if (!r.ok) { setError('Wallet not found.'); return; }
     setW(await r.json());
   }, [params.customerId]);
   useEffect(() => { load(); }, [load]);
+
+  const redeem = async (reward: Reward) => {
+    if (!confirm(`Redeem ${reward.points_cost.toLocaleString()} points for "${reward.name}"?`)) return;
+    setBusy(reward.id); setNotice('');
+    try {
+      const r = await fetch(`${API_BASE}/wallet/${params.customerId}/redeem`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reward_id: reward.id }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setNotice(data.message || 'Could not redeem'); return; }
+      setNotice(`Redeemed! Show code ${data.code} to the merchant.`);
+      await load();
+    } catch { setNotice('Could not redeem — try again.'); }
+    finally { setBusy(null); }
+  };
 
   return (
     <main style={s.wrap}>
@@ -44,6 +66,47 @@ export default function WalletPage({ params }: { params: { customerId: string } 
               <div style={s.bignum}>{w.points_balance.toLocaleString()}</div>
               <div style={s.pointsLabel}>points · {w.lifetime_points.toLocaleString()} lifetime</div>
             </div>
+
+            {notice && <div style={s.notice}>{notice}</div>}
+
+            {w.rewards.length > 0 && (
+              <div style={s.section}>
+                <div style={s.secTitle}>🎁 Rewards</div>
+                {w.rewards.map((r) => (
+                  <div key={r.id} style={s.rewardRow}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={s.rewardName}>{r.name}</div>
+                      {r.description && <div style={s.rewardDesc}>{r.description}</div>}
+                      <div style={s.rewardCost}>{r.points_cost.toLocaleString()} pts</div>
+                    </div>
+                    <button
+                      onClick={() => redeem(r)}
+                      disabled={!r.affordable || !r.in_stock || busy === r.id}
+                      style={{ ...s.redeemBtn, ...((!r.affordable || !r.in_stock) ? s.redeemBtnOff : {}) }}
+                    >
+                      {busy === r.id ? '…' : !r.in_stock ? 'Out of stock' : !r.affordable ? 'Not enough' : 'Redeem'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {w.redemptions.length > 0 && (
+              <div style={s.section}>
+                <div style={s.secTitle}>🎫 Your vouchers</div>
+                {w.redemptions.map((v) => (
+                  <div key={v.id} style={s.voucherRow}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={s.rewardName}>{v.reward_name ?? 'Reward'}</div>
+                      <div style={s.voucherCode}>{v.code}</div>
+                    </div>
+                    <span style={{ ...s.vStatus, ...(v.status === 'issued' ? s.vIssued : v.status === 'fulfilled' ? s.vFulfilled : s.vDead) }}>
+                      {v.status === 'issued' ? 'Ready' : v.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {w.scratch_cards.length > 0 && (
               <div style={s.section}>
@@ -82,6 +145,19 @@ const s: Record<string, React.CSSProperties> = {
   pointsLabel: { fontSize: 13, color: '#64748b' },
   section: { borderTop: '1px solid #f1f5f9', paddingTop: 16, marginBottom: 8 },
   secTitle: { fontSize: 14, fontWeight: 600, marginBottom: 8 },
+  notice: { background: '#ecfdf5', color: '#047857', borderRadius: 10, padding: '10px 12px', fontSize: 13, marginBottom: 12, textAlign: 'center' },
+  rewardRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', background: '#f8fafc', borderRadius: 10, marginBottom: 6 },
+  rewardName: { fontSize: 14, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  rewardDesc: { fontSize: 12, color: '#64748b' },
+  rewardCost: { fontSize: 12, fontWeight: 600, color: '#1e5bd6', marginTop: 2 },
+  redeemBtn: { flexShrink: 0, border: 'none', background: '#1e5bd6', color: '#fff', fontWeight: 600, fontSize: 13, padding: '8px 14px', borderRadius: 9, cursor: 'pointer' },
+  redeemBtnOff: { background: '#e2e8f0', color: '#94a3b8', cursor: 'not-allowed' },
+  voucherRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', border: '1px dashed #cbd5e1', borderRadius: 10, marginBottom: 6 },
+  voucherCode: { fontFamily: 'monospace', fontSize: 13, color: '#334155', letterSpacing: 1 },
+  vStatus: { flexShrink: 0, fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 999 },
+  vIssued: { background: '#dcfce7', color: '#15803d' },
+  vFulfilled: { background: '#e2e8f0', color: '#475569' },
+  vDead: { background: '#fee2e2', color: '#b91c1c' },
   cardLink: { display: 'block', padding: '10px 14px', background: '#f8fafc', borderRadius: 10, marginBottom: 6, color: '#1e5bd6', textDecoration: 'none', fontSize: 14 },
   qr: { width: 160, height: 160, display: 'block', margin: '0 auto', borderRadius: 12 },
   code: { textAlign: 'center', fontFamily: 'monospace', color: '#475569', marginTop: 8 },

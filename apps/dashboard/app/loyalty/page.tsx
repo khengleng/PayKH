@@ -382,7 +382,7 @@ function RedemptionsCard({ storeId }: { storeId: string }) {
                   <td className="py-2.5 font-mono text-xs text-slate-600">{r.code}</td>
                   <td className="py-2.5"><StatusBadge status={r.status} /></td>
                   <td className="py-2.5 text-right">
-                    {r.status === 'pending' ? (
+                    {r.status === 'issued' ? (
                       <div className="inline-flex gap-2">
                         <Button size="sm" onClick={() => act(r.id, 'fulfill')}>Fulfil</Button>
                         <Button size="sm" variant="danger" onClick={() => act(r.id, 'cancel')}>Cancel</Button>

@@ -2,24 +2,28 @@ import { Injectable } from '@nestjs/common';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 
 /**
  * Public customer wallet — a customer-facing loyalty pass keyed by the customer
  * id (bearer token, like the payment checkout page). Aggregates points, tier,
- * referral code/QR, and unrevealed scratch cards for the hosted wallet page.
+ * redeemable rewards + the customer's vouchers, referral code/QR, and unrevealed
+ * scratch cards for the hosted wallet page.
  */
 @Injectable()
 export class WalletService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly loyalty: LoyaltyService) {}
 
   async wallet(customerId: string) {
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId }, include: { tier: true, store: true } });
     if (!customer) throw ApiError.paymentNotFound('Wallet not found');
 
-    const [issuedCards, program, referralCount] = await Promise.all([
+    const [issuedCards, program, referralCount, rewardRows, redemptionRows] = await Promise.all([
       this.prisma.gamePlay.findMany({ where: { customerId, status: 'ISSUED' }, include: { game: true }, take: 20 }),
       this.prisma.loyaltyProgram.findUnique({ where: { storeId: customer.storeId } }),
       this.prisma.referral.count({ where: { referrerCustomerId: customerId } }),
+      this.prisma.reward.findMany({ where: { storeId: customer.storeId, active: true }, orderBy: { pointsCost: 'asc' } }),
+      this.prisma.redemption.findMany({ where: { customerId }, include: { reward: true }, orderBy: { createdAt: 'desc' }, take: 20 }),
     ]);
 
     let referral: { code: string; share_url: string; qr_png_data_url: string } | null = null;
@@ -39,6 +43,43 @@ export class WalletService {
       referrals: referralCount,
       referral,
       scratch_cards: issuedCards.map((c) => ({ play_id: c.id, game: c.game.name, play_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/play/${c.id}` })),
+      // What the points can buy, cheapest first, with whether this customer can
+      // afford each right now — so the wallet shows a clear "you can get this".
+      rewards: program?.active
+        ? rewardRows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            points_cost: r.pointsCost,
+            in_stock: r.stock !== 0,
+            affordable: customer.pointsBalance >= r.pointsCost,
+          }))
+        : [],
+      // The customer's vouchers — an ISSUED one is theirs to show the merchant.
+      redemptions: redemptionRows.map((r) => ({
+        id: r.id,
+        reward_name: r.reward?.name ?? null,
+        points_spent: r.pointsSpent,
+        code: r.code,
+        status: r.status.toLowerCase(),
+        created_at: r.createdAt.toISOString(),
+      })),
     };
+  }
+
+  /**
+   * Redeem the customer's own points for a reward, returning a voucher code they
+   * show the merchant. Public + keyed only by the (hard-to-guess) customer id,
+   * like the rest of the wallet: the voucher is non-transferable — it belongs to
+   * this customer at this store — so the worst an id-guesser could do is convert
+   * someone's points to their own voucher, not extract value. Rate-limited at the
+   * controller. The points deduction + stock decrement are atomic in the service.
+   */
+  async redeem(customerId: string, rewardId: string) {
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) throw ApiError.paymentNotFound('Wallet not found');
+    const program = await this.prisma.loyaltyProgram.findUnique({ where: { storeId: customer.storeId } });
+    if (!program?.active) throw ApiError.invalidRequest('This store’s loyalty program is not active');
+    return this.loyalty.redeemReward(customer.storeId, customerId, rewardId);
   }
 }
