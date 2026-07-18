@@ -372,6 +372,13 @@ export class PayChainConsoleService {
     return { loyalty_asset_id: conn.loyaltyAssetId, enabled, webhook, status, assets, transactions: transactions.slice(0, 25), webhooks };
   }
 
+  /** Non-destructive connection diagnostics — see PayChainClient.diagnose. */
+  async diagnose(user: AuthUser, orgId: string) {
+    const conn = await this.integration.resolveForOwner(user, orgId);
+    const checks = await this.client.diagnose(conn);
+    return { loyalty_asset_id: conn.loyaltyAssetId, checks };
+  }
+
   async createAsset(user: AuthUser, orgId: string, dto: CreateAssetConsoleDto) {
     const conn = await this.integration.resolveForOwner(user, orgId);
     const eventId = prefixedId('pcasset');
@@ -449,6 +456,13 @@ export class PayChainConsoleController {
   @ApiOperation({ summary: 'PayChain console overview: status + assets + transactions + webhooks (owner)' })
   overview(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
     return this.console.overview(user, orgId);
+  }
+
+  @Get('diagnose')
+  @RateLimit({ limit: 20, windowSec: 60, by: 'ip' })
+  @ApiOperation({ summary: 'Non-destructive PayChain connection diagnostics (owner)' })
+  diagnose(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
+    return this.console.diagnose(user, orgId);
   }
 
   @Post('assets')

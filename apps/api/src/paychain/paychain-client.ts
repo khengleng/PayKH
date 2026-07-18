@@ -63,6 +63,23 @@ export class PayChainError extends Error {
   }
 }
 
+/** One capability probe from {@link PayChainClient.diagnose}. */
+export interface PayChainCheck {
+  ok: boolean;
+  /** HTTP status when the call reached PayChain; null for transport/local failures. */
+  status: number | null;
+  detail: string;
+}
+
+/** Read-only health of every capability the loyalty rail depends on. */
+export interface PayChainDiagnostics {
+  auth: PayChainCheck;
+  assetRead: PayChainCheck;
+  loyaltyAsset: PayChainCheck;
+  ready: PayChainCheck;
+  blockchain: PayChainCheck;
+}
+
 const REQUEST_TIMEOUT_MS = 12_000;
 const TOKEN_SKEW_MS = 60_000; // refresh a minute before expiry
 
@@ -176,6 +193,56 @@ export class PayChainClient {
       token ? this.get<unknown>(conn.baseUrl, '/health/blockchain', token).catch(() => null) : Promise.resolve(null),
     ]);
     return { health: await this.health(conn.baseUrl), ready, blockchain };
+  }
+
+  /**
+   * Non-destructive connection diagnostics. Runs one read-only probe per
+   * capability the loyalty rail depends on, reporting the real HTTP status so an
+   * owner (or the PayChain operator) can see exactly what's missing — a swallowed
+   * empty list hides whether it's "no asset" or "no asset.read scope". No writes,
+   * so it's safe to run anytime and to rate-limit loosely.
+   */
+  async diagnose(conn: PayChainConnection): Promise<PayChainDiagnostics> {
+    const auth = await this.check(async () => {
+      await this.token(conn);
+      return 'Authenticated (client credentials accepted)';
+    });
+    if (!auth.ok) {
+      const skip = (): PayChainCheck => ({ ok: false, status: null, detail: 'Skipped — authentication failed' });
+      return { auth, assetRead: skip(), loyaltyAsset: skip(), ready: skip(), blockchain: skip() };
+    }
+    const token = await this.token(conn);
+    const [assetRead, loyaltyAsset, ready, blockchain] = await Promise.all([
+      this.check(async () => {
+        const a = await this.get<PayChainAsset[]>(conn.baseUrl, '/assets', token);
+        const n = Array.isArray(a) ? a.length : 0;
+        return `asset.read granted — ${n} asset${n === 1 ? '' : 's'} owned by this client`;
+      }),
+      conn.loyaltyAssetId
+        ? this.check(async () => {
+            const a = await this.get<PayChainAsset>(conn.baseUrl, `/assets/${encodeURIComponent(conn.loyaltyAssetId)}`, token);
+            return `Resolves to ${a.assetCode} · ${a.status}${a.status === 'ACTIVE' ? '' : ' (must be ACTIVE to earn)'}`;
+          })
+        : Promise.resolve<PayChainCheck>({ ok: false, status: null, detail: 'No loyalty asset id set' }),
+      this.check(async () => {
+        await this.get<unknown>(conn.baseUrl, '/health/ready', token);
+        return 'Ready';
+      }),
+      this.check(async () => {
+        await this.get<unknown>(conn.baseUrl, '/health/blockchain', token);
+        return 'Blockchain reachable';
+      }),
+    ]);
+    return { auth, assetRead, loyaltyAsset, ready, blockchain };
+  }
+
+  private async check(fn: () => Promise<string>): Promise<PayChainCheck> {
+    try {
+      return { ok: true, status: 200, detail: await fn() };
+    } catch (e) {
+      if (e instanceof PayChainError) return { ok: false, status: e.status, detail: e.detail || e.message };
+      return { ok: false, status: null, detail: (e as Error).message };
+    }
   }
 
   // --------------------------------------------------------------- assets

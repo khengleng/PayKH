@@ -19,6 +19,32 @@ interface Overview {
   webhooks: Webhook[];
 }
 
+interface Check { ok: boolean; status: number | null; detail: string }
+interface Diagnostics {
+  loyalty_asset_id: string;
+  checks: { auth: Check; assetRead: Check; loyaltyAsset: Check; ready: Check; blockchain: Check };
+}
+
+// Turns a failed probe into a plain-language next step. The loyalty rail needs
+// asset.issue to mint, but that scope can't be tested read-only — so the guidance
+// points at the operator when the readable capabilities look starved.
+const CHECK_META: Record<keyof Diagnostics['checks'], { label: string; hint: (c: Check) => string }> = {
+  auth: { label: 'Authentication', hint: () => 'Check your Client ID / Client secret in Settings → PayChain.' },
+  assetRead: {
+    label: 'Read assets (asset.read)',
+    hint: (c) => (c.status === 403 ? 'Ask your PayChain operator to grant the asset.read scope.' : 'PayChain did not return your assets.'),
+  },
+  loyaltyAsset: {
+    label: 'Loyalty asset resolves',
+    hint: (c) =>
+      c.status === 404
+        ? "Your loyalty asset id is not a real PayChain asset ID. It must be the asset's ID — not its code (e.g. “PKHP”). Adopt an asset below, or ask your operator for the asset ID."
+        : 'Set or adopt a loyalty asset below.',
+  },
+  ready: { label: 'Ready', hint: () => 'PayChain reports not-ready — usually transient on testnet.' },
+  blockchain: { label: 'Blockchain', hint: () => 'PayChain blockchain not reachable — usually transient on testnet.' },
+};
+
 export default function PayChainConsolePage() {
   return <Shell>{(ctx) => <Content ctx={ctx} />}</Shell>;
 }
@@ -62,6 +88,15 @@ function Content({ ctx }: { ctx: ShellContext }) {
       setAssetCode(''); setAssetName('');
       await load();
     } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(''); }
+  };
+
+  // --- diagnostics ---
+  const [diag, setDiag] = useState<Diagnostics | null>(null);
+  const runDiagnose = async () => {
+    setBusy('diag'); setErr('');
+    try { setDiag(await api<Diagnostics>(`/dashboard/orgs/${orgId}/paychain/console/diagnose`)); }
+    catch (e) { setErr((e as Error).message); }
     finally { setBusy(''); }
   };
 
@@ -121,6 +156,37 @@ function Content({ ctx }: { ctx: ShellContext }) {
               <span className="flex items-center gap-2"><Dot ok={!!data.status.blockchain} /> Blockchain</span>
               <span className="text-slate-500">Loyalty asset: <span className="font-mono text-slate-700">{data.loyalty_asset_id || 'none — create one below'}</span></span>
             </div>
+          </Card>
+
+          {/* Diagnostics — surfaces what a swallowed empty list hides */}
+          <Card>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Connection diagnostics</h3>
+                <p className="text-sm text-slate-500">Read-only checks of every capability points-on-chain needs. Run this if earning isn’t showing up on PayChain.</p>
+              </div>
+              <Button variant="secondary" onClick={runDiagnose} disabled={busy === 'diag'}>{busy === 'diag' ? 'Checking…' : 'Run diagnostics'}</Button>
+            </div>
+            {diag && (
+              <ul className="divide-y divide-slate-100 text-sm">
+                {(Object.keys(CHECK_META) as (keyof Diagnostics['checks'])[]).map((k) => {
+                  const c = diag.checks[k];
+                  const meta = CHECK_META[k];
+                  return (
+                    <li key={k} className="flex items-start gap-3 py-2">
+                      <span className="mt-1"><Dot ok={c.ok} /></span>
+                      <span className="min-w-0">
+                        <span className="font-medium text-slate-700">{meta.label}</span>
+                        {c.status != null && <span className="ml-2 font-mono text-[11px] text-slate-400">HTTP {c.status}</span>}
+                        <span className="block text-slate-500">{c.detail}</span>
+                        {!c.ok && <span className="block text-amber-600">→ {meta.hint(c)}</span>}
+                      </span>
+                    </li>
+                  );
+                })}
+                <li className="pt-2 text-xs text-slate-400">Note: minting also requires the <span className="font-mono">asset.issue</span> scope, which can’t be tested read-only. If every check above is green but points still don’t mint, ask your PayChain operator to confirm <span className="font-mono">asset.issue</span> is granted for this client.</li>
+              </ul>
+            )}
           </Card>
 
           {/* Assets */}
