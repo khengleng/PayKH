@@ -19,7 +19,13 @@ export const PAYMENT_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
   pending: ['scanned', 'paid', 'expired', 'failed', 'cancelled'],
   scanned: ['paid', 'expired', 'failed', 'cancelled'],
   paid: ['refunded'], // fully refunded
-  expired: [],
+  // A "late payment": the QR's expiry window lapsed, but the money genuinely
+  // arrived and a trusted source says so — a cashier confirming a matched bank
+  // alert (Telegram assist mode), or a provider webhook/poll landing after the
+  // sweep. Reviving to paid is correct; the internal 5-min timer is not the
+  // source of truth for a real-world bank transfer. No other outbound edge:
+  // expired stays terminal for everything except a confirmed receipt.
+  expired: ['paid'],
   failed: [],
   cancelled: [],
   refunded: [],

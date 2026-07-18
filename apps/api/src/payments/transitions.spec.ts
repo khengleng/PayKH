@@ -19,8 +19,17 @@ describe('payment state machine', () => {
     expect(PAYMENT_TRANSITIONS.refunded).toHaveLength(0); // refunded is terminal
   });
 
-  it('rejects transitions out of terminal states', () => {
-    expect(canTransition('expired', 'paid')).toBe(false);
+  it('allows an expired payment to be revived to paid (late real-world receipt)', () => {
+    // The QR's 5-min window can lapse before a cashier confirms a matched bank
+    // alert, or before a provider poll/webhook lands — but the money arrived.
+    expect(canTransition('expired', 'paid')).toBe(true);
+    // ...and nothing else out of expired.
+    expect(canTransition('expired', 'scanned')).toBe(false);
+    expect(canTransition('expired', 'cancelled')).toBe(false);
+    expect(canTransition('expired', 'refunded')).toBe(false);
+  });
+
+  it('rejects reviving cancelled/failed payments', () => {
     expect(canTransition('cancelled', 'paid')).toBe(false);
     expect(canTransition('failed', 'paid')).toBe(false);
   });
