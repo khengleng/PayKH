@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, Query,
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Request } from 'express';
-import { LoyaltyService, AdjustDto, CreateRewardDto, CreateTierDto, RedeemDto, UpdateProgramDto, UpdateRewardDto, UpdateTierDto } from './loyalty.service';
+import { LoyaltyService, AdjustDto, CreateRewardDto, CreateTierDto, UpdateProgramDto, UpdateRewardDto, UpdateTierDto } from './loyalty.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { ApiKeyGuard, getApiKeyContext } from '../auth/api-key.guard';

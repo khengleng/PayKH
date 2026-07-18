@@ -29,5 +29,11 @@
     "prisma:generate": "npm run prisma:generate --workspace @paykh/api",
     "prisma:migrate": "npm run prisma:migrate --workspace @paykh/api",
     "db:seed": "npm run build:packages && npm run db:seed --workspace @paykh/api"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35"
   }
 }

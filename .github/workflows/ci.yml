@@ -9,10 +9,10 @@ permissions:
   contents: read
 
 jobs:
-  # Named "typecheck" because that is what it does. ESLint has never been
-  # installed or configured in this repo, so the previous `eslint` / `next lint`
-  # scripts always failed — real linting is a separate piece of work.
-  typecheck:
+  # Lint (real ESLint for apps, tsc for packages) + typecheck (tsc for apps).
+  # `lint` now runs eslint / next lint; `typecheck` runs tsc, so both the
+  # correctness lint and the type check are enforced.
+  lint-typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -22,8 +22,10 @@ jobs:
       - run: npm ci
       - run: npm run build:packages
       - run: npm run prisma:generate --workspace @paykh/api
-      - name: Typecheck workspaces
+      - name: Lint workspaces
         run: npm run lint --workspaces --if-present
+      - name: Typecheck workspaces
+        run: npm run typecheck --workspaces --if-present
 
   build-test:
     runs-on: ubuntu-latest
