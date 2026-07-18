@@ -13,6 +13,15 @@ interface Overview {
   loyalty_asset_id: string;
   enabled: boolean;
   webhook: { connected: boolean; url: string };
+  readiness: {
+    ready: boolean;
+    checks: {
+      configured: Check;
+      credentials_tested: Check;
+      loyalty_asset: Check;
+      webhook: Check;
+    };
+  };
   status: { health: boolean; ready: boolean; blockchain: unknown };
   assets: Asset[];
   transactions: Txn[];
@@ -142,8 +151,8 @@ function Content({ ctx }: { ctx: ShellContext }) {
                 <button
                   type="button" role="switch" aria-checked={data.enabled}
                   onClick={() => setEnabled(!data.enabled)}
-                  disabled={busy === 'flag' || !data.loyalty_asset_id}
-                  title={!data.loyalty_asset_id ? 'Set a loyalty asset first' : ''}
+                  disabled={busy === 'flag' || (!data.enabled && !data.readiness.ready)}
+                  title={!data.enabled && !data.readiness.ready ? 'Resolve the readiness blockers below first' : ''}
                   className={`relative h-6 w-11 rounded-full transition ${data.enabled ? 'bg-brand-500' : 'bg-slate-200'} disabled:opacity-50`}
                 >
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${data.enabled ? 'left-[22px]' : 'left-0.5'}`} />
@@ -154,8 +163,16 @@ function Content({ ctx }: { ctx: ShellContext }) {
               <span className="flex items-center gap-2"><Dot ok={data.status.health} /> API health</span>
               <span className="flex items-center gap-2"><Dot ok={data.status.ready} /> Ready</span>
               <span className="flex items-center gap-2"><Dot ok={!!data.status.blockchain} /> Blockchain</span>
+              <span className="flex items-center gap-2"><Dot ok={data.readiness.ready} /> PayKH live gate</span>
               <span className="text-slate-500">Loyalty asset: <span className="font-mono text-slate-700">{data.loyalty_asset_id || 'none — create one below'}</span></span>
             </div>
+            {!data.readiness.ready && (
+              <ul className="mt-3 space-y-1 text-sm text-amber-700">
+                {(Object.entries(data.readiness.checks) as [string, Check][]).filter(([, c]) => !c.ok).map(([k, c]) => (
+                  <li key={k}>• {c.detail}</li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           {/* Diagnostics — surfaces what a swallowed empty list hides */}

@@ -14,6 +14,7 @@ import {
 import { encrypt, decrypt, loadEncryptionKey } from './encryption';
 import { prefixedId, ids } from './ids';
 import { generateTotpSecret, totpCode, verifyTotp, verifyTotpCounter, base32Decode, base32Encode } from './totp';
+import { generateEd25519KeyPair, publicKeyPemFromPrivateKey, signEd25519, verifyEd25519 } from './ed25519';
 
 describe('apiKeys', () => {
   it('generates a live key with the correct prefix and a matching hash', () => {
@@ -164,5 +165,25 @@ describe('totp', () => {
     expect(verifyTotpCounter(secret, totpCode(secret, now - 30_000), now)).toBe(step - 1);
     // A wrong code yields null.
     expect(verifyTotpCounter(secret, '000000', now)).toBeNull();
+  });
+});
+
+describe('ed25519 signing', () => {
+  it('signs and verifies a payload', () => {
+    const pair = generateEd25519KeyPair();
+    const payload = JSON.stringify({ scope: 'platform', generated_at: '2026-07-18T14:00:00.000Z' });
+    const sig = signEd25519(pair.privateKeyPem, payload);
+    expect(verifyEd25519(pair.publicKeyPem, payload, sig)).toBe(true);
+  });
+
+  it('derives the same public key from the private key', () => {
+    const pair = generateEd25519KeyPair();
+    expect(publicKeyPemFromPrivateKey(pair.privateKeyPem)).toBe(pair.publicKeyPem);
+  });
+
+  it('rejects a tampered payload', () => {
+    const pair = generateEd25519KeyPair();
+    const sig = signEd25519(pair.privateKeyPem, 'a');
+    expect(verifyEd25519(pair.publicKeyPem, 'b', sig)).toBe(false);
   });
 });

@@ -31,6 +31,21 @@ async function pc<T>(fn: () => Promise<T>): Promise<T> {
 
 const DEFAULT_BASE_URL = 'https://api.paychain.cambobia.com';
 
+interface PayChainReadinessCheck {
+  ok: boolean;
+  detail: string;
+}
+
+interface PayChainReadiness {
+  ready: boolean;
+  checks: {
+    configured: PayChainReadinessCheck;
+    credentials_tested: PayChainReadinessCheck;
+    loyalty_asset: PayChainReadinessCheck;
+    webhook: PayChainReadinessCheck;
+  };
+}
+
 export class UpsertPayChainDto {
   @IsOptional() @IsUrl({ require_tld: false }) @MaxLength(200) base_url?: string;
   @IsString() @MinLength(1) @MaxLength(200) client_id!: string;
@@ -90,12 +105,14 @@ export class PayChainIntegrationService {
   async get(user: AuthUser, orgId: string) {
     this.assertRead(user, orgId);
     const row = await this.prisma.payChainIntegration.findUnique({ where: { organizationId: orgId } });
+    const readiness = await this.readiness(orgId, row);
     if (!row) {
       return {
         configured: false,
         base_url: DEFAULT_BASE_URL,
         enabled: await this.flags.isEnabled('paychain.enabled', orgId),
         shadow_mode: await this.flags.isEnabled('paychain.shadow_mode.enabled', orgId),
+        readiness,
       };
     }
     return {
@@ -110,6 +127,7 @@ export class PayChainIntegrationService {
       last_test_ok: row.lastTestOk,
       last_test_detail: row.lastTestDetail,
       updated_at: row.updatedAt,
+      readiness,
     };
   }
 
@@ -209,9 +227,10 @@ export class PayChainIntegrationService {
   async resolve(orgId: string): Promise<{ baseUrl: string; clientId: string; clientSecret: string; loyaltyAssetId: string } | null> {
     if (!(await this.flags.isEnabled('paychain.enabled', orgId))) return null;
     const conn = await this.connectionRow(orgId);
-    // No asset chosen yet → value ops (earn/issue) have no target, so stay a
-    // no-op until the owner creates one in the console. The sale still succeeds.
-    if (!conn || !conn.loyaltyAssetId) return null;
+    const readiness = await this.readiness(orgId);
+    // Value-moving mirroring only runs once the tenant has passed the local
+    // prerequisites: valid creds, adopted asset, and the confirmation webhook.
+    if (!conn || !readiness.ready) return null;
     return conn;
   }
 
@@ -248,6 +267,34 @@ export class PayChainIntegrationService {
   async webhookStatus(orgId: string): Promise<{ connected: boolean; url: string }> {
     const row = await this.prisma.payChainIntegration.findUnique({ where: { organizationId: orgId } });
     return { connected: !!row?.webhookId, url: `${this.config.get<string>('apiPublicUrl')}/paychain/webhook/${orgId}` };
+  }
+
+  async readiness(orgId: string, row?: {
+    baseUrl?: string | null;
+    clientId?: string | null;
+    loyaltyAssetId?: string | null;
+    lastTestOk?: boolean | null;
+    webhookId?: string | null;
+  } | null): Promise<PayChainReadiness> {
+    const current = row ?? await this.prisma.payChainIntegration.findUnique({
+      where: { organizationId: orgId },
+      select: { baseUrl: true, clientId: true, loyaltyAssetId: true, lastTestOk: true, webhookId: true },
+    });
+    const checks = {
+      configured: current
+        ? { ok: true, detail: `Configured against ${current.baseUrl || DEFAULT_BASE_URL}` }
+        : { ok: false, detail: 'PayChain is not configured for this organization' },
+      credentials_tested: current?.lastTestOk
+        ? { ok: true, detail: 'Stored credentials were successfully verified' }
+        : { ok: false, detail: current ? 'Run Test connection and fix any credential or scope errors' : 'Configure PayChain first' },
+      loyalty_asset: current?.loyaltyAssetId
+        ? { ok: true, detail: `Using loyalty asset ${current.loyaltyAssetId}` }
+        : { ok: false, detail: 'Create or adopt a loyalty asset in the PayChain console' },
+      webhook: current?.webhookId
+        ? { ok: true, detail: 'PayKH confirmation webhook is connected' }
+        : { ok: false, detail: 'Connect the PayKH confirmation webhook before enabling mirroring' },
+    };
+    return { ready: Object.values(checks).every((c) => c.ok), checks };
   }
 
   /** One-click: register PayKH's own receiver with PayChain, store the secret. */
@@ -361,15 +408,16 @@ export class PayChainConsoleService {
   /** One call for the console: connection status + assets + recent txns + webhooks. */
   async overview(user: AuthUser, orgId: string) {
     const conn = await this.integration.resolveForOwner(user, orgId);
-    const [status, assets, transactions, webhooks, enabled, webhook] = await Promise.all([
+    const [status, assets, transactions, webhooks, enabled, webhook, readiness] = await Promise.all([
       this.client.status(conn).catch(() => ({ health: false, ready: false, blockchain: null })),
       this.client.listAssets(conn).catch(() => []),
       this.client.listTransactions(conn).catch(() => []),
       this.client.listWebhooks(conn).catch(() => []),
       this.integration.flagEnabled(orgId),
       this.integration.webhookStatus(orgId),
+      this.integration.readiness(orgId),
     ]);
-    return { loyalty_asset_id: conn.loyaltyAssetId, enabled, webhook, status, assets, transactions: transactions.slice(0, 25), webhooks };
+    return { loyalty_asset_id: conn.loyaltyAssetId, enabled, webhook, readiness, status, assets, transactions: transactions.slice(0, 25), webhooks };
   }
 
   /** Non-destructive connection diagnostics — see PayChainClient.diagnose. */

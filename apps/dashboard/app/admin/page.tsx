@@ -8,7 +8,7 @@ import { LogoMark } from '@/components/Logo';
 
 interface Metrics { organizations: number; suspended: number; stores: number; total_payments: number; paid_count: number; paid_volume: string; success_rate: number }
 
-const TABS = ['Overview', 'Merchants', 'Financials', 'Payouts', 'Ops', 'AI', 'Settings'] as const;
+const TABS = ['Overview', 'Merchants', 'Financials', 'Payouts', 'Ops', 'AI', 'Trustee', 'Settings'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminPage() {
@@ -69,6 +69,7 @@ export default function AdminPage() {
         {tab === 'Payouts' && <PayoutsTab />}
         {tab === 'Ops' && <OpsTab />}
         {tab === 'AI' && <AiTab />}
+        {tab === 'Trustee' && <TrusteeTab />}
         {tab === 'Settings' && <SettingsTab />}
       </main>
     </div>
@@ -430,6 +431,105 @@ function PayoutsTab() {
 
 function SettingsTab() {
   return <><PlansManager /><SystemSettings /><ChangePassword /></>;
+}
+
+function TrusteeTab() {
+  const [status, setStatus] = useState<any>(null);
+  const [artifacts, setArtifacts] = useState<any[]>([]);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState<string>('');
+  const load = useCallback(async () => {
+    setStatus(await api<any>('/admin/trustee/status'));
+    const listed = await api<{ data: any[] }>('/admin/trustee/artifacts?limit=20');
+    setArtifacts(listed.data);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const create = async (type: string) => {
+    setBusy(type);
+    try {
+      const r = await api<any>('/admin/trustee/artifacts', { method: 'POST', body: { type } });
+      setMsg(`${r.type} created`);
+      await navigator.clipboard.writeText(JSON.stringify(r, null, 2)).catch(() => undefined);
+      await load();
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy('');
+      setTimeout(() => setMsg(''), 2500);
+    }
+  };
+
+  const tone = (ok: boolean) => ok ? 'text-emerald-600' : 'text-rose-600';
+
+  return (
+    <>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Trustee readiness</h2>
+          <p className="text-sm text-slate-500">Platform-level trustee configuration, verifier keys, books health, and signed regulator artifacts.</p>
+        </div>
+        <Button variant="secondary" onClick={load}>Refresh</Button>
+      </div>
+      {msg && <p className="mb-3 text-sm text-emerald-600">{msg}</p>}
+      {status && (
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Stat label="Overall" value={status.ready ? 'Ready' : 'Not ready'} icon={status.ready ? '✅' : '⚠️'} accent={status.ready ? 'emerald' : 'red'} />
+            <Stat label="Trustee base URL" value={status.trustee.base_url ? 'Set' : 'Unset'} icon="🏦" accent={status.trustee.base_url ? 'brand' : 'red'} />
+            <Stat label="PayChain orgs" value={status.paychain.organizations_connected} hint={`${status.paychain.webhooks_connected} webhooks`} icon="⛓️" accent="brand" />
+            <Stat label="Books" value={status.ledger.in_balance ? 'Balanced' : 'Breaks'} hint={status.points.ok ? 'points aligned' : 'points drift'} icon="📚" accent={status.ledger.in_balance && status.points.ok ? 'emerald' : 'red'} />
+          </div>
+
+          <Card className="mb-4">
+            <h3 className="mb-2 font-semibold">Readiness gates</h3>
+            <ul className="space-y-1 text-sm">
+              <li className={tone(!!status.trustee.base_url)}>Trustee base URL configured: {status.trustee.base_url ?? 'missing'}</li>
+              <li className={tone(status.trustee.request_signing_configured)}>Trustee request-signing key configured: {status.trustee.request_signing_key_id ?? 'missing'}</li>
+              <li className={tone(status.trustee.artifact_signing_configured)}>Trustee artifact-signing key configured: {status.trustee.artifact_signing_key_id ?? 'missing'}</li>
+              <li className={tone(status.ledger.reconciliation.balanced)}>Ledger reconciliation: {status.ledger.reconciliation.balanced ? 'clean' : 'breaks present'}</li>
+              <li className={tone(status.points.ok)}>Points drift: {status.points.ok ? 'none' : `${status.points.drift_count} drifted customer(s)`}</li>
+            </ul>
+          </Card>
+
+          <Card className="mb-4">
+            <div className="mb-3 flex flex-wrap gap-2">
+              <Button onClick={() => create('TRUSTEE_READINESS')} disabled={!!busy}>{busy === 'TRUSTEE_READINESS' ? 'Creating…' : 'Create readiness packet'}</Button>
+              <Button variant="secondary" onClick={() => create('RESERVE_SNAPSHOT')} disabled={!!busy}>{busy === 'RESERVE_SNAPSHOT' ? 'Creating…' : 'Create reserve snapshot'}</Button>
+              <Button variant="secondary" onClick={() => create('MINT_POLICY')} disabled={!!busy}>{busy === 'MINT_POLICY' ? 'Creating…' : 'Create mint policy'}</Button>
+            </div>
+            <p className="text-xs text-slate-400">Each packet is Ed25519-signed server-side and copied to your clipboard after creation.</p>
+          </Card>
+
+          <Card className="mb-4">
+            <h3 className="mb-2 font-semibold">Verifier keys</h3>
+            <p className="text-sm text-slate-500">Expose these publicly at <span className="font-mono">/.well-known/paykh-trustee-keys</span> for trustee and regulator verification.</p>
+            <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs font-mono text-slate-600">/.well-known/paykh-trustee-keys</div>
+          </Card>
+        </>
+      )}
+
+      <Card className="overflow-x-auto p-0">
+        <div className="border-b border-slate-100 px-4 py-3 font-semibold">Signed artifacts</div>
+        <table className="w-full text-sm">
+          <thead className="border-b border-slate-100 text-left text-slate-500">
+            <tr><th className="px-4 py-3">Type</th><th className="px-4 py-3">Key</th><th className="px-4 py-3">When</th><th className="px-4 py-3">Note</th></tr>
+          </thead>
+          <tbody>
+            {artifacts.map((a) => (
+              <tr key={a.id} className="border-b border-slate-50">
+                <td className="px-4 py-3 font-medium">{a.type}</td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-500">{a.key_id}</td>
+                <td className="px-4 py-3 text-slate-500">{new Date(a.created_at).toLocaleString()}</td>
+                <td className="px-4 py-3 text-slate-500">{a.note ?? '—'}</td>
+              </tr>
+            ))}
+            {artifacts.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">No trustee artifacts yet</td></tr>}
+          </tbody>
+        </table>
+      </Card>
+    </>
+  );
 }
 
 function PlansManager() {

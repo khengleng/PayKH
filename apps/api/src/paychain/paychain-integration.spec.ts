@@ -2,7 +2,7 @@ import { PayChainIntegrationService } from './paychain-integration.module';
 
 type Row = Record<string, unknown> | null;
 
-function make(opts: { role: string; row?: Row } = { role: 'owner' }) {
+function make(opts: { role: string; row?: Row; realSsrf?: boolean } = { role: 'owner' }) {
   const row: Row = opts.row ?? null;
   const store: { current: Row } = { current: row };
   const prisma = {
@@ -34,6 +34,9 @@ function make(opts: { role: string; row?: Row } = { role: 'owner' }) {
     setForOrg: jest.fn().mockResolvedValue({}),
   };
   const svc = new PayChainIntegrationService(prisma as never, crypto as never, config as never, flags as never);
+  if (!opts.realSsrf) {
+    (svc as unknown as { assertSafeBaseUrl: (rawUrl: string) => Promise<void> }).assertSafeBaseUrl = jest.fn().mockResolvedValue(undefined);
+  }
   // The real rbac reads memberships off the JWT payload.
   const user = { userId: 'u1', memberships: [{ organizationId: 'org_1', role: opts.role }] } as never;
   return { svc, user, prisma, crypto, flags, store };
@@ -53,8 +56,8 @@ describe('PayChainIntegrationService access control', () => {
       // Value-moving credentials are owner-only — a platform admin configuring a
       // tenant's own PayChain account would defeat the point of them holding it.
       const { svc, user } = make({ role });
-      await expect(svc.upsert(user, 'org_1', { ...dto })).rejects.toThrow(/owner only/);
-      await expect(svc.get(user, 'org_1')).rejects.toThrow(/owner only/);
+      await expect(svc.upsert(user, 'org_1', { ...dto })).rejects.toThrow(/cannot perform: paychain:write/);
+      await expect(svc.get(user, 'org_1')).rejects.toThrow(/cannot perform: paychain:read/);
     });
   }
 
@@ -128,8 +131,10 @@ describe('PayChainIntegrationService.resolve', () => {
   });
 
   it('returns the decrypted connection once enabled', async () => {
-    const { svc, user, flags } = make({ role: 'owner' });
+    const { svc, user, flags, store } = make({ role: 'owner' });
     await svc.upsert(user, 'org_1', { ...dto });
+    store.current!.lastTestOk = true;
+    store.current!.webhookId = 'wh_1';
     flags.isEnabled.mockResolvedValue(true);
     expect(await svc.resolve('org_1')).toEqual({
       baseUrl: 'https://api.paychain.cambobia.com',
@@ -143,6 +148,34 @@ describe('PayChainIntegrationService.resolve', () => {
     const { svc, flags } = make({ role: 'owner' });
     flags.isEnabled.mockResolvedValue(true);
     expect(await svc.resolve('org_1')).toBeNull();
+  });
+
+  it('returns nothing when enabled but readiness is incomplete', async () => {
+    const { svc, user, flags } = make({ role: 'owner' });
+    await svc.upsert(user, 'org_1', { ...dto });
+    flags.isEnabled.mockResolvedValue(true);
+    expect(await svc.resolve('org_1')).toBeNull();
+  });
+});
+
+describe('PayChainIntegrationService.readiness', () => {
+  it('reports each local blocker until the integration is fully prepared', async () => {
+    const { svc, user, store } = make({ role: 'owner' });
+    await svc.upsert(user, 'org_1', { ...dto });
+    let readiness = await svc.readiness('org_1');
+    expect(readiness.ready).toBe(false);
+    expect(readiness.checks.credentials_tested.ok).toBe(false);
+    expect(readiness.checks.loyalty_asset.ok).toBe(true);
+    expect(readiness.checks.webhook.ok).toBe(false);
+
+    store.current!.lastTestOk = true;
+    readiness = await svc.readiness('org_1');
+    expect(readiness.ready).toBe(false);
+    expect(readiness.checks.credentials_tested.ok).toBe(true);
+
+    store.current!.webhookId = 'wh_1';
+    readiness = await svc.readiness('org_1');
+    expect(readiness.ready).toBe(true);
   });
 });
 
@@ -160,14 +193,14 @@ describe('PayChainIntegrationService.remove', () => {
 describe('PayChainIntegrationService SSRF protection', () => {
   it('rejects a base URL pointing at cloud metadata', async () => {
     // base_url is tenant-supplied and the server POSTs to it on test().
-    const { svc, user } = make({ role: 'owner' });
+    const { svc, user } = make({ role: 'owner', realSsrf: true });
     await expect(
       svc.upsert(user, 'org_1', { ...dto, base_url: 'http://169.254.169.254/latest/meta-data' }),
     ).rejects.toThrow(/rejected/);
   });
 
   it('rejects loopback in production', async () => {
-    const { svc, user } = make({ role: 'owner' });
+    const { svc, user } = make({ role: 'owner', realSsrf: true });
     await expect(svc.upsert(user, 'org_1', { ...dto, base_url: 'http://127.0.0.1:8080' })).rejects.toThrow(/rejected/);
   });
 

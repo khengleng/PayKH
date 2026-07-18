@@ -113,6 +113,7 @@ npm test --workspace @paykh/security
 | [security.md](docs/security.md) | Security model & controls |
 | [deployment.md](docs/deployment.md) | Railway deployment guide |
 | [merchant-onboarding.md](docs/merchant-onboarding.md) | Onboarding flow |
+| [trustee-integration.md](docs/trustee-integration.md) | Trustee readiness, signing keys, and regulator demo flow |
 
 ## License
 

@@ -15,6 +15,15 @@ interface PayChainConfig {
   last_tested_at?: string | null;
   last_test_ok?: boolean | null;
   last_test_detail?: string | null;
+  readiness: {
+    ready: boolean;
+    checks: {
+      configured: { ok: boolean; detail: string };
+      credentials_tested: { ok: boolean; detail: string };
+      loyalty_asset: { ok: boolean; detail: string };
+      webhook: { ok: boolean; detail: string };
+    };
+  };
 }
 
 interface TestResult {
@@ -250,11 +259,21 @@ export function PayChainCard({ orgId, role }: { orgId?: string; role?: string })
 
       {cfg?.configured && (
         <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
+          {!cfg.readiness.ready && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <div className="font-medium">Not ready to go live yet</div>
+              <ul className="mt-1 space-y-1">
+                {(Object.values(cfg.readiness.checks)).filter((c) => !c.ok).map((c) => (
+                  <li key={c.detail}>• {c.detail}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <Toggle
             label="Issue points to PayChain"
             hint="When off, points stay in PayKH's own ledger only."
             checked={cfg.enabled}
-            disabled={!!busy}
+            disabled={!!busy || (!cfg.enabled && !cfg.readiness.ready)}
             onChange={(v) => setFlag('paychain.enabled', v)}
           />
           <Toggle

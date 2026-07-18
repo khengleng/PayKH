@@ -32,6 +32,11 @@ export interface AppConfig {
   alertTelegramChatId?: string;
   alertEmail?: string;
   bakongDisbursementToken?: string;
+  trusteeBaseUrl?: string;
+  trusteeRequestSigningPrivateKey?: string;
+  trusteeRequestSigningKeyId?: string;
+  trusteeArtifactSigningPrivateKey?: string;
+  trusteeArtifactSigningKeyId?: string;
 }
 
 function required(name: string): string {
@@ -76,6 +81,11 @@ export function loadConfig(): AppConfig {
     alertTelegramChatId: process.env.ALERT_TELEGRAM_CHAT_ID,
     alertEmail: process.env.ALERT_EMAIL,
     bakongDisbursementToken: process.env.BAKONG_DISBURSEMENT_TOKEN,
+    trusteeBaseUrl: process.env.TRUSTEE_BASE_URL,
+    trusteeRequestSigningPrivateKey: process.env.TRUSTEE_REQUEST_SIGNING_PRIVATE_KEY,
+    trusteeRequestSigningKeyId: process.env.TRUSTEE_REQUEST_SIGNING_KEY_ID,
+    trusteeArtifactSigningPrivateKey: process.env.TRUSTEE_ARTIFACT_SIGNING_PRIVATE_KEY,
+    trusteeArtifactSigningKeyId: process.env.TRUSTEE_ARTIFACT_SIGNING_KEY_ID,
   };
 }
 

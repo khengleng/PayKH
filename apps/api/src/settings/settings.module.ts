@@ -11,7 +11,27 @@ import { AuthModule } from '../auth/auth.module';
 
 /** Known integration settings — DB value (encrypted) overrides the env fallback. */
 interface Def { key: string; env: keyof AppEnv; label: string; secret: boolean; group: string }
-type AppEnv = { anthropicApiKey: string; aiModel: string; resendApiKey: string; emailFrom: string; telegramBotToken: string; twilioAccountSid: string; twilioAuthToken: string; whatsappFrom: string; smsFrom: string; signalCliUrl: string; signalFrom: string; alertTelegramChatId: string; alertEmail: string; bakongDisbursementToken: string };
+type AppEnv = {
+  anthropicApiKey: string;
+  aiModel: string;
+  resendApiKey: string;
+  emailFrom: string;
+  telegramBotToken: string;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  whatsappFrom: string;
+  smsFrom: string;
+  signalCliUrl: string;
+  signalFrom: string;
+  alertTelegramChatId: string;
+  alertEmail: string;
+  bakongDisbursementToken: string;
+  trusteeBaseUrl: string;
+  trusteeRequestSigningPrivateKey: string;
+  trusteeRequestSigningKeyId: string;
+  trusteeArtifactSigningPrivateKey: string;
+  trusteeArtifactSigningKeyId: string;
+};
 
 const DEFS: Def[] = [
   { key: 'anthropic_api_key', env: 'anthropicApiKey', label: 'Anthropic API key (AI Copilot)', secret: true, group: 'AI' },
@@ -28,6 +48,11 @@ const DEFS: Def[] = [
   { key: 'alert_telegram_chat_id', env: 'alertTelegramChatId', label: 'Ops alert Telegram chat id', secret: false, group: 'Alerts' },
   { key: 'alert_email', env: 'alertEmail', label: 'Ops alert email address', secret: false, group: 'Alerts' },
   { key: 'bakong_disbursement_token', env: 'bakongDisbursementToken', label: 'Bakong disbursement token (automated payouts)', secret: true, group: 'Payouts' },
+  { key: 'trustee_base_url', env: 'trusteeBaseUrl', label: 'Trustee base URL', secret: false, group: 'Trustee' },
+  { key: 'trustee_request_signing_private_key', env: 'trusteeRequestSigningPrivateKey', label: 'Trustee request-signing private key', secret: true, group: 'Trustee' },
+  { key: 'trustee_request_signing_key_id', env: 'trusteeRequestSigningKeyId', label: 'Trustee request-signing key id', secret: false, group: 'Trustee' },
+  { key: 'trustee_artifact_signing_private_key', env: 'trusteeArtifactSigningPrivateKey', label: 'Trustee artifact-signing private key', secret: true, group: 'Trustee' },
+  { key: 'trustee_artifact_signing_key_id', env: 'trusteeArtifactSigningKeyId', label: 'Trustee artifact-signing key id', secret: false, group: 'Trustee' },
 ];
 const DEF_BY_KEY = new Map(DEFS.map((d) => [d.key, d]));
 

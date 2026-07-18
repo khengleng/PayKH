@@ -297,6 +297,12 @@ enum PaymentLinkType {
   INVOICE // addressed to a customer, with line items + due date
 }
 
+enum TrusteeArtifactType {
+  TRUSTEE_READINESS
+  RESERVE_SNAPSHOT
+  MINT_POLICY
+}
+
 // ---------------------------------------------------------------------------
 // Identity & organizations
 // ---------------------------------------------------------------------------
@@ -1101,6 +1107,24 @@ model SystemSetting {
   valueCiphertext String   @db.Text
   updatedAt       DateTime @updatedAt
   updatedByUserId String?
+}
+
+/// A signed regulator/trustee-facing artifact generated from PayKH's own books
+/// and configuration. Append-only: every snapshot is preserved for review.
+model TrusteeArtifact {
+  id              String              @id
+  type            TrusteeArtifactType
+  scope           String // platform | org:... | store:...
+  payload         Json
+  signature       String              @db.Text
+  keyId           String
+  algorithm       String              @default("Ed25519")
+  note            String?
+  createdAt       DateTime            @default(now())
+  createdByUserId String?
+
+  @@index([type, createdAt])
+  @@index([scope, createdAt])
 }
 
 /// A tenant's own connection to PayChain (wallet-as-a-service), configured by
