@@ -481,6 +481,7 @@ model Customer {
   lifetimePoints       Int      @default(0) // cumulative earned; drives tier (never decremented)
   tierId               String?
   referralCode         String? // this customer's own referral code
+  paychainWalletId     String? // this customer's PayChain wallet, once created (loyalty value rail)
   referredByCustomerId String? // who referred this customer
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

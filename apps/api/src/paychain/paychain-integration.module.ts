@@ -11,6 +11,7 @@ import { AuthModule } from '../auth/auth.module';
 import { requireMembership } from '../auth/rbac';
 import { assertSafeUrl } from '../common/ssrf';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.module';
+import { PayChainClient } from './paychain-client';
 
 const DEFAULT_BASE_URL = 'https://api.paychain.cambobia.com';
 
@@ -246,7 +247,7 @@ export class PayChainIntegrationController {
 @Module({
   imports: [AuthModule],
   controllers: [PayChainIntegrationController],
-  providers: [PayChainIntegrationService],
-  exports: [PayChainIntegrationService],
+  providers: [PayChainIntegrationService, PayChainClient],
+  exports: [PayChainIntegrationService, PayChainClient],
 })
 export class PayChainIntegrationModule {}

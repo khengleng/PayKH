@@ -44,7 +44,7 @@ function make(opts: {
     },
   };
   const email = { send: jest.fn().mockResolvedValue(undefined) };
-  const svc = new LoyaltyService(client as never, {} as never, {} as never, {} as never, email as never);
+  const svc = new LoyaltyService(client as never, {} as never, {} as never, {} as never, email as never, { resolve: async () => null } as never, {} as never);
   return { svc, email, notices, client };
 }
 

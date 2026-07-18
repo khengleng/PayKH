@@ -10,6 +10,8 @@ import { CampaignsService } from '../campaigns/campaigns.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../idempotency/idempotency.module';
 import { EmailService } from '../email/email.service';
+import { PayChainIntegrationService } from '../paychain/paychain-integration.module';
+import { PayChainClient } from '../paychain/paychain-client';
 
 export class UpdateProgramDto {
   @IsOptional() @IsBoolean() active?: boolean;
@@ -65,7 +67,39 @@ export class LoyaltyService {
     private readonly ledgerService: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly email: EmailService,
+    private readonly paychain: PayChainIntegrationService,
+    private readonly pcClient: PayChainClient,
   ) {}
+
+  /**
+   * Mirror earned points onto the tenant's PayChain wallet (the digital-value
+   * rail), when the org has connected + enabled PayChain. Shadow mode: PayKH's
+   * ledger stays authoritative and the points are already spendable — this puts
+   * the same value on-chain and records PayChain's transaction id as proof. Best
+   * effort: a PayChain hiccup never rolls back or blocks the local award.
+   */
+  private async mirrorEarnToPayChain(storeId: string, customerId: string, txnId: string, points: number): Promise<void> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { organizationId: true } });
+    if (!store) return;
+    const conn = await this.paychain.resolve(store.organizationId); // null unless enabled + configured
+    if (!conn) return;
+    try {
+      const customer = await this.prisma.customer.findUnique({ where: { id: customerId }, select: { paychainWalletId: true } });
+      let walletId = customer?.paychainWalletId ?? null;
+      if (!walletId) {
+        walletId = await this.pcClient.ensureWallet(conn, customerId, storeId);
+        await this.prisma.customer.update({ where: { id: customerId }, data: { paychainWalletId: walletId } });
+      }
+      const txn = await this.pcClient.issue(conn, walletId, String(points), txnId);
+      await this.prisma.pointsTransaction.update({ where: { id: txnId }, data: { paychainTxId: txn.id, statusDetail: null } });
+      this.logger.log(`paychain: issued ${points} pts to wallet ${walletId} (tx ${txn.id})`);
+    } catch (e) {
+      // Record the failure on the row so the operator's failed-reward queue can
+      // see it; the customer already has the points locally.
+      await this.prisma.pointsTransaction.update({ where: { id: txnId }, data: { statusDetail: `paychain: ${e instanceof Error ? e.message : 'error'}` } }).catch(() => undefined);
+      this.logger.warn(`paychain earn mirror failed for ${txnId}: ${e}`);
+    }
+  }
 
   // ------------------------------------------------------------- program
   async getProgram(user: AuthUser, storeId: string) {
@@ -188,6 +222,9 @@ export class LoyaltyService {
       await this.ledgerService.postPointsMovement('EARN', txnId, payment.storeId, customerId, earned, tx);
     });
     this.logger.log(`awarded ${earned} pts (base ${base} x${multiplier}) to ${payment.customerId}; lifetime ${newLifetime}`);
+
+    // Put the same value on PayChain (the digital-value rail) when connected.
+    await this.mirrorEarnToPayChain(payment.storeId, customerId, txnId, earned);
 
     // Apply any active campaign promotions (bonus points on top of base earn).
     await this.campaigns.applyToPayment(payment, base);

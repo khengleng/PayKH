@@ -20,6 +20,7 @@ interface Wallet {
   rewards: Reward[];
   redemptions: Redemption[];
   gift_cards: { code: string; currency: string; balance: string }[];
+  paychain: { wallet_id: string; asset_code: string | null; balance: string | null; secured: boolean } | null;
 }
 
 export default function WalletPage({ params }: { params: { customerId: string } }) {
@@ -67,6 +68,17 @@ export default function WalletPage({ params }: { params: { customerId: string } 
               <div style={s.bignum}>{w.points_balance.toLocaleString()}</div>
               <div style={s.pointsLabel}>points · {w.lifetime_points.toLocaleString()} lifetime</div>
             </div>
+
+            {w.paychain?.secured && (
+              <div style={s.paychain}>
+                <span style={{ fontWeight: 700 }}>🔗 Secured on PayChain</span>
+                <span style={{ color: '#475569' }}>
+                  {w.paychain.balance != null
+                    ? `${Number(w.paychain.balance).toLocaleString()}${w.paychain.asset_code ? ' ' + w.paychain.asset_code : ''} on-chain`
+                    : 'wallet linked'}
+                </span>
+              </div>
+            )}
 
             {notice && <div style={s.notice}>{notice}</div>}
 
@@ -162,6 +174,7 @@ const s: Record<string, React.CSSProperties> = {
   section: { borderTop: '1px solid #f1f5f9', paddingTop: 16, marginBottom: 8 },
   secTitle: { fontSize: 14, fontWeight: 600, marginBottom: 8 },
   notice: { background: '#ecfdf5', color: '#047857', borderRadius: 10, padding: '10px 12px', fontSize: 13, marginBottom: 12, textAlign: 'center' },
+  paychain: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 12, padding: '10px 14px', fontSize: 13, marginBottom: 12 },
   rewardRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', background: '#f8fafc', borderRadius: 10, marginBottom: 6 },
   rewardName: { fontSize: 14, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   rewardDesc: { fontSize: 12, color: '#64748b' },

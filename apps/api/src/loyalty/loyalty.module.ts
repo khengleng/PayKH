@@ -9,9 +9,10 @@ import { LedgerModule } from '../ledger/ledger.module';
 // the worker has its own root (worker.module.ts) that does not load app.module.
 // A module must carry its own dependencies or it breaks under a second root.
 import { IdempotencyModule } from '../idempotency/idempotency.module';
+import { PayChainIntegrationModule } from '../paychain/paychain-integration.module';
 
 @Module({
-  imports: [AuthModule, CampaignsModule, LedgerModule, IdempotencyModule],
+  imports: [AuthModule, CampaignsModule, LedgerModule, IdempotencyModule, PayChainIntegrationModule],
   controllers: [LoyaltyController, LoyaltyDashboardController],
   providers: [LoyaltyService],
   exports: [LoyaltyService],

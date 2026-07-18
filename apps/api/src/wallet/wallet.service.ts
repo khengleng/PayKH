@@ -3,6 +3,8 @@ import * as QRCode from 'qrcode';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { LoyaltyService } from '../loyalty/loyalty.service';
+import { PayChainIntegrationService } from '../paychain/paychain-integration.module';
+import { PayChainClient } from '../paychain/paychain-client';
 
 /**
  * Public customer wallet — a customer-facing loyalty pass keyed by the customer
@@ -12,7 +14,28 @@ import { LoyaltyService } from '../loyalty/loyalty.service';
  */
 @Injectable()
 export class WalletService {
-  constructor(private readonly prisma: PrismaService, private readonly loyalty: LoyaltyService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly loyalty: LoyaltyService,
+    private readonly paychain: PayChainIntegrationService,
+    private readonly pcClient: PayChainClient,
+  ) {}
+
+  /** The customer's on-chain PayChain balance — proof the points live on the
+   *  value rail, not just a PayKH counter. Best-effort: null when PayChain isn't
+   *  connected for the store or the read fails; the local balance still shows. */
+  private async paychainProof(customer: { paychainWalletId: string | null; storeId: string; store: { organizationId: string } }) {
+    if (!customer.paychainWalletId) return null;
+    const conn = await this.paychain.resolve(customer.store.organizationId).catch(() => null);
+    if (!conn) return null;
+    try {
+      const balances = await this.pcClient.balances(conn, customer.paychainWalletId);
+      const b = balances[0];
+      return { wallet_id: customer.paychainWalletId, asset_code: b?.assetCode ?? null, balance: b?.balance ?? null, secured: true };
+    } catch {
+      return { wallet_id: customer.paychainWalletId, asset_code: null, balance: null, secured: true };
+    }
+  }
 
   async wallet(customerId: string) {
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId }, include: { tier: true, store: true } });
@@ -30,6 +53,7 @@ export class WalletService {
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
+    const paychain = await this.paychainProof(customer);
 
     let referral: { code: string; share_url: string; qr_png_data_url: string } | null = null;
     if (customer.referralCode) {
@@ -49,6 +73,8 @@ export class WalletService {
       referral,
       scratch_cards: issuedCards.map((c) => ({ play_id: c.id, game: c.game.name, play_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/play/${c.id}` })),
       gift_cards: giftCards.map((g) => ({ code: g.code, currency: g.currency, balance: g.balance.toString() })),
+      paychain, // on-chain proof of the loyalty balance, when the store is connected
+
       // What the points can buy, cheapest first, with whether this customer can
       // afford each right now — so the wallet shows a clear "you can get this".
       rewards: program?.active

@@ -31,8 +31,10 @@ export class WalletController {
   }
 }
 
+import { PayChainIntegrationModule } from '../paychain/paychain-integration.module';
+
 @Module({
-  imports: [LoyaltyModule],
+  imports: [LoyaltyModule, PayChainIntegrationModule],
   controllers: [WalletController],
   providers: [WalletService],
 })

@@ -16,7 +16,7 @@ function make(customers: Cust[], txnsByCustomer: Record<string, Txn[]>) {
       ),
     },
   };
-  return new LoyaltyService(client as never, {} as never, {} as never, {} as never, {} as never);
+  return new LoyaltyService(client as never, {} as never, {} as never, {} as never, {} as never, { resolve: async () => null } as never, {} as never);
 }
 
 describe('LoyaltyService.expiryPreview', () => {
