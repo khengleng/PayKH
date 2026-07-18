@@ -9,7 +9,7 @@ import { ApiError } from '../common/api-error';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthModule } from '../auth/auth.module';
-import { requireMembership } from '../auth/rbac';
+import { requirePermission } from '../auth/rbac';
 import { assertSafeUrl } from '../common/ssrf';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.module';
 import { PayChainClient, PayChainError } from './paychain-client';
@@ -64,16 +64,19 @@ export class PayChainIntegrationService {
   ) {}
 
   /**
-   * Only the tenant owner may see or change value-moving credentials. Analysts
-   * and developers are members of the org but have no business reading them,
-   * and a platform admin configuring a tenant's own PayChain account would
-   * defeat the point of the tenant holding it.
+   * PayChain access is governed by the RBAC matrix. `paychain:read` views the
+   * config/console; `paychain:write` configures it and moves value. Both are
+   * granted to the org OWNER only (see rbac.ts) — value-moving credentials
+   * shouldn't sit with an analyst/developer, and a platform admin configuring a
+   * tenant's own PayChain account would defeat the point of the tenant holding
+   * it. Enforcing via requirePermission (not a hardcoded role) keeps the policy
+   * in one auditable place.
    */
+  private assertRead(user: AuthUser, orgId: string) {
+    requirePermission(user, orgId, 'paychain:read');
+  }
   private assertOwner(user: AuthUser, orgId: string) {
-    const role = requireMembership(user, orgId);
-    if (role !== 'owner') {
-      throw ApiError.forbidden(`Your role (${role}) cannot manage the PayChain integration — owner only`);
-    }
+    requirePermission(user, orgId, 'paychain:write');
   }
 
   /** Reject a base URL that points anywhere internal — this value is tenant-supplied
@@ -85,7 +88,7 @@ export class PayChainIntegrationService {
   }
 
   async get(user: AuthUser, orgId: string) {
-    this.assertOwner(user, orgId);
+    this.assertRead(user, orgId);
     const row = await this.prisma.payChainIntegration.findUnique({ where: { organizationId: orgId } });
     if (!row) {
       return {

@@ -21,7 +21,9 @@ export type Permission =
   | 'coupon:read'
   | 'coupon:write'
   | 'giftcard:read'
-  | 'giftcard:write';
+  | 'giftcard:write'
+  | 'paychain:read'
+  | 'paychain:write';
 
 const ROLE_PERMISSIONS: Record<MemberRole, Permission[]> = {
   owner: [
@@ -39,6 +41,10 @@ const ROLE_PERMISSIONS: Record<MemberRole, Permission[]> = {
     'coupon:write',
     'giftcard:read',
     'giftcard:write',
+    // PayChain holds value-moving credentials, so it stays with the org owner —
+    // deliberately NOT granted to developer/analyst/platform_admin.
+    'paychain:read',
+    'paychain:write',
   ],
   developer: [
     'store:read',
