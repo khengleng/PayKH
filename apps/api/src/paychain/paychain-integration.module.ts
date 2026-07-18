@@ -13,6 +13,7 @@ import { requireMembership } from '../auth/rbac';
 import { assertSafeUrl } from '../common/ssrf';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.module';
 import { PayChainClient, PayChainError } from './paychain-client';
+import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
 /** Turn a raw PayChain error into a clean, user-facing message instead of a 500. */
 async function pc<T>(fn: () => Promise<T>): Promise<T> {
@@ -432,18 +433,23 @@ export class PayChainConsoleService {
 
 @ApiTags('paychain')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+// Owner-only AND per-route rate-limited: even a valid owner token (runaway
+// script / stolen session) can't loop asset creation or value transfers to spam
+// or drain the org's own PayChain tenant.
+@UseGuards(JwtAuthGuard, RateLimitGuard)
 @Controller('dashboard/orgs/:orgId/paychain/console')
 export class PayChainConsoleController {
   constructor(private readonly console: PayChainConsoleService) {}
 
   @Get()
+  @RateLimit({ limit: 30, windowSec: 10, by: 'ip' })
   @ApiOperation({ summary: 'PayChain console overview: status + assets + transactions + webhooks (owner)' })
   overview(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
     return this.console.overview(user, orgId);
   }
 
   @Post('assets')
+  @RateLimit({ limit: 6, windowSec: 60, by: 'ip' })
   @ApiOperation({ summary: 'Create (and activate) a loyalty asset on PayChain' })
   createAsset(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() dto: CreateAssetConsoleDto) {
     return this.console.createAsset(user, orgId, dto);
@@ -462,6 +468,7 @@ export class PayChainConsoleController {
   }
 
   @Post('webhooks/connect')
+  @RateLimit({ limit: 10, windowSec: 60, by: 'ip' })
   @ApiOperation({ summary: 'One-click: register PayKH’s webhook receiver with PayChain' })
   connectWebhook(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
     return this.console.connectWebhook(user, orgId);
@@ -474,12 +481,14 @@ export class PayChainConsoleController {
   }
 
   @Post('transfer')
+  @RateLimit({ limit: 5, windowSec: 60, by: 'ip' })
   @ApiOperation({ summary: 'Transfer points between two wallets' })
   transfer(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() dto: TransferConsoleDto) {
     return this.console.transfer(user, orgId, dto);
   }
 
   @Post('webhooks')
+  @RateLimit({ limit: 10, windowSec: 60, by: 'ip' })
   @ApiOperation({ summary: 'Register a PayChain webhook (secret returned once)' })
   createWebhook(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() dto: CreateWebhookConsoleDto) {
     return this.console.createWebhook(user, orgId, dto);
