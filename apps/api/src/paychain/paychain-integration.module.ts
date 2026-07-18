@@ -12,7 +12,21 @@ import { AuthModule } from '../auth/auth.module';
 import { requireMembership } from '../auth/rbac';
 import { assertSafeUrl } from '../common/ssrf';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.module';
-import { PayChainClient } from './paychain-client';
+import { PayChainClient, PayChainError } from './paychain-client';
+
+/** Turn a raw PayChain error into a clean, user-facing message instead of a 500. */
+async function pc<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof PayChainError) {
+      if (e.status === 409) throw ApiError.invalidRequest(`PayChain: ${e.detail || 'that already exists — pick a different code'}`);
+      if (e.status === 401 || e.status === 403) throw ApiError.invalidRequest('PayChain rejected the request — check your credentials and scopes');
+      throw ApiError.invalidRequest(`PayChain: ${e.detail || e.message}`);
+    }
+    throw e;
+  }
+}
 
 const DEFAULT_BASE_URL = 'https://api.paychain.cambobia.com';
 
@@ -21,7 +35,8 @@ export class UpsertPayChainDto {
   @IsString() @MinLength(1) @MaxLength(200) client_id!: string;
   /** Write-only. Omit on update to keep the stored secret. */
   @IsOptional() @IsString() @MinLength(1) @MaxLength(400) client_secret?: string;
-  @IsString() @MinLength(1) @MaxLength(200) loyalty_asset_id!: string;
+  /** Optional: leave blank to create a loyalty asset in the PayChain Console. */
+  @IsOptional() @IsString() @MaxLength(200) loyalty_asset_id?: string;
 }
 
 /**
@@ -114,14 +129,16 @@ export class PayChainIntegrationService {
         baseUrl,
         clientId: dto.client_id,
         secretCiphertext,
-        loyaltyAssetId: dto.loyalty_asset_id,
+        loyaltyAssetId: dto.loyalty_asset_id || null,
         updatedByUserId: user.userId,
       },
       update: {
         baseUrl,
         clientId: dto.client_id,
         secretCiphertext,
-        loyaltyAssetId: dto.loyalty_asset_id,
+        // Omitting the asset on update keeps the stored/console-created one, so
+        // editing creds never wipes an asset made in the console.
+        ...(dto.loyalty_asset_id !== undefined ? { loyaltyAssetId: dto.loyalty_asset_id || null } : {}),
         updatedByUserId: user.userId,
         // Credentials changed → any previous test result is stale.
         ...(dto.client_secret ? { lastTestedAt: null, lastTestOk: null, lastTestDetail: null } : {}),
@@ -187,7 +204,11 @@ export class PayChainIntegrationService {
    *  ops are gated on the paychain.enabled flag. */
   async resolve(orgId: string): Promise<{ baseUrl: string; clientId: string; clientSecret: string; loyaltyAssetId: string } | null> {
     if (!(await this.flags.isEnabled('paychain.enabled', orgId))) return null;
-    return this.connectionRow(orgId);
+    const conn = await this.connectionRow(orgId);
+    // No asset chosen yet → value ops (earn/issue) have no target, so stay a
+    // no-op until the owner creates one in the console. The sale still succeeds.
+    if (!conn || !conn.loyaltyAssetId) return null;
+    return conn;
   }
 
   /** Owner-scoped connection for the management console — available even before
@@ -206,7 +227,7 @@ export class PayChainIntegrationService {
       baseUrl: row.baseUrl,
       clientId: row.clientId,
       clientSecret: this.crypto.decrypt(row.secretCiphertext),
-      loyaltyAssetId: row.loyaltyAssetId,
+      loyaltyAssetId: row.loyaltyAssetId ?? '',
     };
   }
 
@@ -214,6 +235,48 @@ export class PayChainIntegrationService {
   async setLoyaltyAsset(user: AuthUser, orgId: string, assetId: string) {
     this.assertOwner(user, orgId);
     await this.prisma.payChainIntegration.update({ where: { organizationId: orgId }, data: { loyaltyAssetId: assetId } });
+  }
+
+  async flagEnabled(orgId: string): Promise<boolean> {
+    return this.flags.isEnabled('paychain.enabled', orgId);
+  }
+
+  async webhookStatus(orgId: string): Promise<{ connected: boolean; url: string }> {
+    const row = await this.prisma.payChainIntegration.findUnique({ where: { organizationId: orgId } });
+    return { connected: !!row?.webhookId, url: `${this.config.get<string>('apiPublicUrl')}/paychain/webhook/${orgId}` };
+  }
+
+  /** One-click: register PayKH's own receiver with PayChain, store the secret. */
+  async connectWebhook(user: AuthUser, orgId: string, client: PayChainClient) {
+    this.assertOwner(user, orgId);
+    const conn = await this.connectionRow(orgId);
+    if (!conn) throw ApiError.invalidRequest('PayChain is not configured');
+    const url = `${this.config.get<string>('apiPublicUrl')}/paychain/webhook/${orgId}`;
+    const events = ['asset.issued', 'asset.transferred', 'asset.redeemed', 'asset.burned', 'transaction.compensated'];
+    const wh = await pc(() => client.createWebhook(conn, url, events, prefixedId('pcwh')));
+    const secret = wh.secret ?? wh.signingSecret;
+    await this.prisma.payChainIntegration.update({
+      where: { organizationId: orgId },
+      data: { webhookId: wh.id, ...(secret ? { webhookSecret: this.crypto.encrypt(secret) } : {}) },
+    });
+    this.logger.log(`paychain webhook connected for org ${orgId} → ${url}`);
+    return { connected: true, url };
+  }
+
+  async disconnectWebhook(user: AuthUser, orgId: string, client: PayChainClient) {
+    this.assertOwner(user, orgId);
+    const row = await this.prisma.payChainIntegration.findUnique({ where: { organizationId: orgId } });
+    const conn = await this.connectionRow(orgId);
+    if (row?.webhookId && conn) await client.deleteWebhook(conn, row.webhookId).catch(() => undefined);
+    await this.prisma.payChainIntegration.update({ where: { organizationId: orgId }, data: { webhookId: null, webhookSecret: null } });
+    return { connected: false };
+  }
+
+  /** For the receiver: the org's decrypted webhook secret, or null. */
+  async webhookSecret(orgId: string): Promise<string | null> {
+    const row = await this.prisma.payChainIntegration.findUnique({ where: { organizationId: orgId } });
+    if (!row?.webhookSecret) return null;
+    try { return this.crypto.decrypt(row.webhookSecret); } catch { return null; }
   }
 
   private safeDecrypt(ciphertext: string): string | undefined {
@@ -294,56 +357,76 @@ export class PayChainConsoleService {
   /** One call for the console: connection status + assets + recent txns + webhooks. */
   async overview(user: AuthUser, orgId: string) {
     const conn = await this.integration.resolveForOwner(user, orgId);
-    const [status, assets, transactions, webhooks] = await Promise.all([
+    const [status, assets, transactions, webhooks, enabled, webhook] = await Promise.all([
       this.client.status(conn).catch(() => ({ health: false, ready: false, blockchain: null })),
       this.client.listAssets(conn).catch(() => []),
       this.client.listTransactions(conn).catch(() => []),
       this.client.listWebhooks(conn).catch(() => []),
+      this.integration.flagEnabled(orgId),
+      this.integration.webhookStatus(orgId),
     ]);
-    return { loyalty_asset_id: conn.loyaltyAssetId, status, assets, transactions: transactions.slice(0, 25), webhooks };
+    return { loyalty_asset_id: conn.loyaltyAssetId, enabled, webhook, status, assets, transactions: transactions.slice(0, 25), webhooks };
   }
 
   async createAsset(user: AuthUser, orgId: string, dto: CreateAssetConsoleDto) {
     const conn = await this.integration.resolveForOwner(user, orgId);
     const eventId = prefixedId('pcasset');
-    const asset = await this.client.createAsset(
+    const asset = await pc(() => this.client.createAsset(
       conn,
       { assetCode: dto.assetCode.toUpperCase(), assetName: dto.assetName, expiryPolicy: dto.expiryPolicy },
       eventId,
-    );
+    ));
     // Best-effort activate so it can issue immediately.
     await this.client.activateAsset(conn, asset.id, eventId).catch((e) => this.logger.warn(`activate ${asset.id} failed: ${e}`));
-    if (dto.setAsLoyaltyAsset) await this.integration.setLoyaltyAsset(user, orgId, asset.id);
+    // Auto-adopt it as the loyalty asset if the org doesn't have one yet, so the
+    // owner never has to copy an id — one click and it's wired.
+    if (dto.setAsLoyaltyAsset || !conn.loyaltyAssetId) await this.integration.setLoyaltyAsset(user, orgId, asset.id);
     return asset;
   }
 
   async activateAsset(user: AuthUser, orgId: string, assetId: string) {
     const conn = await this.integration.resolveForOwner(user, orgId);
-    return this.client.activateAsset(conn, assetId, prefixedId('pcact'));
+    return pc(() => this.client.activateAsset(conn, assetId, prefixedId('pcact')));
+  }
+
+  /** Adopt an existing PayChain asset as this org's loyalty asset. */
+  async useAsset(user: AuthUser, orgId: string, assetId: string) {
+    await this.integration.resolveForOwner(user, orgId);
+    await this.integration.setLoyaltyAsset(user, orgId, assetId);
+    return { loyalty_asset_id: assetId };
   }
 
   async transfer(user: AuthUser, orgId: string, dto: TransferConsoleDto) {
     const conn = await this.integration.resolveForOwner(user, orgId);
-    return this.client.transfer(conn, dto.fromWalletId, dto.toWalletId, dto.amount, prefixedId('pctx'));
+    return pc(() => this.client.transfer(conn, dto.fromWalletId, dto.toWalletId, dto.amount, prefixedId('pctx')));
   }
 
   async listWebhooks(user: AuthUser, orgId: string) {
     const conn = await this.integration.resolveForOwner(user, orgId);
-    return this.client.listWebhooks(conn);
+    return pc(() => this.client.listWebhooks(conn));
   }
 
   async createWebhook(user: AuthUser, orgId: string, dto: CreateWebhookConsoleDto) {
     const conn = await this.integration.resolveForOwner(user, orgId);
     const events = dto.events?.length ? dto.events : ['asset.issued', 'asset.transferred', 'asset.redeemed', 'asset.burned', 'transaction.compensated'];
-    const wh = await this.client.createWebhook(conn, dto.url, events, prefixedId('pcwh'));
+    const wh = await pc(() => this.client.createWebhook(conn, dto.url, events, prefixedId('pcwh')));
     // The signing secret is returned once — surface it so the owner can store it.
     return wh;
   }
 
   async deleteWebhook(user: AuthUser, orgId: string, id: string) {
     const conn = await this.integration.resolveForOwner(user, orgId);
-    await this.client.deleteWebhook(conn, id);
+    await pc(() => this.client.deleteWebhook(conn, id));
     return { deleted: true };
+  }
+
+  /** One-click: register PayKH's own webhook receiver with PayChain and store
+   *  the returned signing secret. The owner never has to find or type a URL. */
+  async connectWebhook(user: AuthUser, orgId: string) {
+    return this.integration.connectWebhook(user, orgId, this.client);
+  }
+  async disconnectWebhook(user: AuthUser, orgId: string) {
+    return this.integration.disconnectWebhook(user, orgId, this.client);
   }
 }
 
@@ -370,6 +453,24 @@ export class PayChainConsoleController {
   @ApiOperation({ summary: 'Activate an asset' })
   activate(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('assetId') assetId: string) {
     return this.console.activateAsset(user, orgId, assetId);
+  }
+
+  @Post('assets/:assetId/use')
+  @ApiOperation({ summary: 'Use this asset as the loyalty asset' })
+  use(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('assetId') assetId: string) {
+    return this.console.useAsset(user, orgId, assetId);
+  }
+
+  @Post('webhooks/connect')
+  @ApiOperation({ summary: 'One-click: register PayKH’s webhook receiver with PayChain' })
+  connectWebhook(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
+    return this.console.connectWebhook(user, orgId);
+  }
+
+  @Post('webhooks/disconnect')
+  @ApiOperation({ summary: 'Remove PayKH’s webhook registration' })
+  disconnectWebhook(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
+    return this.console.disconnectWebhook(user, orgId);
   }
 
   @Post('transfer')

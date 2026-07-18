@@ -37,6 +37,7 @@ import { SettingsModule } from './settings/settings.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { IdempotencyModule } from './idempotency/idempotency.module';
 import { PayChainIntegrationModule } from './paychain/paychain-integration.module';
+import { PayChainWebhookModule } from './paychain/paychain-webhook.module';
 import { KhqrImportModule } from './khqr/khqr-import.module';
 import { TelegramDetectionModule } from './telegram/telegram-detection.module';
 import { AlertModule } from './observability/alert.module';
@@ -92,6 +93,7 @@ import { RequestIdMiddleware } from './common/request-context';
     FeatureFlagsModule,
     IdempotencyModule,
     PayChainIntegrationModule,
+    PayChainWebhookModule,
     KhqrImportModule,
     TelegramDetectionModule,
     AlertModule,

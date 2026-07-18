@@ -1119,7 +1119,9 @@ model PayChainIntegration {
   clientId        String
   secretCiphertext String  @db.Text
   /// The PayChain asset PayKH issues loyalty points against.
-  loyaltyAssetId  String
+  loyaltyAssetId  String?  // null until an asset is chosen or created in the console
+  webhookId       String?  // PayChain webhook endpoint id, once connected
+  webhookSecret   String?  // its signing secret (encrypted), for verifying deliveries
   /// Result of the last credential check — connection health is a property of
   /// the tenant's own credentials, so they can diagnose it without the platform.
   lastTestedAt    DateTime?

@@ -9,6 +9,7 @@ export interface AppConfig {
   appBaseUrl: string;
   checkoutBaseUrl: string;
   dashboardBaseUrl: string;
+  apiPublicUrl: string;
   paymentProvider: 'mock' | 'bakong';
   /** Digital-value provider (loyalty points). 'paychain' lands with credentials. */
   digitalValueProvider: 'mock' | 'paychain';
@@ -53,6 +54,7 @@ export function loadConfig(): AppConfig {
     appBaseUrl: process.env.APP_BASE_URL ?? 'http://localhost:4000',
     checkoutBaseUrl: process.env.CHECKOUT_BASE_URL ?? 'http://localhost:3001',
     dashboardBaseUrl: process.env.DASHBOARD_BASE_URL ?? 'http://localhost:3000',
+    apiPublicUrl: process.env.API_PUBLIC_URL ?? 'https://api.paykh.cambobia.com',
     paymentProvider: (process.env.PAYMENT_PROVIDER as 'mock' | 'bakong') ?? 'mock',
     digitalValueProvider: (process.env.DIGITAL_VALUE_PROVIDER as 'mock' | 'paychain') ?? 'mock',
     bakongApiBaseUrl: process.env.BAKONG_API_BASE_URL,

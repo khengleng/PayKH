@@ -11,6 +11,8 @@ interface Txn { id: string; type: string; status: string; amount?: string; block
 interface Webhook { id: string; url: string; events: string[]; status: string }
 interface Overview {
   loyalty_asset_id: string;
+  enabled: boolean;
+  webhook: { connected: boolean; url: string };
   status: { health: boolean; ready: boolean; blockchain: unknown };
   assets: Asset[];
   transactions: Txn[];
@@ -64,20 +66,17 @@ function Content({ ctx }: { ctx: ShellContext }) {
   };
 
   // --- webhook register ---
-  const [whUrl, setWhUrl] = useState('');
-  const [whSecret, setWhSecret] = useState('');
-  const createWebhook = async () => {
-    if (!whUrl.trim()) return;
-    setBusy('wh'); setErr('');
-    try {
-      const r = await api<{ secret?: string; signingSecret?: string }>(`/dashboard/orgs/${orgId}/paychain/console/webhooks`, { method: 'POST', body: { url: whUrl.trim() } });
-      setWhSecret(r.secret || r.signingSecret || '');
-      setWhUrl('');
-      await load();
-    } catch (e) { setErr((e as Error).message); }
+  const act = async (path: string, label: string) => {
+    setBusy(label); setErr('');
+    try { await api(`/dashboard/orgs/${orgId}/paychain/console/${path}`, { method: 'POST' }); await load(); }
+    catch (e) { setErr((e as Error).message); }
     finally { setBusy(''); }
   };
-  const delWebhook = async (id: string) => { if (!confirm('Delete this webhook?')) return; await api(`/dashboard/orgs/${orgId}/paychain/console/webhooks/${id}`, { method: 'DELETE' }); await load(); };
+  const adoptAsset = (id: string) => act(`assets/${id}/use`, 'use');
+  const activate = (id: string) => act(`assets/${id}/activate`, 'act');
+  const connectWh = async () => { setBusy('whc'); setErr(''); try { await api(`/dashboard/orgs/${orgId}/paychain/console/webhooks/connect`, { method: 'POST' }); await load(); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); } };
+  const disconnectWh = async () => { if (!confirm('Disconnect the PayChain webhook?')) return; setBusy('whd'); try { await api(`/dashboard/orgs/${orgId}/paychain/console/webhooks/disconnect`, { method: 'POST' }); await load(); } finally { setBusy(''); } };
+  const setEnabled = async (v: boolean) => { setBusy('flag'); try { await api(`/dashboard/orgs/${orgId}/feature-flags/paychain.enabled`, { method: 'PUT', body: { enabled: v } }); await load(); } finally { setBusy(''); } };
 
   if (notConfigured) {
     return (
@@ -101,12 +100,26 @@ function Content({ ctx }: { ctx: ShellContext }) {
         <div className="space-y-6">
           {/* Status */}
           <Card>
-            <h3 className="mb-3 font-semibold">Connection</h3>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-semibold">Connection</h3>
+              <label className="flex items-center gap-2 text-sm">
+                <span className={data.enabled ? 'text-emerald-600' : 'text-slate-500'}>{data.enabled ? 'PayChain earning ON' : 'PayChain earning off'}</span>
+                <button
+                  type="button" role="switch" aria-checked={data.enabled}
+                  onClick={() => setEnabled(!data.enabled)}
+                  disabled={busy === 'flag' || !data.loyalty_asset_id}
+                  title={!data.loyalty_asset_id ? 'Set a loyalty asset first' : ''}
+                  className={`relative h-6 w-11 rounded-full transition ${data.enabled ? 'bg-brand-500' : 'bg-slate-200'} disabled:opacity-50`}
+                >
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${data.enabled ? 'left-[22px]' : 'left-0.5'}`} />
+                </button>
+              </label>
+            </div>
             <div className="flex flex-wrap gap-6 text-sm">
               <span className="flex items-center gap-2"><Dot ok={data.status.health} /> API health</span>
               <span className="flex items-center gap-2"><Dot ok={data.status.ready} /> Ready</span>
               <span className="flex items-center gap-2"><Dot ok={!!data.status.blockchain} /> Blockchain</span>
-              <span className="text-slate-500">Loyalty asset: <span className="font-mono text-slate-700">{data.loyalty_asset_id || '—'}</span></span>
+              <span className="text-slate-500">Loyalty asset: <span className="font-mono text-slate-700">{data.loyalty_asset_id || 'none — create one below'}</span></span>
             </div>
           </Card>
 
@@ -121,12 +134,20 @@ function Content({ ctx }: { ctx: ShellContext }) {
             </div>
             {data.assets.length === 0 ? <p className="text-sm text-slate-400">No assets yet.</p> : (
               <ul className="divide-y divide-slate-100 text-sm">
-                {data.assets.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between py-2">
-                    <span><span className="font-mono font-medium">{a.assetCode}</span> <span className="text-slate-500">· {a.assetName}</span> {a.id === data.loyalty_asset_id && <span className="ml-1 rounded-full bg-brand-100 px-2 py-0.5 text-[11px] text-brand-700">in use</span>}</span>
-                    <span className={a.status?.toUpperCase() === 'ACTIVE' ? 'text-emerald-600' : 'text-amber-600'}>{a.status}</span>
-                  </li>
-                ))}
+                {data.assets.map((a) => {
+                  const isActive = a.status?.toUpperCase() === 'ACTIVE';
+                  const inUse = a.id === data.loyalty_asset_id;
+                  return (
+                    <li key={a.id} className="flex items-center justify-between gap-2 py-2">
+                      <span className="min-w-0"><span className="font-mono font-medium">{a.assetCode}</span> <span className="text-slate-500">· {a.assetName}</span> {inUse && <span className="ml-1 rounded-full bg-brand-100 px-2 py-0.5 text-[11px] text-brand-700">in use</span>}</span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className={isActive ? 'text-emerald-600' : 'text-amber-600'}>{a.status}</span>
+                        {!isActive && <button onClick={() => activate(a.id)} disabled={busy === 'act'} className="text-brand-600 hover:underline">Activate</button>}
+                        {!inUse && isActive && <button onClick={() => adoptAsset(a.id)} disabled={busy === 'use'} className="text-brand-600 hover:underline">Use</button>}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -153,25 +174,23 @@ function Content({ ctx }: { ctx: ShellContext }) {
             )}
           </Card>
 
-          {/* Webhooks */}
+          {/* Webhooks — one-click connect PayKH's own receiver */}
           <Card>
-            <h3 className="mb-1 font-semibold">Webhooks</h3>
-            <p className="mb-3 text-sm text-slate-500">Get PayChain confirmation events (asset.issued, redeemed…). The signing secret is shown once on creation.</p>
-            <div className="mb-3 flex flex-wrap items-end gap-2">
-              <label className="flex-1 text-sm"><div className="mb-1 text-slate-600">Endpoint URL</div><input value={whUrl} onChange={(e) => setWhUrl(e.target.value)} placeholder="https://…/paychain/webhook" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
-              <Button onClick={createWebhook} disabled={busy === 'wh' || !whUrl.trim()}>{busy === 'wh' ? 'Registering…' : 'Register'}</Button>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Confirmation webhooks</h3>
+                <p className="text-sm text-slate-500">Lets PayKH mark points confirmed on-chain (with the blockchain hash). No URL to copy — one click.</p>
+              </div>
+              {data.webhook.connected ? (
+                <span className="flex items-center gap-3">
+                  <span className="flex items-center gap-2 text-sm text-emerald-600"><Dot ok /> Connected</span>
+                  <Button variant="secondary" onClick={disconnectWh} disabled={busy === 'whd'}>Disconnect</Button>
+                </span>
+              ) : (
+                <Button onClick={connectWh} disabled={busy === 'whc'}>{busy === 'whc' ? 'Connecting…' : 'Connect webhooks'}</Button>
+              )}
             </div>
-            {whSecret && <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">Signing secret (store now, shown once): <span className="font-mono">{whSecret}</span></div>}
-            {data.webhooks.length === 0 ? <p className="text-sm text-slate-400">No webhooks registered.</p> : (
-              <ul className="divide-y divide-slate-100 text-sm">
-                {data.webhooks.map((w) => (
-                  <li key={w.id} className="flex items-center justify-between gap-2 py-2">
-                    <span className="min-w-0"><span className="block truncate font-mono text-xs text-slate-700">{w.url}</span><span className="text-[11px] text-slate-400">{w.events?.join(', ')}</span></span>
-                    <button onClick={() => delWebhook(w.id)} className="shrink-0 text-red-600 hover:underline">Delete</button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="mt-2 truncate font-mono text-[11px] text-slate-400">{data.webhook.url}</div>
           </Card>
         </div>
       )}

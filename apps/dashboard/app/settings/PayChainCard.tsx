@@ -78,7 +78,7 @@ export function PayChainCard({ orgId, role }: { orgId?: string; role?: string })
           // Omitted when blank, so editing the asset id does not require
           // re-entering a secret the owner cannot read back.
           ...(form.client_secret ? { client_secret: form.client_secret } : {}),
-          loyalty_asset_id: form.loyalty_asset_id,
+          loyalty_asset_id: form.loyalty_asset_id || undefined,
         },
       });
       setForm((f) => ({ ...f, client_secret: '' }));
@@ -203,11 +203,11 @@ export function PayChainCard({ orgId, role }: { orgId?: string; role?: string })
           />
         </label>
         <label className="text-sm">
-          <div className="mb-1 text-slate-600">Loyalty asset ID</div>
+          <div className="mb-1 text-slate-600">Loyalty asset ID <span className="font-normal text-slate-400">(optional)</span></div>
           <input
             value={form.loyalty_asset_id}
             onChange={(e) => setForm({ ...form, loyalty_asset_id: e.target.value })}
-            placeholder="the PayChain asset points are issued against"
+            placeholder="leave blank — create one in the PayChain Console"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           />
         </label>
@@ -223,7 +223,7 @@ export function PayChainCard({ orgId, role }: { orgId?: string; role?: string })
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button onClick={save} disabled={!!busy || !form.client_id || !form.loyalty_asset_id || (!cfg?.configured && !form.client_secret)}>
+        <Button onClick={save} disabled={!!busy || !form.client_id || (!cfg?.configured && !form.client_secret)}>
           {busy === 'save' ? 'Saving…' : cfg?.configured ? 'Update' : 'Connect'}
         </Button>
         <Button variant="secondary" onClick={runTest} disabled={!!busy || !cfg?.configured}>
