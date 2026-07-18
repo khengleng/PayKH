@@ -18,6 +18,7 @@ import { BranchesModule } from '../branches/branches.module';
 import { CustomersModule } from '../customers/customers.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { SettingsCoreModule } from '../settings/settings.module';
+import { FeatureFlagsCoreModule } from '../feature-flags/feature-flags.module';
 import { AlertModule } from '../observability/alert.module';
 import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
 import { MaintenanceProcessor } from './maintenance.processor';
@@ -36,6 +37,7 @@ import { WorkerScheduler } from './worker-scheduler';
     PrismaModule,
     CommonModule,
     SettingsCoreModule, // provides SettingsService (EmailService/Telegram/Messaging resolve keys through it)
+    FeatureFlagsCoreModule, // @Global FeatureFlagsService — PayChainIntegrationService (via Loyalty/Payments) injects it
     AlertModule, // operational alerting (BillingModule → BillingService uses it indirectly; keeps worker context consistent)
     EmailModule,
     AuditModule,
