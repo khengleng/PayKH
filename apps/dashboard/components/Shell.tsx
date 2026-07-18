@@ -27,6 +27,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string; icon: s
     title: 'Grow',
     items: [
       { href: '/customers', label: 'Customers', icon: 'customers' },
+      { href: '/loyalty', label: 'Loyalty', icon: 'loyalty' },
       { href: '/segments', label: 'Segments', icon: 'segments' },
       { href: '/campaigns', label: 'Campaigns', icon: 'campaigns' },
       { href: '/games', label: 'Games', icon: 'games' },
