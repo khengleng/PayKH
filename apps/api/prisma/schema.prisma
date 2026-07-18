@@ -121,6 +121,105 @@ enum PromotionStatus {
   ENDED
 }
 
+enum CouponType {
+  PERCENT // value = percent off, e.g. 10 = 10%
+  FIXED // value = fixed amount off in `currency`
+}
+
+/// A merchant-issued discount code applied at checkout to reduce the amount due.
+/// Unlike a Promotion (which only grants loyalty points), a coupon cuts the
+/// actual payment. Redemption is recorded when the payment is captured.
+model Coupon {
+  id               String     @id
+  storeId          String
+  code             String // stored upper-cased; unique per store
+  type             CouponType
+  value            Decimal    @db.Decimal(12, 2)
+  currency         Currency? // required for FIXED (which currency it discounts); null = any (PERCENT)
+  minSpend         Decimal?   @db.Decimal(12, 2)
+  maxRedemptions   Int? // total cap across all customers; null = unlimited
+  perCustomerLimit Int? // per-customer cap; null = unlimited
+  firstOrderOnly   Boolean    @default(false)
+  redemptionCount  Int        @default(0)
+  active           Boolean    @default(true)
+  startsAt         DateTime?
+  expiresAt        DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  store       Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  redemptions CouponRedemption[]
+
+  @@unique([storeId, code])
+  @@index([storeId, active])
+}
+
+model CouponRedemption {
+  id           String   @id
+  couponId     String
+  storeId      String
+  customerId   String?
+  paymentId    String   @unique // one redemption per captured payment
+  amountBefore Decimal  @db.Decimal(12, 2)
+  discount     Decimal  @db.Decimal(12, 2)
+  amountAfter  Decimal  @db.Decimal(12, 2)
+  currency     Currency
+  createdAt    DateTime @default(now())
+
+  coupon   Coupon    @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([couponId])
+  @@index([customerId])
+}
+
+enum GiftCardTxnType {
+  ISSUE
+  REDEEM
+  REFUND
+  ADJUST
+}
+
+/// A prepaid monetary balance a customer can spend at checkout. Selling one is a
+/// normal payment; redeeming one reduces a payment. Balance is the source of
+/// truth; every change is journaled in GiftCardTransaction.
+model GiftCard {
+  id             String    @id
+  storeId        String
+  code           String // stored upper-cased; unique per store
+  currency       Currency
+  initialBalance Decimal   @db.Decimal(12, 2)
+  balance        Decimal   @db.Decimal(12, 2)
+  customerId     String? // optional: assigned to a customer
+  active         Boolean   @default(true)
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  store        Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  transactions GiftCardTransaction[]
+
+  @@unique([storeId, code])
+  @@index([storeId, active])
+  @@index([customerId])
+}
+
+model GiftCardTransaction {
+  id         String          @id
+  giftCardId String
+  type       GiftCardTxnType
+  amount     Decimal         @db.Decimal(12, 2) // signed: negative reduces balance
+  balance    Decimal         @db.Decimal(12, 2) // balance after this txn
+  paymentId  String? // set for REDEEM/REFUND against a payment
+  reason     String?
+  createdAt  DateTime        @default(now())
+
+  giftCard GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+
+  @@index([giftCardId])
+}
+
 enum ReferralStatus {
   PENDING
   QUALIFIED
@@ -332,6 +431,8 @@ model Store {
   redemptions          Redemption[]
   segments             Segment[]
   promotions           Promotion[]
+  coupons              Coupon[]
+  giftCards            GiftCard[]
   referralProgram      ReferralProgram?
   telegramConfig       TelegramConfig?
   telegramSource       TelegramPaymentSource?
@@ -383,6 +484,8 @@ model Customer {
   payments     Payment[]
   pointsLedger PointsTransaction[]
   redemptions  Redemption[]
+  couponRedemptions CouponRedemption[]
+  giftCards    GiftCard[]
   tier         LoyaltyTier?         @relation(fields: [tierId], references: [id])
   preferences  CustomerPreference[]
   consentLogs  ConsentLog[]

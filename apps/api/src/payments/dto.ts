@@ -44,6 +44,12 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   customer_id?: string;
+
+  /** A discount code to apply — validated + priced server-side; reduces the amount. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  coupon_code?: string;
 }
 
 export class ListPaymentsDto {

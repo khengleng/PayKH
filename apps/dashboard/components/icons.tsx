@@ -29,6 +29,7 @@ const ICONS: Record<string, React.ReactNode> = {
   links: <>{P('M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1')}{P('M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1')}</>,
   pos: <>{P('M4 4h16v13H4z')}{P('M4 9h16')}{P('M8 21h8')}{P('M12 17v4')}</>,
   loyalty: <>{P('M20 12v9H4v-9')}{P('M2 7h20v5H2z')}{P('M12 22V7')}{P('M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7Z')}{P('M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7Z')}</>,
+  coupons: <>{P('M9 5H4a1 1 0 0 0-1 1v3a2 2 0 0 1 0 4v3a1 1 0 0 0 1 1h5')}{P('M9 5h11a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v3a1 1 0 0 1-1 1H9')}{P('M9 5v14')}</>,
 };
 
 export function Icon({ name, size = 18, className = '' }: { name: string; size?: number; className?: string }) {

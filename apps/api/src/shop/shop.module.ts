@@ -49,6 +49,7 @@ class ShopCheckoutDto {
   @IsOptional() @IsString() @MaxLength(30) phone?: string;
   @IsOptional() @IsString() @MaxLength(120) email?: string;
   @IsOptional() @IsString() @MaxLength(80) name?: string;
+  @IsOptional() @IsString() @MaxLength(40) coupon_code?: string;
 }
 
 @Injectable()
@@ -118,6 +119,7 @@ export class ShopService {
       description: `Online order · ${lineItems.reduce((n, l) => n + l.qty, 0)} item(s)`,
       metadata: { source: 'shop', items: lineItems },
       ...(customerId ? { customer_id: customerId } : {}),
+      ...(dto.coupon_code ? { coupon_code: dto.coupon_code } : {}),
     };
     const { resource } = await this.payments.create(ctx, body, undefined, JSON.stringify(body));
     return { payment_id: resource.id, checkout_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/pay/${resource.id}` };

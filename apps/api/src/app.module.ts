@@ -25,6 +25,7 @@ import { AiModule } from './ai/ai.module';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ShopModule } from './shop/shop.module';
+import { CouponsModule } from './coupons/coupons.module';
 import { SecurityModule } from './security/security.module';
 import { EcosystemModule } from './ecosystem/ecosystem.module';
 import { LedgerModule } from './ledger/ledger.module';
@@ -78,6 +79,7 @@ import { RequestIdMiddleware } from './common/request-context';
     ConnectorsModule,
     WalletModule,
     ShopModule,
+    CouponsModule,
     SecurityModule,
     EcosystemModule,
     LedgerModule,

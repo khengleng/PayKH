@@ -98,6 +98,20 @@ export class CustomersService {
    * counter would make two records — acceptable for a cashier flow, and far
    * better than rejecting the sale.
    */
+  /** Read-only lookup by phone/email — for quoting a coupon's per-customer /
+   *  first-order rules without creating a customer just to check. */
+  async findByContact(storeId: string, contact: { phone?: string; email?: string }): Promise<string | null> {
+    const phone = contact.phone?.trim() || undefined;
+    const email = contact.email?.trim().toLowerCase() || undefined;
+    if (!phone && !email) return null;
+    const existing = await this.prisma.customer.findFirst({
+      where: { storeId, OR: [...(phone ? [{ phone }] : []), ...(email ? [{ email }] : [])] },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    return existing?.id ?? null;
+  }
+
   async resolveOrCreateByContact(storeId: string, contact: { phone?: string; email?: string; name?: string }): Promise<string | null> {
     const phone = contact.phone?.trim() || undefined;
     const email = contact.email?.trim().toLowerCase() || undefined;

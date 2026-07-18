@@ -29,6 +29,7 @@ import { BranchesService } from '../branches/branches.service';
 import { CustomersService } from '../customers/customers.service';
 import { KhqrImportService } from '../khqr/khqr-import.module';
 import { IdempotencyService } from '../idempotency/idempotency.module';
+import { CouponsService } from '../coupons/coupons.module';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { GamesService } from '../games/games.service';
@@ -66,6 +67,7 @@ export class PaymentsService {
     private readonly receipts: ReceiptsService,
     private readonly khqr: KhqrImportService,
     private readonly idempotency: IdempotencyService,
+    private readonly coupons: CouponsService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -127,6 +129,17 @@ export class PaymentsService {
       customerId = await this.customers.resolveForStore(ctx.storeId, dto.customer_id);
     }
 
+    // Optional discount code: priced server-side from the store's own coupon —
+    // the payer is charged the reduced amount; the redemption is counted only
+    // once the payment is captured (transition → paid).
+    let chargeAmount = amount;
+    let metadata: Record<string, unknown> = (dto.metadata ?? {}) as Record<string, unknown>;
+    if (dto.coupon_code) {
+      const q = await this.coupons.quote(ctx.storeId, dto.coupon_code, { amount, currency: dto.currency, customerId });
+      chargeAmount = validateAmount(q.amount_after, dto.currency);
+      metadata = { ...metadata, coupon: { id: q.coupon_id, code: q.code, discount: q.discount, amount_before: q.amount_before } };
+    }
+
     const paymentId = ids.payment();
     const now = new Date();
     const expiresAt = new Date(
@@ -140,7 +153,7 @@ export class PaymentsService {
         paymentId,
         storeId: ctx.storeId,
         mode: ctx.mode,
-        amount: formatAmount(amount, dto.currency),
+        amount: formatAmount(chargeAmount, dto.currency),
         currency: dto.currency,
         referenceId: dto.reference_id ?? null,
         description: dto.description ?? null,
@@ -176,11 +189,11 @@ export class PaymentsService {
             apiKeyId: ctx.apiKeyId || null, // '' (link/dashboard-originated) → no api key
             mode: ctx.mode === 'live' ? 'LIVE' : 'TEST',
             status: 'PENDING',
-            amount,
+            amount: chargeAmount,
             currency: dto.currency,
             referenceId: dto.reference_id ?? null,
             description: dto.description ?? null,
-            metadata: (dto.metadata ?? {}) as Prisma.InputJsonValue,
+            metadata: metadata as Prisma.InputJsonValue,
             qrString: providerResult.qrString,
             branchId,
             customerId,
@@ -538,6 +551,7 @@ export class PaymentsService {
     if (emit) {
       if (to === 'paid') {
         await this.quota.recordPaidForStore(result.storeId);
+        await this.coupons.onPaid(result); // count a coupon redemption (idempotent)
         await this.loyalty.awardForPayment(result); // earn loyalty points
         await this.referrals.onPaidPayment(result); // reward pending referral
         await this.referrals.accrueCommission(result); // affiliate commission

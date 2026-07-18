@@ -25,6 +25,9 @@ export default function ShopPage({ params }: { params: { storeId: string } }) {
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState('');
+  const [coupon, setCoupon] = useState<{ code: string; discount: string; amount_after: string } | null>(null);
+  const [couponErr, setCouponErr] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/shop/${storeId}`, { cache: 'no-store' })
@@ -54,7 +57,27 @@ export default function ShopPage({ params }: { params: { storeId: string } }) {
   );
   const total = lines.reduce((s, l) => s + l.price * l.qty, 0);
   const count = lines.reduce((s, l) => s + l.qty, 0);
-  const points = info?.loyalty_active ? Math.floor(total * Number(info.points_per_unit || 0)) : 0;
+  const discount = coupon ? Number(coupon.discount) : 0;
+  const payable = Math.max(0, total - discount);
+  const points = info?.loyalty_active ? Math.floor(payable * Number(info.points_per_unit || 0)) : 0;
+
+  // A coupon is priced against a specific cart total, so drop it if the cart
+  // changes — the shopper re-applies and sees the correct new discount.
+  useEffect(() => { setCoupon(null); setCouponErr(''); }, [total]);
+
+  const applyCoupon = async () => {
+    if (!code.trim() || !total) return;
+    setCouponErr('');
+    try {
+      const r = await fetch(`${API_BASE}/coupons/${storeId}/quote`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code.trim(), amount: total.toFixed(info?.currency === 'KHR' ? 0 : 2), currency: info?.currency, phone: phone.trim() || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setCoupon(null); setCouponErr(data.message || 'Invalid code'); return; }
+      setCoupon({ code: data.code, discount: data.discount, amount_after: data.amount_after });
+    } catch { setCouponErr('Could not check that code.'); }
+  };
 
   const checkout = async () => {
     if (!count) return;
@@ -67,6 +90,7 @@ export default function ShopPage({ params }: { params: { storeId: string } }) {
           items: lines.map((l) => ({ id: l.id, qty: l.qty })),
           phone: phone.trim() || undefined,
           name: name.trim() || undefined,
+          coupon_code: coupon?.code || undefined,
         }),
       });
       const data = await r.json();
@@ -153,9 +177,36 @@ export default function ShopPage({ params }: { params: { storeId: string } }) {
                 </div>
               ))}
             </div>
+            {/* Promo code */}
+            <div className="mb-2 border-t border-slate-100 pt-2">
+              {coupon ? (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">🏷️ {coupon.code}
+                    <button onClick={() => { setCoupon(null); setCode(''); }} className="ml-1 text-emerald-500 hover:text-emerald-700">✕</button>
+                  </span>
+                  <span className="tabular-nums text-emerald-600">−{fmt(discount)}</span>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => e.key === 'Enter' && applyCoupon()}
+                    placeholder="Promo code"
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm uppercase"
+                  />
+                  <button onClick={applyCoupon} disabled={!code.trim()} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50">Apply</button>
+                </div>
+              )}
+              {couponErr && <p className="mt-1 text-xs text-red-600">{couponErr}</p>}
+            </div>
+
             <div className="mb-2 flex items-center justify-between border-t border-slate-100 pt-2">
               <span className="font-semibold text-slate-800">Total</span>
-              <span className="text-lg font-bold text-slate-900">{fmt(total)}</span>
+              <span className="text-lg font-bold text-slate-900">
+                {discount > 0 && <span className="mr-2 text-sm font-normal text-slate-400 line-through">{fmt(total)}</span>}
+                {fmt(payable)}
+              </span>
             </div>
             {info.loyalty_active && points > 0 && (
               <div className="mb-2 text-xs font-medium" style={{ color: accent }}>🎁 Earn {points.toLocaleString()} points with this order</div>
@@ -174,7 +225,7 @@ export default function ShopPage({ params }: { params: { storeId: string } }) {
                 className="rounded-lg px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
                 style={{ background: accent }}
               >
-                {busy ? 'Starting…' : `Pay ${fmt(total)}`}
+                {busy ? 'Starting…' : `Pay ${fmt(payable)}`}
               </button>
             </div>
             {error && <p className="mt-2 text-sm text-red-600">{error}</p>}

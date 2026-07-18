@@ -17,7 +17,11 @@ export type Permission =
   | 'webhook:write'
   | 'branding:write'
   | 'team:manage'
-  | 'billing:manage';
+  | 'billing:manage'
+  | 'coupon:read'
+  | 'coupon:write'
+  | 'giftcard:read'
+  | 'giftcard:write';
 
 const ROLE_PERMISSIONS: Record<MemberRole, Permission[]> = {
   owner: [
@@ -31,6 +35,10 @@ const ROLE_PERMISSIONS: Record<MemberRole, Permission[]> = {
     'branding:write',
     'team:manage',
     'billing:manage',
+    'coupon:read',
+    'coupon:write',
+    'giftcard:read',
+    'giftcard:write',
   ],
   developer: [
     'store:read',
@@ -39,8 +47,12 @@ const ROLE_PERMISSIONS: Record<MemberRole, Permission[]> = {
     'payment:read',
     'payment:write',
     'webhook:write',
+    'coupon:read',
+    'coupon:write',
+    'giftcard:read',
+    'giftcard:write',
   ],
-  analyst: ['store:read', 'payment:read'],
+  analyst: ['store:read', 'payment:read', 'coupon:read', 'giftcard:read'],
   platform_admin: [
     'store:read',
     'store:write',
@@ -48,6 +60,8 @@ const ROLE_PERMISSIONS: Record<MemberRole, Permission[]> = {
     'payment:read',
     'team:manage',
     'billing:manage',
+    'coupon:read',
+    'giftcard:read',
   ],
 };
 

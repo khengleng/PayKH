@@ -15,9 +15,10 @@ import { RiskModule } from '../risk/risk.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { ReceiptsModule } from '../receipts/receipts.module';
 import { KhqrImportModule } from '../khqr/khqr-import.module';
+import { CouponsModule } from '../coupons/coupons.module';
 
 @Module({
-  imports: [WebhooksModule, BillingModule, BranchesModule, CustomersModule, LoyaltyModule, ReferralsModule, GamesModule, RiskModule, LedgerModule, ReceiptsModule, KhqrImportModule],
+  imports: [WebhooksModule, BillingModule, BranchesModule, CustomersModule, LoyaltyModule, ReferralsModule, GamesModule, RiskModule, LedgerModule, ReceiptsModule, KhqrImportModule, CouponsModule],
   controllers: [PaymentsController, CheckoutController],
   providers: [PaymentsService, PaymentEventsService, ApiKeyGuard],
   exports: [PaymentsService],
