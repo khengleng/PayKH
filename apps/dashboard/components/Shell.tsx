@@ -50,6 +50,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string; icon: s
     items: [
       { href: '/keys', label: 'API Keys', icon: 'keys' },
       { href: '/webhooks', label: 'Webhooks', icon: 'webhooks' },
+      { href: '/paychain', label: 'PayChain', icon: 'paychain' },
       { href: DOCS_URL, label: 'Documentation', icon: 'docs', external: true },
     ],
   },

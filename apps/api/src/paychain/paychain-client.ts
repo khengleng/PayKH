@@ -38,6 +38,24 @@ export interface PayChainBalance {
   updatedAt?: string;
 }
 
+export interface PayChainAsset {
+  id: string;
+  assetCode: string;
+  assetName: string;
+  assetType: string;
+  status: string;
+  issuerPublicKey?: string;
+  createdAt?: string;
+}
+
+export interface PayChainWebhook {
+  id: string;
+  url: string;
+  events: string[];
+  status: string;
+  createdAt?: string;
+}
+
 export class PayChainError extends Error {
   constructor(message: string, readonly status: number, readonly detail?: string) {
     super(message);
@@ -150,6 +168,90 @@ export class PayChainClient {
     }
   }
 
+  /** Deeper status: readiness + blockchain reachability, when authenticated. */
+  async status(conn: PayChainConnection): Promise<{ health: boolean; ready: boolean; blockchain: unknown | null }> {
+    const token = await this.token(conn).catch(() => null);
+    const [ready, blockchain] = await Promise.all([
+      token ? this.get<unknown>(conn.baseUrl, '/health/ready', token).then(() => true).catch(() => false) : Promise.resolve(false),
+      token ? this.get<unknown>(conn.baseUrl, '/health/blockchain', token).catch(() => null) : Promise.resolve(null),
+    ]);
+    return { health: await this.health(conn.baseUrl), ready, blockchain };
+  }
+
+  // --------------------------------------------------------------- assets
+  async listAssets(conn: PayChainConnection): Promise<PayChainAsset[]> {
+    return this.get<PayChainAsset[]>(conn.baseUrl, '/assets', await this.token(conn));
+  }
+  async getAsset(conn: PayChainConnection, assetId: string): Promise<PayChainAsset> {
+    return this.get<PayChainAsset>(conn.baseUrl, `/assets/${encodeURIComponent(assetId)}`, await this.token(conn));
+  }
+  /** Create a loyalty asset (an owner can mint their own loyalty currency from
+   *  PayKH rather than pre-provisioning it on PayChain). */
+  async createAsset(
+    conn: PayChainConnection,
+    input: { assetCode: string; assetName: string; assetType?: string; expiryPolicy?: string; expiryDays?: number },
+    eventId: string,
+  ): Promise<PayChainAsset> {
+    return this.post<PayChainAsset>(conn.baseUrl, '/assets', { assetType: 'LOYALTY_POINT', ...input }, {
+      token: await this.token(conn),
+      idempotencyKey: `paykh:asset:create:${eventId}`,
+      correlationId: eventId,
+    });
+  }
+  async activateAsset(conn: PayChainConnection, assetId: string, eventId: string): Promise<PayChainAsset> {
+    return this.post<PayChainAsset>(conn.baseUrl, `/assets/${encodeURIComponent(assetId)}/activate`, {}, {
+      token: await this.token(conn),
+      idempotencyKey: `paykh:asset:activate:${eventId}`,
+      correlationId: eventId,
+    });
+  }
+
+  /** Move points between two customer wallets (P2P gifting). */
+  async transfer(conn: PayChainConnection, fromWalletId: string, toWalletId: string, amount: string, eventId: string): Promise<PayChainTxn> {
+    return this.post<PayChainTxn>(conn.baseUrl, `/assets/${encodeURIComponent(conn.loyaltyAssetId)}/transfer`,
+      { sourceWalletId: fromWalletId, destinationWalletId: toWalletId, amount },
+      { token: await this.token(conn), idempotencyKey: `paykh:transfer:${eventId}`, correlationId: eventId });
+  }
+  /** Permanently destroy points (e.g. expiry). */
+  async burn(conn: PayChainConnection, walletId: string, amount: string, eventId: string): Promise<PayChainTxn> {
+    return this.post<PayChainTxn>(conn.baseUrl, `/assets/${encodeURIComponent(conn.loyaltyAssetId)}/burn`,
+      { walletId, amount },
+      { token: await this.token(conn), idempotencyKey: `paykh:burn:${eventId}`, correlationId: eventId });
+  }
+
+  // ---------------------------------------------------------- wallets/txns
+  async getWallet(conn: PayChainConnection, walletId: string): Promise<Record<string, unknown>> {
+    return this.get<Record<string, unknown>>(conn.baseUrl, `/wallets/${encodeURIComponent(walletId)}`, await this.token(conn));
+  }
+  async listTransactions(conn: PayChainConnection): Promise<PayChainTxn[]> {
+    return this.get<PayChainTxn[]>(conn.baseUrl, '/transactions', await this.token(conn));
+  }
+  async getTransaction(conn: PayChainConnection, txnId: string): Promise<PayChainTxn> {
+    return this.get<PayChainTxn>(conn.baseUrl, `/transactions/${encodeURIComponent(txnId)}`, await this.token(conn));
+  }
+
+  /** Quote converting points from one asset to another (e.g. redeem loyalty into
+   *  a partner asset). Read-only — no idempotency key needed. */
+  async conversionQuote(conn: PayChainConnection, input: { fromAssetId: string; toAssetId: string; walletId: string; pointsAmount: string }): Promise<Record<string, unknown>> {
+    return this.post<Record<string, unknown>>(conn.baseUrl, '/conversions/quote', input, { token: await this.token(conn) });
+  }
+
+  // ------------------------------------------------------------- webhooks
+  async listWebhooks(conn: PayChainConnection): Promise<PayChainWebhook[]> {
+    return this.get<PayChainWebhook[]>(conn.baseUrl, '/webhooks', await this.token(conn));
+  }
+  /** Register a webhook. The signing secret is returned once, at creation. */
+  async createWebhook(conn: PayChainConnection, url: string, events: string[], eventId: string): Promise<PayChainWebhook & { secret?: string; signingSecret?: string }> {
+    return this.post<PayChainWebhook & { secret?: string; signingSecret?: string }>(conn.baseUrl, '/webhooks', { url, events }, {
+      token: await this.token(conn),
+      idempotencyKey: `paykh:webhook:${eventId}`,
+      correlationId: eventId,
+    });
+  }
+  async deleteWebhook(conn: PayChainConnection, id: string): Promise<void> {
+    await this.del(conn.baseUrl, `/webhooks/${encodeURIComponent(id)}`, await this.token(conn));
+  }
+
   // ------------------------------------------------------------- transport
   private base(baseUrl: string): string {
     return `${baseUrl.replace(/\/$/, '')}/api/v1`;
@@ -165,6 +267,15 @@ export class PayChainClient {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     return this.parse<T>(res, `GET ${path}`);
+  }
+
+  private async del(baseUrl: string, path: string, token: string): Promise<void> {
+    const res = await fetch(`${this.base(baseUrl)}${path}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok && res.status !== 404) await this.parse(res, `DELETE ${path}`);
   }
 
   private async post<T>(

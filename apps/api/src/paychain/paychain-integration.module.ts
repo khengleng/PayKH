@@ -1,7 +1,8 @@
 import { Body, Controller, Delete, Get, Injectable, Logger, Module, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
+import { prefixedId } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../common/crypto.service';
 import { ApiError } from '../common/api-error';
@@ -182,9 +183,23 @@ export class PayChainIntegrationService {
     return { ok, detail, latency_ms: Date.now() - started };
   }
 
-  /** Resolve a tenant's connection for the adapter. Null when unusable. */
+  /** Resolve a tenant's connection for the adapter. Null when unusable — value
+   *  ops are gated on the paychain.enabled flag. */
   async resolve(orgId: string): Promise<{ baseUrl: string; clientId: string; clientSecret: string; loyaltyAssetId: string } | null> {
     if (!(await this.flags.isEnabled('paychain.enabled', orgId))) return null;
+    return this.connectionRow(orgId);
+  }
+
+  /** Owner-scoped connection for the management console — available even before
+   *  the flag is on, so an owner can create/activate their asset, then enable. */
+  async resolveForOwner(user: AuthUser, orgId: string) {
+    this.assertOwner(user, orgId);
+    const conn = await this.connectionRow(orgId);
+    if (!conn) throw ApiError.invalidRequest('PayChain is not configured for this organization');
+    return conn;
+  }
+
+  private async connectionRow(orgId: string) {
     const row = await this.prisma.payChainIntegration.findUnique({ where: { organizationId: orgId } });
     if (!row) return null;
     return {
@@ -193,6 +208,12 @@ export class PayChainIntegrationService {
       clientSecret: this.crypto.decrypt(row.secretCiphertext),
       loyaltyAssetId: row.loyaltyAssetId,
     };
+  }
+
+  /** Persist a newly-created asset id as the org's loyalty asset. */
+  async setLoyaltyAsset(user: AuthUser, orgId: string, assetId: string) {
+    this.assertOwner(user, orgId);
+    await this.prisma.payChainIntegration.update({ where: { organizationId: orgId }, data: { loyaltyAssetId: assetId } });
   }
 
   private safeDecrypt(ciphertext: string): string | undefined {
@@ -244,10 +265,136 @@ export class PayChainIntegrationController {
   }
 }
 
+/**
+ * Owner-only console over the full PayChain service surface — so a shop owner
+ * can exercise every PayChain capability from PayKH: asset lifecycle, on-chain
+ * transaction history, webhooks, health. All per-tenant (their own credentials).
+ */
+class CreateAssetConsoleDto {
+  @IsString() @MinLength(1) @MaxLength(12) assetCode!: string;
+  @IsString() @MinLength(1) @MaxLength(60) assetName!: string;
+  @IsOptional() @IsString() expiryPolicy?: string;
+  @IsOptional() setAsLoyaltyAsset?: boolean;
+}
+class TransferConsoleDto {
+  @IsString() fromWalletId!: string;
+  @IsString() toWalletId!: string;
+  @IsString() amount!: string;
+}
+class CreateWebhookConsoleDto {
+  @IsUrl({ require_tld: false }) url!: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) events?: string[];
+}
+
+@Injectable()
+export class PayChainConsoleService {
+  private readonly logger = new Logger('PayChainConsole');
+  constructor(private readonly integration: PayChainIntegrationService, private readonly client: PayChainClient) {}
+
+  /** One call for the console: connection status + assets + recent txns + webhooks. */
+  async overview(user: AuthUser, orgId: string) {
+    const conn = await this.integration.resolveForOwner(user, orgId);
+    const [status, assets, transactions, webhooks] = await Promise.all([
+      this.client.status(conn).catch(() => ({ health: false, ready: false, blockchain: null })),
+      this.client.listAssets(conn).catch(() => []),
+      this.client.listTransactions(conn).catch(() => []),
+      this.client.listWebhooks(conn).catch(() => []),
+    ]);
+    return { loyalty_asset_id: conn.loyaltyAssetId, status, assets, transactions: transactions.slice(0, 25), webhooks };
+  }
+
+  async createAsset(user: AuthUser, orgId: string, dto: CreateAssetConsoleDto) {
+    const conn = await this.integration.resolveForOwner(user, orgId);
+    const eventId = prefixedId('pcasset');
+    const asset = await this.client.createAsset(
+      conn,
+      { assetCode: dto.assetCode.toUpperCase(), assetName: dto.assetName, expiryPolicy: dto.expiryPolicy },
+      eventId,
+    );
+    // Best-effort activate so it can issue immediately.
+    await this.client.activateAsset(conn, asset.id, eventId).catch((e) => this.logger.warn(`activate ${asset.id} failed: ${e}`));
+    if (dto.setAsLoyaltyAsset) await this.integration.setLoyaltyAsset(user, orgId, asset.id);
+    return asset;
+  }
+
+  async activateAsset(user: AuthUser, orgId: string, assetId: string) {
+    const conn = await this.integration.resolveForOwner(user, orgId);
+    return this.client.activateAsset(conn, assetId, prefixedId('pcact'));
+  }
+
+  async transfer(user: AuthUser, orgId: string, dto: TransferConsoleDto) {
+    const conn = await this.integration.resolveForOwner(user, orgId);
+    return this.client.transfer(conn, dto.fromWalletId, dto.toWalletId, dto.amount, prefixedId('pctx'));
+  }
+
+  async listWebhooks(user: AuthUser, orgId: string) {
+    const conn = await this.integration.resolveForOwner(user, orgId);
+    return this.client.listWebhooks(conn);
+  }
+
+  async createWebhook(user: AuthUser, orgId: string, dto: CreateWebhookConsoleDto) {
+    const conn = await this.integration.resolveForOwner(user, orgId);
+    const events = dto.events?.length ? dto.events : ['asset.issued', 'asset.transferred', 'asset.redeemed', 'asset.burned', 'transaction.compensated'];
+    const wh = await this.client.createWebhook(conn, dto.url, events, prefixedId('pcwh'));
+    // The signing secret is returned once — surface it so the owner can store it.
+    return wh;
+  }
+
+  async deleteWebhook(user: AuthUser, orgId: string, id: string) {
+    const conn = await this.integration.resolveForOwner(user, orgId);
+    await this.client.deleteWebhook(conn, id);
+    return { deleted: true };
+  }
+}
+
+@ApiTags('paychain')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('dashboard/orgs/:orgId/paychain/console')
+export class PayChainConsoleController {
+  constructor(private readonly console: PayChainConsoleService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'PayChain console overview: status + assets + transactions + webhooks (owner)' })
+  overview(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string) {
+    return this.console.overview(user, orgId);
+  }
+
+  @Post('assets')
+  @ApiOperation({ summary: 'Create (and activate) a loyalty asset on PayChain' })
+  createAsset(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() dto: CreateAssetConsoleDto) {
+    return this.console.createAsset(user, orgId, dto);
+  }
+
+  @Post('assets/:assetId/activate')
+  @ApiOperation({ summary: 'Activate an asset' })
+  activate(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('assetId') assetId: string) {
+    return this.console.activateAsset(user, orgId, assetId);
+  }
+
+  @Post('transfer')
+  @ApiOperation({ summary: 'Transfer points between two wallets' })
+  transfer(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() dto: TransferConsoleDto) {
+    return this.console.transfer(user, orgId, dto);
+  }
+
+  @Post('webhooks')
+  @ApiOperation({ summary: 'Register a PayChain webhook (secret returned once)' })
+  createWebhook(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Body() dto: CreateWebhookConsoleDto) {
+    return this.console.createWebhook(user, orgId, dto);
+  }
+
+  @Delete('webhooks/:id')
+  @ApiOperation({ summary: 'Delete a PayChain webhook' })
+  deleteWebhook(@CurrentUser() user: AuthUser, @Param('orgId') orgId: string, @Param('id') id: string) {
+    return this.console.deleteWebhook(user, orgId, id);
+  }
+}
+
 @Module({
   imports: [AuthModule],
-  controllers: [PayChainIntegrationController],
-  providers: [PayChainIntegrationService, PayChainClient],
+  controllers: [PayChainIntegrationController, PayChainConsoleController],
+  providers: [PayChainIntegrationService, PayChainConsoleService, PayChainClient],
   exports: [PayChainIntegrationService, PayChainClient],
 })
 export class PayChainIntegrationModule {}
