@@ -80,14 +80,18 @@ valid      = constant_time_equals(expected, parts["v1"])
 ## Delivery semantics
 
 - At-least-once delivery; endpoints must be **idempotent** on `event.id`.
-- Exponential backoff (`30s → 1m → 2m → …`, up to 6 attempts); each attempt is
-  logged on the `WebhookDelivery` row (status, attempt, HTTP code, error).
+- Exponential backoff (`30s → 1m → 2m → …`, up to 6 attempts); each delivery
+  row logs status, attempt, HTTP code, error, next-retry time, and a bounded
+  snippet of the **receiver's response body** (expand a row in the delivery log).
 - Endpoints are auto-disabled after 20 consecutive permanent failures; the
   merchant is notified via a `SecurityEvent` + audit-log entry surfaced in the
   dashboard (email notification is a Phase 4 item).
 - Dashboard → **Webhooks**: add/enable/disable endpoints, select events, view
   the signing secret, **rotate** it (old secret valid 24h), view **deliveries**,
-  **resend** a delivery, and **send a test** event.
+  **resend** a delivery, **send a test** event, and **Replay all dead-lettered**
+  to re-enable the endpoint and re-queue every exhausted delivery in one click.
+- Integrator handoff docs: [`API-CONTRACT.md`](./API-CONTRACT.md) and
+  [`webhook-receiver-example.md`](./webhook-receiver-example.md).
 - The `X-Payment-Event` header carries the event type; `X-Payment-Id` carries
   the event id for idempotent processing.
 

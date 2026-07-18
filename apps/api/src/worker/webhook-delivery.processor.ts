@@ -17,6 +17,9 @@ import {
 } from '../queue/queue.constants';
 
 const DELIVERY_TIMEOUT_MS = 10_000;
+// Cap the receiver-response snippet we persist for debugging — enough to show
+// an error message/stack, bounded so a chatty endpoint can't bloat the table.
+const MAX_RESPONSE_BODY = 2_000;
 
 /**
  * Performs the signed HTTP delivery of a webhook event. Retries are driven by
@@ -94,6 +97,7 @@ export class WebhookDeliveryProcessor extends WorkerHost {
     );
 
     let responseStatus: number | null = null;
+    let responseBody: string | null = null;
     let errorText: string | null = null;
 
     try {
@@ -116,6 +120,9 @@ export class WebhookDeliveryProcessor extends WorkerHost {
           redirect: 'error',
         });
         responseStatus = res.status;
+        // Persist a bounded snippet of what the receiver returned so integrators
+        // can debug from the delivery log (their 4xx/5xx error text, etc.).
+        responseBody = (await res.text().catch(() => '')).slice(0, MAX_RESPONSE_BODY) || null;
         if (!res.ok) {
           errorText = `HTTP ${res.status}`;
         }
@@ -129,7 +136,7 @@ export class WebhookDeliveryProcessor extends WorkerHost {
     if (responseStatus && responseStatus >= 200 && responseStatus < 300) {
       await this.prisma.webhookDelivery.update({
         where: { id: deliveryId },
-        data: { status: 'SUCCEEDED', attempt, responseStatus, error: null, nextAttemptAt: null },
+        data: { status: 'SUCCEEDED', attempt, responseStatus, responseBody, error: null, nextAttemptAt: null },
       });
       this.logger.log(`delivered ${deliveryId} -> ${endpoint.url} (${responseStatus}) attempt=${attempt}`);
       return;
@@ -138,14 +145,14 @@ export class WebhookDeliveryProcessor extends WorkerHost {
     // Failed this attempt.
     const isFinal = attempt >= WEBHOOK_MAX_ATTEMPTS;
     if (isFinal) {
-      await this.markPermanentFailure(deliveryId, endpoint.id, job, responseStatus, errorText);
+      await this.markPermanentFailure(deliveryId, endpoint.id, job, responseStatus, errorText, responseBody);
       return;
     }
 
     const nextAttemptAt = new Date(Date.now() + WEBHOOK_BACKOFF_MS * Math.pow(2, job.attemptsMade));
     await this.prisma.webhookDelivery.update({
       where: { id: deliveryId },
-      data: { status: 'PENDING', attempt, responseStatus, error: errorText, nextAttemptAt },
+      data: { status: 'PENDING', attempt, responseStatus, responseBody, error: errorText, nextAttemptAt },
     });
     this.logger.warn(`delivery ${deliveryId} failed attempt=${attempt} (${errorText}); retrying`);
     // Throw so BullMQ schedules the next attempt with backoff.
@@ -158,6 +165,7 @@ export class WebhookDeliveryProcessor extends WorkerHost {
     job: Job,
     responseStatus: number | null,
     errorText: string | null,
+    responseBody: string | null = null,
   ): Promise<void> {
     await this.prisma.webhookDelivery.update({
       where: { id: deliveryId },
@@ -165,6 +173,7 @@ export class WebhookDeliveryProcessor extends WorkerHost {
         status: 'FAILED',
         attempt: job.attemptsMade + 1,
         responseStatus,
+        responseBody,
         error: errorText,
         nextAttemptAt: null,
       },

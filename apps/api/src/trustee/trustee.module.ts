@@ -8,6 +8,7 @@ import { SettingsCoreModule, SettingsService } from '../settings/settings.module
 import { LedgerModule } from '../ledger/ledger.module';
 import { ReconciliationService } from '../ledger/reconciliation.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthModule } from '../auth/auth.module';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { ApiError } from '../common/api-error';
 
@@ -288,7 +289,7 @@ export class TrusteeAdminController {
 }
 
 @Module({
-  imports: [SettingsCoreModule, LedgerModule],
+  imports: [AuthModule, SettingsCoreModule, LedgerModule],
   controllers: [TrusteeWellKnownController, TrusteeAdminController],
   providers: [TrusteeService],
 })
