@@ -199,6 +199,7 @@ export const STATUS_TO_EVENT: Partial<Record<PaymentStatus, WebhookEventType>> =
 export type ApiErrorCode =
   | 'unauthorized'
   | 'forbidden'
+  | 'email_unverified'
   | 'invalid_request'
   | 'amount_too_low'
   | 'amount_too_high'
@@ -220,6 +221,7 @@ export interface ApiErrorBody {
 export const ERROR_HTTP_STATUS: Record<ApiErrorCode, number> = {
   unauthorized: 401,
   forbidden: 403,
+  email_unverified: 403,
   invalid_request: 400,
   amount_too_low: 400,
   amount_too_high: 400,

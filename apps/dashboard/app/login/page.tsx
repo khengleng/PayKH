@@ -17,21 +17,32 @@ export default function LoginPage() {
   const router = useRouter();
   const t = useT();
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('owner@demo.paykh.dev');
-  const [password, setPassword] = useState('Password123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [orgName, setOrgName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // When set, we show the "check your email to confirm" screen for this address.
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const path = mode === 'login' ? '/auth/login' : '/auth/register';
-      const body = mode === 'login' ? { email, password } : { email, password, name, organizationName: orgName };
-      const result = await api<AuthResult>(path, { method: 'POST', body, auth: false });
+      if (mode === 'register') {
+        const r = await api<{ email: string }>('/auth/register', {
+          method: 'POST',
+          body: { email, password, name, organizationName: orgName },
+          auth: false,
+        });
+        setPendingEmail(r.email || email);
+        return;
+      }
+      const result = await api<AuthResult>('/auth/login', { method: 'POST', body: { email, password }, auth: false });
       tokenStore.set(result.token);
       if (result.organization?.id) orgStore.set(result.organization.id);
       const next = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
@@ -40,9 +51,28 @@ export default function LoginPage() {
       const me = await api<{ is_platform_admin?: boolean; organizations: unknown[] }>('/auth/me').catch(() => null);
       router.push(me?.is_platform_admin && me.organizations.length === 0 ? '/admin' : '/overview');
     } catch (err) {
+      // An enrolled-but-unconfirmed account → show the confirm-email screen with a resend.
+      if (err instanceof ApiError && err.code === 'email_unverified') {
+        setPendingEmail(email);
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resend = async () => {
+    if (!pendingEmail) return;
+    setResending(true);
+    setResendMsg(null);
+    try {
+      await api('/auth/resend-verification', { method: 'POST', body: { email: pendingEmail }, auth: false });
+      setResendMsg('Confirmation email sent. Check your inbox (and spam).');
+    } catch {
+      setResendMsg('Could not resend right now — try again in a moment.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -85,8 +115,34 @@ export default function LoginPage() {
               <LangToggle />
             </div>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{mode === 'login' ? t('welcome_back') : 'Create your account'}</h1>
-          <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? t('signin_sub') : 'Start accepting KHQR payments in minutes.'}</p>
+          {pendingEmail ? (
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Confirm your email</h1>
+              <p className="mt-2 text-sm text-slate-600">
+                We sent a confirmation link to <span className="font-medium text-slate-900">{pendingEmail}</span>.
+                Click it to activate your account and sign in. The link expires in 24 hours.
+              </p>
+              {resendMsg && <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-600/10">{resendMsg}</p>}
+              <button
+                type="button"
+                onClick={resend}
+                disabled={resending}
+                className="mt-5 w-full rounded-lg bg-brand-500 py-2.5 font-semibold text-white shadow-brand transition-all hover:bg-brand-600 disabled:opacity-60"
+              >
+                {resending ? 'Sending…' : 'Resend confirmation email'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setPendingEmail(null); setResendMsg(null); setMode('login'); }}
+                className="mt-4 w-full text-center text-sm text-slate-500 hover:text-brand-600"
+              >
+                Back to sign in
+              </button>
+            </div>
+          ) : (
+          <>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{mode === 'login' ? t('welcome_back') : 'Enroll for demo access'}</h1>
+          <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? t('signin_sub') : 'Sign up to test PayKH — confirm your email to activate.'}</p>
 
           <form onSubmit={submit} className="mt-6 space-y-3.5">
             {mode === 'register' && (
@@ -108,7 +164,7 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full rounded-lg bg-brand-500 py-2.5 font-semibold text-white shadow-brand transition-all hover:bg-brand-600 active:bg-brand-700 disabled:opacity-60"
             >
-              {loading ? 'Please wait…' : mode === 'login' ? t('signin') : 'Create account'}
+              {loading ? 'Please wait…' : mode === 'login' ? t('signin') : 'Enroll'}
             </button>
           </form>
 
@@ -117,13 +173,9 @@ export default function LoginPage() {
             onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}
             className="mt-4 w-full text-center text-sm text-slate-500 hover:text-brand-600"
           >
-            {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+            {mode === 'login' ? 'Want to test PayKH? Enroll for demo access' : 'Already have an account? Sign in'}
           </button>
-
-          {mode === 'login' && (
-            <p className="mt-6 rounded-lg border border-dashed border-slate-200 px-3 py-2 text-center text-xs text-slate-400">
-              Demo: <span className="font-medium text-slate-500">owner@demo.paykh.dev</span> · pre-filled
-            </p>
+          </>
           )}
         </div>
       </section>

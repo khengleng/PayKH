@@ -44,6 +44,11 @@ export class ForgotPasswordDto {
   email!: string;
 }
 
+export class VerifyEmailDto {
+  @IsString()
+  token!: string;
+}
+
 export class ResetPasswordDto {
   @IsString()
   token!: string;

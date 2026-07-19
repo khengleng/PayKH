@@ -317,13 +317,28 @@ model User {
   mfaSecret       String? // AES-GCM-encrypted TOTP secret (null until enrolled)
   mfaLastCounter  Int? // last accepted TOTP step counter — rejects code replay within its window
   isPlatformAdmin Boolean  @default(false) // global platform operator
+  emailVerifiedAt DateTime? // null until the enrollee confirms their email; login is gated on this
   tokenEpoch      Int      @default(0) // bumped on password change/reset; JWTs carrying a stale epoch are rejected
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  memberships         OrganizationMember[]
-  auditLogs           AuditLog[]
-  passwordResetTokens PasswordResetToken[]
+  memberships             OrganizationMember[]
+  auditLogs               AuditLog[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+}
+
+model EmailVerificationToken {
+  id        String    @id
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Organization {

@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { MfaService } from './mfa.service';
-import { ChangePasswordDto, ForgotPasswordDto, LoginDto, MfaCodeDto, RegisterDto, ResetPasswordDto } from './dto';
+import { ChangePasswordDto, ForgotPasswordDto, LoginDto, MfaCodeDto, RegisterDto, ResetPasswordDto, VerifyEmailDto } from './dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser, AuthUser } from './current-user';
 import { AuditService } from '../audit/audit.service';
@@ -22,19 +22,46 @@ export class AuthController {
   @Post('register')
   @UseGuards(RateLimitGuard)
   @RateLimit({ limit: 10, windowSec: 60, by: 'ip' })
-  @ApiOperation({ summary: 'Create a merchant account + organization' })
+  @ApiOperation({ summary: 'Enroll for a demo/test account (email confirmation required)' })
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const result = await this.auth.register(dto);
     await this.audit.record({
-      organizationId: result.organization.id,
-      actorUserId: result.user.id,
+      organizationId: result.organizationId,
+      actorUserId: result.userId,
       action: 'user.register',
+      entity: `user:${result.userId}`,
+      ipAddress: req.ip,
+      userAgent: req.header('user-agent'),
+      requestId: getRequestId(req),
+    });
+    // Do not leak internal ids; the client only needs to know to check email.
+    return { verification_required: true, email: result.email };
+  }
+
+  @Post('verify-email')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 10, windowSec: 60, by: 'ip' })
+  @ApiOperation({ summary: 'Confirm an email with a verification token → activates + signs in' })
+  async verifyEmail(@Body() dto: VerifyEmailDto, @Req() req: Request) {
+    const result = await this.auth.verifyEmail(dto.token);
+    await this.audit.record({
+      organizationId: result.organization.id || null,
+      actorUserId: result.user.id,
+      action: 'user.email_verified',
       entity: `user:${result.user.id}`,
       ipAddress: req.ip,
       userAgent: req.header('user-agent'),
       requestId: getRequestId(req),
     });
     return result;
+  }
+
+  @Post('resend-verification')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 5, windowSec: 60, by: 'ip' })
+  @ApiOperation({ summary: 'Resend the email-confirmation link (always 200)' })
+  resendVerification(@Body() dto: ForgotPasswordDto) {
+    return this.auth.resendVerification(dto.email);
   }
 
   @Post('forgot-password')
