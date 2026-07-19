@@ -5,9 +5,9 @@ This roadmap tracks the **Master AI Engineering Blueprint** — 100 modules acro
 time, commit + deploy + review after each.
 
 > **✅ means the code is shipped, not that it has run against a live upstream.**
-> Real-money and on-chain paths (Bakong payments, PayChain, disbursement) default
-> to mock / flag-off / no-op pending live credentials — see the caveats in the
-> [README](README.md) and detail docs.
+> Prod runs the `routing` payment provider (real bank QR, no auto paid-detection,
+> mock fallback); PayChain, promos, and disbursement are flag-off / no-op pending
+> live credentials — see the caveats in the [README](README.md) and detail docs.
 
 ## 1. Platform Foundation
 ✅ Monorepo · ✅ Architecture & standards · ✅ Railway deploy · ✅ CI/CD · ✅ Env mgmt

@@ -5,9 +5,12 @@ payments through a simple REST API, hosted checkout pages, and real-time webhook
 
 > **Status: Phases 1–4 built and deployed.** The code for all four phases is
 > implemented and running on Railway. **Caveat — built and deployed does not
-> mean proven against live upstreams:** the deployed payment provider defaults to
-> **mock**, PayChain and the promo modules are **feature-flag-off**, disbursement
-> is a no-op until bank credentials are set, and the real-money / on-chain paths
+> mean proven against live upstreams:** the deployed api runs the **`routing`**
+> provider — a store that imported its bank's KHQR gets a real, bank-routable QR
+> (real money can move) but PayKH does **not** auto-detect the incoming payment;
+> stores without imported creds fall back to **mock** (repo/local default). Alongside
+> that, PayChain and the promo modules are **feature-flag-off**, disbursement is a
+> **no-op** until bank credentials are set, and the real-money / on-chain paths
 > have not completed end-to-end against a live external system. See
 > [`docs/architecture.md`](docs/architecture.md) for the roadmap and
 > [`ASSUMPTIONS.md`](ASSUMPTIONS.md) for scope decisions.
@@ -27,9 +30,10 @@ Phase 1:
 Phase 2:
 - **Real `BakongKhqrProvider`** (NBC Open API): KHQR generation + status polling,
   behind the provider abstraction with timeout/retry/circuit-breaker.
-  _Deployed default is `mock`; unit-tested against a mocked client, never run
-  live. In the per-store "routing" mode the QR is real but incoming-payment
-  detection is not yet wired (the `simulate` endpoint drives the paid state)._
+  _Repo/local default is `mock`; **prod runs `routing`**. The `bakong` provider
+  is unit-tested against a mocked client, never run live. In the per-store
+  "routing" mode (prod) the QR is real but incoming-payment detection is not yet
+  wired — the `simulate` endpoint drives the paid state._
 - **Webhooks**: signed (HMAC-SHA256) delivery via a BullMQ worker, exponential
   backoff + max retries, delivery logs, resend, send-test, secret rotation,
   auto-disable on repeated failure; dashboard Webhooks module
