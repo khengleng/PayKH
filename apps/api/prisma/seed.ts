@@ -33,7 +33,7 @@ async function seedDemoMerchant() {
 
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
-      data: { email: DEMO_EMAIL, passwordHash, name: 'Demo Owner' },
+      data: { email: DEMO_EMAIL, passwordHash, name: 'Demo Owner', emailVerifiedAt: new Date() },
     });
     await tx.organization.create({
       data: { id: orgId, name: 'Demo Merchant Co', planId: 'plan_free' },
@@ -97,7 +97,7 @@ async function seedDemoTeam() {
     const existing = await prisma.user.findUnique({ where: { email: t.email } });
     if (existing) { console.log(`• ${t.role} already exists (${t.email}) — skipping`); continue; }
     const passwordHash = await hashPassword(DEMO_PASSWORD);
-    const user = await prisma.user.create({ data: { email: t.email, passwordHash, name: t.name } });
+    const user = await prisma.user.create({ data: { email: t.email, passwordHash, name: t.name, emailVerifiedAt: new Date() } });
     await prisma.organizationMember.create({ data: { organizationId: orgId, userId: user.id, role: t.role } });
     console.log(`✓ Seeded ${t.role}: ${t.email} / ${DEMO_PASSWORD}`);
   }
@@ -112,7 +112,7 @@ async function seedPlatformAdmin() {
   }
   const passwordHash = await hashPassword('AdminPassword123!');
   await prisma.user.create({
-    data: { email, passwordHash, name: 'Platform Admin', isPlatformAdmin: true },
+    data: { email, passwordHash, name: 'Platform Admin', isPlatformAdmin: true, emailVerifiedAt: new Date() },
   });
   console.log('\n✓ Seeded platform admin');
   console.log('  ---------------------------------------------');

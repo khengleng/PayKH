@@ -92,6 +92,46 @@ export class AdminService {
     return { is_platform_admin: !!u?.isPlatformAdmin, email: u?.email };
   }
 
+  /**
+   * Pending demo enrollments — accounts that registered but have not confirmed
+   * their email. Gives an operator visibility and a way to complete verification
+   * when live email is unavailable (Resend unconfigured → EmailService logs only).
+   */
+  async listPendingEnrollments(user: AuthUser) {
+    await this.assertAdmin(user.userId);
+    const users = await this.prisma.user.findMany({
+      where: { emailVerifiedAt: null, passwordHash: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        memberships: { include: { organization: true }, take: 1 },
+        emailVerificationTokens: { where: { usedAt: null }, orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    return users.map((u) => ({
+      user_id: u.id,
+      email: u.email,
+      name: u.name,
+      organization: u.memberships[0]?.organization.name ?? null,
+      enrolled_at: u.createdAt.toISOString(),
+      link_pending: u.emailVerificationTokens.length > 0,
+      link_expires_at: u.emailVerificationTokens[0]?.expiresAt.toISOString() ?? null,
+    }));
+  }
+
+  /** Manually confirm a pending enrollment — the bridge when live email isn't set up. */
+  async verifyEnrollment(user: AuthUser, userId: string) {
+    await this.assertAdmin(user.userId);
+    const target = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!target) throw ApiError.paymentNotFound('User not found');
+    if (target.emailVerifiedAt) return { user_id: userId, already_verified: true };
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } }),
+      this.prisma.emailVerificationToken.deleteMany({ where: { userId, usedAt: null } }),
+    ]);
+    return { user_id: userId, verified: true };
+  }
+
   async listOrgs(user: AuthUser, search?: string) {
     await this.assertAdmin(user.userId);
     const orgs = await this.prisma.organization.findMany({

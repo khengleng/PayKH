@@ -118,7 +118,13 @@ export class AuthService {
     return { ok: true };
   }
 
-  async register(dto: RegisterDto): Promise<AuthResult> {
+  /**
+   * Enroll for a demo/test account. The account is created **inactive** — no
+   * session is issued and login is refused — until the enrollee confirms their
+   * email via the link sent by {@link issueEmailVerification}. This is the gate
+   * that stops open, unverified access; a real, reachable mailbox is required.
+   */
+  async register(dto: RegisterDto): Promise<{ verificationRequired: true; email: string; userId: string; organizationId: string }> {
     const email = dto.email.toLowerCase().trim();
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -128,7 +134,8 @@ export class AuthService {
     const passwordHash = await hashPassword(dto.password);
     const orgName = dto.organizationName?.trim() || `${dto.name ?? 'My'} Organization`;
 
-    // Create user + organization + owner membership atomically.
+    // Create user (emailVerifiedAt null → unverified) + organization + owner
+    // membership atomically.
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: { email, passwordHash, name: dto.name ?? null },
@@ -147,12 +154,74 @@ export class AuthService {
     // attacker claim an invited email. Joining requires the invitation token
     // (delivered to the invited mailbox) via POST /team/invitations/accept.
 
-    const token = await this.sign(result.user.id, result.user.email, 0);
+    await this.issueEmailVerification(result.user.id, result.user.email);
+    this.logger.log(`enrolled (pending email verification) ${email}`);
+    return { verificationRequired: true, email: result.user.email, userId: result.user.id, organizationId: result.org.id };
+  }
+
+  /**
+   * Issue a single-use, 24-hour email-verification token and email the confirm
+   * link. Reused by register and by resend. When Resend is unconfigured the
+   * EmailService falls back to a log transport — the link is also logged here so
+   * an operator can complete/hand off verification without live email.
+   */
+  private async issueEmailVerification(userId: string, email: string): Promise<void> {
+    await this.prisma.emailVerificationToken.deleteMany({ where: { userId, usedAt: null } });
+    const raw = randomBytes(32).toString('base64url');
+    await this.prisma.emailVerificationToken.create({
+      data: { id: prefixedId('emv'), userId, tokenHash: this.hashToken(raw), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+    });
+    const base = this.config.get<string>('dashboardBaseUrl') ?? '';
+    const url = `${base}/verify-email?token=${raw}`;
+    const mailer = this.moduleRef.get(EmailService, { strict: false });
+    await mailer.send({
+      to: email,
+      subject: 'Confirm your email to activate your PayKH account',
+      html: `<div style="font-family:sans-serif;max-width:480px;margin:auto">
+        <h2 style="color:#1E5BD6">Confirm your email</h2>
+        <p>Welcome to PayKH. Confirm this email address to activate your account and start testing. This link expires in <b>24 hours</b> and can be used once.</p>
+        <p><a href="${url}" style="display:inline-block;background:#1E5BD6;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Confirm email</a></p>
+        <p style="color:#94a3b8;font-size:12px">Or paste this link: ${url}</p>
+      </div>`,
+      text: `Confirm your PayKH email to activate your account (expires in 24 hours): ${url}`,
+    });
+    this.logger.log(`email verification issued for ${email} → ${url}`);
+  }
+
+  /** Complete email verification with a valid, unexpired, unused token → active + logged in. */
+  async verifyEmail(rawToken: string): Promise<AuthResult> {
+    const record = await this.prisma.emailVerificationToken.findUnique({ where: { tokenHash: this.hashToken(rawToken) } });
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw ApiError.invalidRequest('This verification link is invalid or has expired. Request a new one from the sign-in page.');
+    }
+    const user = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id: record.userId },
+        data: { emailVerifiedAt: new Date() },
+        include: { memberships: { include: { organization: true } } },
+      });
+      await tx.emailVerificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+      await tx.emailVerificationToken.deleteMany({ where: { userId: record.userId, usedAt: null } });
+      return u;
+    });
+    const primary = user.memberships[0];
+    const token = await this.sign(user.id, user.email, user.tokenEpoch);
+    this.logger.log(`email verified for ${user.email}`);
     return {
       token,
-      user: { id: result.user.id, email: result.user.email, name: result.user.name },
-      organization: { id: result.org.id, name: result.org.name },
+      user: { id: user.id, email: user.email, name: user.name },
+      organization: primary ? { id: primary.organization.id, name: primary.organization.name } : { id: '', name: '' },
     };
+  }
+
+  /** Resend the verification email. Always succeeds (no account enumeration). */
+  async resendVerification(rawEmail: string): Promise<{ ok: true }> {
+    const email = rawEmail.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (user && !user.emailVerifiedAt) {
+      await this.issueEmailVerification(user.id, user.email);
+    }
+    return { ok: true };
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
@@ -181,6 +250,14 @@ export class AuthService {
         await this.throttle.recordFailure('login', email);
         throw new ApiError('unauthorized', 'MFA code required', 401);
       }
+    }
+
+    // Gate: an enrolled-but-unverified account cannot sign in. The password was
+    // correct, so clear the brute-force counter, then refuse with a specific
+    // code the UI turns into a "resend verification" prompt.
+    if (!user.emailVerifiedAt) {
+      await this.throttle.clear('login', email);
+      throw new ApiError('email_unverified', 'Please confirm your email address before signing in. Check your inbox or request a new confirmation link.', 403);
     }
 
     await this.throttle.clear('login', email);

@@ -34,6 +34,27 @@ export class AdminController {
     return this.admin.platformMetrics(user);
   }
 
+  @Get('enrollments')
+  @ApiOperation({ summary: 'Pending demo enrollments (registered, email not yet confirmed)' })
+  enrollments(@CurrentUser() user: AuthUser) {
+    return this.admin.listPendingEnrollments(user);
+  }
+
+  @Post('enrollments/:userId/verify')
+  @ApiOperation({ summary: 'Manually confirm a pending enrollment' })
+  async verifyEnrollment(@CurrentUser() user: AuthUser, @Param('userId') userId: string, @Req() req: Request) {
+    const result = await this.admin.verifyEnrollment(user, userId);
+    await this.audit.record({
+      actorUserId: user.userId,
+      action: 'admin.enrollment.verify',
+      entity: `user:${userId}`,
+      ipAddress: req.ip,
+      userAgent: req.header('user-agent'),
+      requestId: getRequestId(req),
+    });
+    return result;
+  }
+
   @Get('support/search')
   @ApiOperation({ summary: 'Universal support lookup (payments/customers/stores/orgs)' })
   supportSearch(@CurrentUser() user: AuthUser, @Query('q') q: string) {

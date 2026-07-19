@@ -8,7 +8,7 @@ import { LogoMark } from '@/components/Logo';
 
 interface Metrics { organizations: number; suspended: number; stores: number; total_payments: number; paid_count: number; paid_volume: string; success_rate: number }
 
-const TABS = ['Overview', 'Merchants', 'Financials', 'Payouts', 'Ops', 'AI', 'Trustee', 'Settings'] as const;
+const TABS = ['Overview', 'Enrollments', 'Merchants', 'Financials', 'Payouts', 'Ops', 'AI', 'Trustee', 'Settings'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminPage() {
@@ -64,6 +64,7 @@ export default function AdminPage() {
 
       <main className="mx-auto max-w-6xl p-4 md:p-8">
         {tab === 'Overview' && <OverviewTab />}
+        {tab === 'Enrollments' && <EnrollmentsTab />}
         {tab === 'Merchants' && <MerchantsTab />}
         {tab === 'Financials' && <FinancialsTab />}
         {tab === 'Payouts' && <PayoutsTab />}
@@ -112,6 +113,63 @@ function OverviewTab() {
         </Card>
       )}
     </>
+  );
+}
+
+// --------------------------------------------------------------- Enrollments
+interface Enrollment { user_id: string; email: string; name: string | null; organization: string | null; enrolled_at: string; link_pending: boolean; link_expires_at: string | null }
+function EnrollmentsTab() {
+  const [rows, setRows] = useState<Enrollment[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [flash, setFlash] = useState('');
+  const load = useCallback(() => { api<Enrollment[]>('/admin/enrollments').then(setRows).catch(() => setRows([])); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const verify = async (id: string, email: string) => {
+    if (!confirm(`Manually confirm ${email}? They'll be able to sign in immediately.`)) return;
+    setBusy(id);
+    try {
+      await api(`/admin/enrollments/${id}/verify`, { method: 'POST' });
+      setFlash(`${email} confirmed`);
+      setTimeout(() => setFlash(''), 2500);
+      load();
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Pending demo enrollments</h2>
+          <p className="text-sm text-slate-500">Accounts that signed up but haven&apos;t confirmed their email. Confirm one manually if the confirmation email couldn&apos;t be delivered.</p>
+        </div>
+        <Button variant="secondary" onClick={load}>Refresh</Button>
+      </div>
+      {flash && <div className="mb-3 text-sm text-emerald-600">{flash}</div>}
+      {!rows ? (
+        <Card className="text-slate-400">Loading…</Card>
+      ) : rows.length === 0 ? (
+        <Card className="text-slate-400">No pending enrollments — everyone who signed up has confirmed their email.</Card>
+      ) : (
+        <Card className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-500"><tr><th className="py-1">Email</th><th>Name</th><th>Organization</th><th>Enrolled</th><th>Link</th><th></th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.user_id} className="border-t border-slate-50">
+                  <td className="py-1.5 font-medium">{r.email}</td>
+                  <td className="text-slate-600">{r.name ?? '—'}</td>
+                  <td className="text-slate-600">{r.organization ?? '—'}</td>
+                  <td className="text-slate-400">{new Date(r.enrolled_at).toLocaleString()}</td>
+                  <td>{r.link_pending ? <StatusBadge status="pending" /> : <span className="text-xs text-slate-400">expired</span>}</td>
+                  <td className="text-right"><button onClick={() => verify(r.user_id, r.email)} disabled={busy === r.user_id} className="text-brand-600 hover:underline disabled:opacity-50">{busy === r.user_id ? 'Confirming…' : 'Confirm manually'}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </div>
   );
 }
 
