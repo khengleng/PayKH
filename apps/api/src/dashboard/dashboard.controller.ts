@@ -11,6 +11,10 @@ class DashboardRefundDto {
   @IsOptional() @IsString() reason?: string;
 }
 
+class ConfirmPaymentDto {
+  @IsOptional() @IsString() note?: string;
+}
+
 /** Merchant dashboard read APIs (JWT-authenticated). */
 @ApiTags('dashboard')
 @ApiBearerAuth()
@@ -53,6 +57,12 @@ export class DashboardController {
   @ApiOperation({ summary: 'Refund a payment (dashboard, requires payment:write)' })
   refund(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DashboardRefundDto) {
     return this.dashboard.refund(user, id, dto);
+  }
+
+  @Post('payments/:id/confirm')
+  @ApiOperation({ summary: 'Manually confirm a KHQR payment as paid (requires payment:write)' })
+  confirm(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ConfirmPaymentDto) {
+    return this.dashboard.confirmPayment(user, id, dto?.note);
   }
 
   @Post('stores/:storeId/pos/charge')

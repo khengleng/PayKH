@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Payment, Prisma, PaymentStatus as DbStatus } from '@prisma/client';
-import { PaymentStatus } from '@paykh/shared-types';
+import { PaymentStatus, canTransition } from '@paykh/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
@@ -42,6 +42,36 @@ export class DashboardService {
     };
     const { resource } = await this.payments.refund(ctx, paymentId, dto, undefined, JSON.stringify(dto));
     return resource;
+  }
+
+  /**
+   * Manually confirm a KHQR payment as paid — the operator has seen the money
+   * arrive (bank app / SMS alert) and marks it received. Until auto-detection is
+   * wired for imported bank accounts, this is how a live KHQR payment reaches
+   * `paid`. It goes through the SAME state-machine transition as an automatic
+   * confirmation, so it fires all the paid side-effects: webhooks, loyalty
+   * points (incl. the PayChain mirror), ledger posting, and the receipt.
+   *
+   * Requires `payment:write` (owner/manager, not analyst). The transition records
+   * a status-history entry naming the operator, so the manual confirm is audited.
+   */
+  async confirmPayment(user: AuthUser, paymentId: string, note?: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw ApiError.paymentNotFound();
+    const store = await this.prisma.store.findUnique({ where: { id: payment.storeId } });
+    if (!store) throw ApiError.paymentNotFound('Store not found');
+    requirePermission(user, store.organizationId, 'payment:write');
+
+    const current = payment.status.toLowerCase() as PaymentStatus;
+    if (current === 'paid') {
+      return { id: payment.id, status: 'paid', paid_at: payment.paidAt?.toISOString() ?? null, already_paid: true };
+    }
+    if (!canTransition(current, 'paid')) {
+      throw ApiError.invalidRequest(`A ${current} payment can't be confirmed as paid.`);
+    }
+    const reason = `manually confirmed paid by ${user.email}${note ? ` — ${note.slice(0, 200)}` : ''}`;
+    const updated = await this.payments.transition(paymentId, 'paid', reason);
+    return { id: updated.id, status: 'paid', paid_at: updated.paidAt?.toISOString() ?? null };
   }
 
   /** POS: a cashier charges an amount on the spot → returns a KHQR to display. */

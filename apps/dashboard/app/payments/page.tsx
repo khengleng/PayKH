@@ -134,6 +134,8 @@ function PaymentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const [refundReason, setRefundReason] = useState('');
   const [refundBusy, setRefundBusy] = useState(false);
   const [refundError, setRefundError] = useState('');
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
 
   const load = () =>
     fetch(`${API_BASE}/dashboard/payments/${id}`, {
@@ -163,6 +165,22 @@ function PaymentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
     finally { setRefundBusy(false); }
   };
 
+  const doConfirm = async () => {
+    if (!window.confirm("Mark this payment as paid?\n\nOnly do this after you've confirmed the money arrived in your bank account. This issues loyalty points and fires webhooks, just like an automatic confirmation.")) return;
+    setConfirmBusy(true); setConfirmError('');
+    try {
+      const res = await fetch(`${API_BASE}/dashboard/payments/${id}/confirm`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokenStore.get()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message || 'Confirm failed');
+      await load();
+    } catch (e: any) { setConfirmError(e.message); }
+    finally { setConfirmBusy(false); }
+  };
+
   return (
     <div className="fixed inset-0 z-30 flex justify-end bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
       <div className="h-full w-full max-w-md animate-fade-in overflow-y-auto rounded-l-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -184,6 +202,19 @@ function PaymentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             <Row k="Refunded" v={`${data.refunded_amount ?? '0.00'} ${data.currency}`} />
             {data.provider_reference && (
               <Row k="Provider md5" v={<span className="font-mono text-xs">{data.provider_reference.md5}</span>} />
+            )}
+
+            {['pending', 'scanned', 'expired'].includes(data.status) && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
+                <div className="mb-1 font-medium text-slate-700">Confirm payment</div>
+                <div className="mb-2 text-xs text-slate-500">Received this KHQR payment in your bank? Mark it paid — this issues loyalty points and fires webhooks.</div>
+                <div className="flex items-center gap-2">
+                  <button onClick={doConfirm} disabled={confirmBusy} className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">
+                    {confirmBusy ? 'Marking…' : 'Mark as paid'}
+                  </button>
+                  {confirmError && <span className="text-xs text-red-600">{confirmError}</span>}
+                </div>
+              </div>
             )}
 
             {(data.status === 'paid') && Number(data.refunded_amount ?? 0) < Number(data.amount) && (
