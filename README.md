@@ -3,9 +3,14 @@
 A developer-first SaaS platform for Cambodian merchants to accept **Bakong KHQR**
 payments through a simple REST API, hosted checkout pages, and real-time webhooks.
 
-> **Status: all 4 phases complete.** This repository implements Phases 1–4 of
-> the delivery plan. See [`docs/architecture.md`](docs/architecture.md) for the
-> roadmap and [`ASSUMPTIONS.md`](ASSUMPTIONS.md) for scope decisions.
+> **Status: Phases 1–4 built and deployed.** The code for all four phases is
+> implemented and running on Railway. **Caveat — built and deployed does not
+> mean proven against live upstreams:** the deployed payment provider defaults to
+> **mock**, PayChain and the promo modules are **feature-flag-off**, disbursement
+> is a no-op until bank credentials are set, and the real-money / on-chain paths
+> have not completed end-to-end against a live external system. See
+> [`docs/architecture.md`](docs/architecture.md) for the roadmap and
+> [`ASSUMPTIONS.md`](ASSUMPTIONS.md) for scope decisions.
 
 ## What's implemented
 
@@ -21,7 +26,10 @@ Phase 1:
 
 Phase 2:
 - **Real `BakongKhqrProvider`** (NBC Open API): KHQR generation + status polling,
-  behind the provider abstraction with timeout/retry/circuit-breaker
+  behind the provider abstraction with timeout/retry/circuit-breaker.
+  _Deployed default is `mock`; unit-tested against a mocked client, never run
+  live. In the per-store "routing" mode the QR is real but incoming-payment
+  detection is not yet wired (the `simulate` endpoint drives the paid state)._
 - **Webhooks**: signed (HMAC-SHA256) delivery via a BullMQ worker, exponential
   backoff + max retries, delivery logs, resend, send-test, secret rotation,
   auto-disable on repeated failure; dashboard Webhooks module
@@ -49,17 +57,19 @@ Phase 4:
 
 ```
 apps/
-  api/         NestJS REST API (+ Prisma, OpenAPI, mock provider)
+  api/         NestJS REST API (+ Prisma, OpenAPI, providers). The background
+               worker runs this same image via src/worker/ (BullMQ processors) —
+               there is no separate apps/worker.
   checkout/    Next.js hosted checkout page (public)
   dashboard/   Next.js merchant dashboard
-  worker/      Background worker (Phase 1 stub; webhooks land in Phase 2)
+  docs/        Next.js developer docs site (deployed)
 packages/
   shared-types/  Shared TS types & error codes
-  security/      Hashing, HMAC signing, AES-GCM encryption, id generation
-  sdk-node/      Node SDK (Phase 4 — placeholder)
-  sdk-php/       PHP SDK (Phase 4 — placeholder)
-  sdk-python/    Python SDK (Phase 4 — placeholder)
-  ui/            Shared UI (Phase 3/4 — placeholder)
+  security/      Hashing, HMAC signing, Ed25519, AES-GCM encryption, id generation
+  sdk-node/      Node SDK (real, tested)
+  sdk-php/       PHP SDK (real)
+  sdk-python/    Python SDK (real)
+  ui/            Shared UI (placeholder — README only)
 docs/          Architecture, API, webhooks, security, deployment, onboarding
 ```
 
