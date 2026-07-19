@@ -37,6 +37,7 @@ function ChargeTab({ storeId }: { storeId: string }) {
   const [connected, setConnected] = useState<('USD' | 'KHR')[]>([]);
   const [charge, setCharge] = useState<Charge | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [err, setErr] = useState('');
 
   // Offer only currencies the store can actually be paid in, and default to
@@ -100,6 +101,19 @@ function ChargeTab({ storeId }: { storeId: string }) {
     setDetection(null);
   };
 
+  // Manual confirmation: the cashier has seen the money land (bank app / SMS)
+  // and marks it received. Fires the same paid side-effects (loyalty, receipt).
+  const confirmManually = async () => {
+    if (!charge) return;
+    if (!window.confirm("Mark this payment as received?\n\nOnly do this after you've confirmed the money arrived in your bank account.")) return;
+    setConfirming(true);
+    try {
+      await api(`/dashboard/payments/${charge.id}/confirm`, { method: 'POST', body: {} });
+      setCharge((c) => (c ? { ...c, status: 'paid' } : c));
+      setDetection(null);
+    } finally { setConfirming(false); }
+  };
+
   const reset = () => { setCharge(null); setAmount(''); setDetection(null); setPhone(''); };
 
   if (charge) {
@@ -143,6 +157,14 @@ function ChargeTab({ storeId }: { storeId: string }) {
                 <Button className="mt-2" onClick={confirmDetected}>Confirm payment</Button>
               </div>
             )}
+            <button
+              onClick={confirmManually}
+              disabled={confirming}
+              className="mt-4 w-full rounded-lg border border-slate-200 py-2 text-sm font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700 disabled:opacity-50"
+            >
+              {confirming ? 'Marking…' : "Mark as paid — I've received the money"}
+            </button>
+            <div className="mt-1 text-xs text-slate-400">Use this once you see the payment in your bank app.</div>
           </div>
         )}
         <Button variant={done ? 'primary' : 'secondary'} onClick={reset}>{done || dead ? 'New charge' : 'Cancel'}</Button>
