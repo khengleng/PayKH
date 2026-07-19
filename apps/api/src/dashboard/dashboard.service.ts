@@ -99,8 +99,9 @@ export class DashboardService {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
+    const recentWindow = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const [total, byStatus, paidAgg, monthPaid] = await Promise.all([
+    const [total, byStatus, paidAgg, monthPaid, webhookFailures] = await Promise.all([
       this.prisma.payment.count({ where: { storeId } }),
       this.prisma.payment.groupBy({
         by: ['status'],
@@ -114,6 +115,11 @@ export class DashboardService {
       }),
       this.prisma.payment.count({
         where: { storeId, status: 'PAID', paidAt: { gte: monthStart } },
+      }),
+      // Permanently-failed (dead-lettered) webhook deliveries for this store in
+      // the last 7 days — the real count, not a placeholder.
+      this.prisma.webhookDelivery.count({
+        where: { status: 'FAILED', endpoint: { storeId }, createdAt: { gte: recentWindow } },
       }),
     ]);
 
@@ -136,8 +142,7 @@ export class DashboardService {
       cancelled_count: counts['cancelled'] ?? 0,
       success_rate: successRate,
       month_paid_count: monthPaid,
-      // Webhook failure metrics wire up in Phase 2.
-      recent_webhook_failures: 0,
+      recent_webhook_failures: webhookFailures,
     };
   }
 

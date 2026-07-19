@@ -58,21 +58,30 @@ concrete decision.
   remaining Phase 4+ item.
 - **Reporting time-series** uses a parameterized `date_trunc` raw query.
 
-## Deliberately deferred (roadmap beyond this build)
+## Deferred at Phase 1 — since built (Phases 2–4)
 
-- **Real Bakong integration** (Phase 2): `BakongKhqrProvider` is a placeholder
-  that throws unless implemented; `PAYMENT_PROVIDER=mock` is the default.
-- **Webhooks** (Phase 2): the event contract, signing (`@paykh/security` HMAC),
-  and data model exist; the **delivery worker** (retries, logs, resend,
-  test-send, auto-disable) is not built. The worker app is a keep-alive stub.
-- **Plans, quotas, billing** (Phase 3): `Plan`, `Subscription`, `UsageRecord`,
-  `Invoice` are in the schema and seeded, but quota enforcement (HTTP 402),
-  warning thresholds, and billing flows are **not** enforced yet.
-- **Team RBAC UI, audit-log views, reporting exports** (Phase 3): the RBAC
-  permission matrix and audit records exist server-side; the management UI does
-  not. (Payments CSV export is included in the dashboard as a small convenience.)
-- **SDKs, sandbox, security hardening, load/DR** (Phase 4): SDK packages are
-  README placeholders.
+> This section originally listed Phase-1 deferrals. They have since shipped;
+> updated here so the doc no longer contradicts the code. The honest caveat that
+> remains for all of them: **built ≠ proven against a live upstream** — the
+> real-money rails default to mock/flag-off pending live credentials.
+
+- **Real Bakong integration** (Phase 2): `BakongKhqrProvider` is real code
+  (`providers/bakong-khqr.provider.ts`), activated by `PAYMENT_PROVIDER=bakong`.
+  **The deployed default is still `mock`**, and automatic paid-detection runs
+  only in single-account `bakong` mode — the per-store "routing" path generates a
+  real bank QR but does not yet detect the incoming payment (`simulate` drives
+  the paid transition). Never run against live Bakong.
+- **Webhooks** (Phase 2): the **delivery worker is built** — signed delivery,
+  BullMQ retries/backoff, dead-letter, resend, test-send, auto-disable, response-
+  body capture, and bulk replay-dead-lettered (`worker/webhook-delivery.processor.ts`,
+  `webhooks/*`). Production-grade and the most complete subsystem.
+- **Plans, quotas, billing** (Phase 3): quota enforcement (HTTP 402 + warning
+  thresholds) and billing flows are **built**; real charge *collection* is not.
+- **Team RBAC UI, audit-log views, reporting exports** (Phase 3): built (dashboard
+  Team/Reports/audit pages).
+- **SDKs, sandbox, security hardening, load/DR** (Phase 4): SDKs are **real,
+  tested packages** (`packages/sdk-node` + `sdk-php` + `sdk-python`), not
+  placeholders. Only `packages/ui` remains a placeholder.
 
 ## Concrete decisions
 

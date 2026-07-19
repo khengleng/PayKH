@@ -2,7 +2,12 @@
 
 This roadmap tracks the **Master AI Engineering Blueprint** — 100 modules across
 20 domains. Legend: ✅ shipped · 🟡 partial · ⬜ planned. We build one module at a
-time, commit + deploy + review after each (see [CONTRIBUTING](CONTRIBUTING.md)).
+time, commit + deploy + review after each.
+
+> **✅ means the code is shipped, not that it has run against a live upstream.**
+> Real-money and on-chain paths (Bakong payments, PayChain, disbursement) default
+> to mock / flag-off / no-op pending live credentials — see the caveats in the
+> [README](README.md) and detail docs.
 
 ## 1. Platform Foundation
 ✅ Monorepo · ✅ Architecture & standards · ✅ Railway deploy · ✅ CI/CD · ✅ Env mgmt
