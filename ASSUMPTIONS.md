@@ -62,15 +62,18 @@ concrete decision.
 
 > This section originally listed Phase-1 deferrals. They have since shipped;
 > updated here so the doc no longer contradicts the code. The honest caveat that
-> remains for all of them: **built ≠ proven against a live upstream** — the
-> real-money rails default to mock/flag-off pending live credentials.
+> remains for all of them: **built ≠ proven against a live upstream** — prod runs
+> the `routing` provider (real QR, no auto paid-detect) with mock fallback, and
+> the other real-money/on-chain rails are flag-off/no-op pending live credentials.
 
 - **Real Bakong integration** (Phase 2): `BakongKhqrProvider` is real code
   (`providers/bakong-khqr.provider.ts`), activated by `PAYMENT_PROVIDER=bakong`.
-  **The deployed default is still `mock`**, and automatic paid-detection runs
-  only in single-account `bakong` mode — the per-store "routing" path generates a
-  real bank QR but does not yet detect the incoming payment (`simulate` drives
-  the paid transition). Never run against live Bakong.
+  **Repo/local default is `mock`; prod runs `routing`.** Automatic paid-detection
+  runs only in single-account `bakong` mode — the per-store "routing" path (used
+  in prod) generates a real, bank-routable QR (real money can move) but does not
+  yet detect the incoming payment (`simulate` drives the paid transition), and
+  falls back to mock for stores without an imported bank credential. The `bakong`
+  provider has never run against live Bakong.
 - **Webhooks** (Phase 2): the **delivery worker is built** — signed delivery,
   BullMQ retries/backoff, dead-letter, resend, test-send, auto-disable, response-
   body capture, and bulk replay-dead-lettered (`worker/webhook-delivery.processor.ts`,
