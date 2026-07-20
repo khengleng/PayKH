@@ -72,7 +72,7 @@ Return `token` to your app for this user only.
 import { openMiniApp } from '@paykh/miniapp-sdk';
 
 openMiniApp({
-  miniAppBaseUrl: 'https://checkout.paykh.cambobia.com',
+  miniAppBaseUrl: 'https://mobile.paykh.cambobia.com',
   partnerId:      PARTNER_ID,
   token,                         // from your backend
   // container: el,              // optional: embed as an <iframe> instead of navigating

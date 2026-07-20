@@ -56,7 +56,7 @@ const token = mintHandoffToken({
 import { openMiniApp } from '@paykh/miniapp-sdk';
 
 openMiniApp({
-  miniAppBaseUrl: 'https://checkout.paykh.cambobia.com',
+  miniAppBaseUrl: 'https://mobile.paykh.cambobia.com',
   partnerId: 'cmr…',
   token,                        // from your backend
   // container: someElement,    // optional: embed as an <iframe> instead of navigating
