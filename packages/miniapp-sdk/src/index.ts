@@ -76,7 +76,7 @@ export function generatePartnerKeyPair(): { publicKeyPem: string; privateKeyPem:
 // ---------------------------------------------------------------- client side
 
 export interface LaunchOptions {
-  /** The PayKH mini-app base URL, e.g. https://checkout.paykh.cambobia.com */
+  /** The PayKH mini-app base URL, e.g. https://mobile.paykh.cambobia.com */
   miniAppBaseUrl: string;
   partnerId: string;
   /** The signed handoff token from your backend (mintHandoffToken). */
