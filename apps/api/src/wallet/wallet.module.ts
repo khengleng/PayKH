@@ -37,5 +37,6 @@ import { PayChainIntegrationModule } from '../paychain/paychain-integration.modu
   imports: [LoyaltyModule, PayChainIntegrationModule],
   controllers: [WalletController],
   providers: [WalletService],
+  exports: [WalletService],
 })
 export class WalletModule {}

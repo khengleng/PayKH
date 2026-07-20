@@ -1,0 +1,12 @@
+{
+  "name": "@paykh/miniapp-sdk",
+  "version": "0.1.0",
+  "description": "PayKH loyalty mini-app SDK for banking apps (signed handoff + launcher)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "license": "MIT"
+}
