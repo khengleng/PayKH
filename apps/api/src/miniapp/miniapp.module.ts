@@ -8,6 +8,7 @@ import {
   Injectable,
   Logger,
   Module,
+  Param,
   Post,
   Req,
   UnauthorizedException,
@@ -18,9 +19,13 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { IsOptional, IsString } from 'class-validator';
 import { Request } from 'express';
+import * as QRCode from 'qrcode';
 import { verifyEd25519 } from '@paykh/security';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthModule } from '../auth/auth.module';
+import { WalletModule } from '../wallet/wallet.module';
+import { WalletService } from '../wallet/wallet.service';
+import { formatAmount } from '../payments/amount.util';
 import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
 /**
@@ -63,7 +68,68 @@ export class MiniAppService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly wallet: WalletService,
   ) {}
+
+  /** Load a customer and assert it belongs to this consumer (phone match). */
+  private async ownedCustomer(accountId: string, customerId: string) {
+    const [account, customer] = await Promise.all([
+      this.prisma.consumerAccount.findUnique({ where: { id: accountId } }),
+      this.prisma.customer.findUnique({ where: { id: customerId } }),
+    ]);
+    if (!account?.phone || !customer || customer.phone !== account.phone) {
+      throw new UnauthorizedException('not your loyalty account');
+    }
+    return customer;
+  }
+
+  /** Full loyalty view for one merchant (rewards, vouchers, on-chain proof). */
+  async merchantWallet(accountId: string, customerId: string) {
+    await this.ownedCustomer(accountId, customerId);
+    return this.wallet.wallet(customerId);
+  }
+
+  /** Redeem points for a reward at a merchant → a voucher the customer shows. */
+  async redeem(accountId: string, customerId: string, rewardId: string) {
+    await this.ownedCustomer(accountId, customerId);
+    return this.wallet.redeem(customerId, rewardId);
+  }
+
+  /** A short-lived member token (+ QR) the merchant POS scans to identify/attach
+   *  this customer to a charge or a redemption. */
+  async memberQr(accountId: string) {
+    const account = await this.prisma.consumerAccount.findUnique({ where: { id: accountId } });
+    if (!account) throw new UnauthorizedException();
+    const token = await this.jwt.signAsync(
+      { sub: accountId, typ: 'member', phone: account.phone },
+      { expiresIn: '5m' },
+    );
+    return { member_token: token, qr_png_data_url: await QRCode.toDataURL(token, { margin: 2, width: 240 }), expires_in: 300 };
+  }
+
+  /** The consumer's paid history across every merchant (by phone). */
+  async history(accountId: string, limit = 30) {
+    const account = await this.prisma.consumerAccount.findUnique({ where: { id: accountId } });
+    if (!account?.phone) return { payments: [] };
+    const customers = await this.prisma.customer.findMany({ where: { phone: account.phone }, select: { id: true } });
+    const ids = customers.map((c) => c.id);
+    if (ids.length === 0) return { payments: [] };
+    const payments = await this.prisma.payment.findMany({
+      where: { customerId: { in: ids }, status: 'PAID' },
+      orderBy: { paidAt: 'desc' },
+      take: Math.min(limit, 50),
+      include: { store: { include: { branding: true } } },
+    });
+    return {
+      payments: payments.map((p) => ({
+        id: p.id,
+        merchant: p.store.branding?.displayName || p.store.name,
+        amount: formatAmount(p.amount, p.currency),
+        currency: p.currency,
+        paid_at: p.paidAt?.toISOString() ?? null,
+      })),
+    };
+  }
 
   /** Verify a partner's signed handoff token → unified session for the mini-app. */
   async exchange(partnerId: string, token: string) {
@@ -196,10 +262,39 @@ export class MiniAppController {
   me(@ConsumerId() accountId: string) {
     return this.svc.me(accountId);
   }
+
+  @Get('merchants/:customerId')
+  @UseGuards(MiniAppGuard)
+  @ApiOperation({ summary: 'Full loyalty view for one merchant (rewards, vouchers)' })
+  merchant(@ConsumerId() accountId: string, @Param('customerId') customerId: string) {
+    return this.svc.merchantWallet(accountId, customerId);
+  }
+
+  @Post('redeem')
+  @UseGuards(MiniAppGuard, RateLimitGuard)
+  @RateLimit({ limit: 10, windowSec: 60, by: 'ip' })
+  @ApiOperation({ summary: 'Redeem points for a reward → voucher' })
+  redeem(@ConsumerId() accountId: string, @Body() dto: RedeemDto) {
+    return this.svc.redeem(accountId, dto.customer_id, dto.reward_id);
+  }
+
+  @Get('member-qr')
+  @UseGuards(MiniAppGuard)
+  @ApiOperation({ summary: 'A short-lived member QR the merchant POS scans' })
+  memberQr(@ConsumerId() accountId: string) {
+    return this.svc.memberQr(accountId);
+  }
+
+  @Get('history')
+  @UseGuards(MiniAppGuard)
+  @ApiOperation({ summary: "The consumer's paid history across merchants" })
+  history(@ConsumerId() accountId: string) {
+    return this.svc.history(accountId);
+  }
 }
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, WalletModule],
   controllers: [MiniAppController],
   providers: [MiniAppService, MiniAppGuard],
 })
