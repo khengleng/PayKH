@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Payment, Prisma, PaymentStatus as DbStatus } from '@prisma/client';
 import { PaymentStatus, canTransition } from '@paykh/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,7 +21,40 @@ export class DashboardService {
     private readonly access: AccessService,
     private readonly customers: CustomersService,
     private readonly khqr: KhqrImportService,
+    private readonly jwt: JwtService,
   ) {}
+
+  /**
+   * POS member scan: the cashier scans the customer's mini-app member QR. We
+   * verify the short-lived member token, resolve the customer's phone, and
+   * return their loyalty AT THIS STORE (0 / new if they've never shopped here)
+   * so the cashier can attach them to the charge — loyalty then accrues to them.
+   */
+  async resolveMember(user: AuthUser, storeId: string, memberToken: string) {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) throw ApiError.paymentNotFound('Store not found');
+    requirePermission(user, store.organizationId, 'payment:write');
+
+    let payload: { typ?: string; phone?: string; name?: string };
+    try {
+      payload = await this.jwt.verifyAsync(memberToken);
+    } catch {
+      throw ApiError.invalidRequest('This member code is invalid or has expired — ask the customer to refresh it.');
+    }
+    if (payload.typ !== 'member') throw ApiError.invalidRequest('Not a member code');
+    const phone = payload.phone;
+    if (!phone) throw ApiError.invalidRequest('This member has no phone on file');
+
+    const customer = await this.prisma.customer.findFirst({ where: { storeId, phone }, include: { tier: true } });
+    return {
+      phone,
+      name: customer?.name ?? payload.name ?? null,
+      customer_id: customer?.id ?? null,
+      points: customer?.pointsBalance ?? 0,
+      tier: customer?.tier?.name ?? null,
+      is_new_here: !customer,
+    };
+  }
 
   /** Refund a payment from the dashboard (requires payment:write + ABAC policies). */
   async refund(user: AuthUser, paymentId: string, dto: { amount?: string; reason?: string }) {

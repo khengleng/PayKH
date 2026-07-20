@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
@@ -60,6 +60,21 @@ function ChargeTab({ storeId }: { storeId: string }) {
 
   // Optional: attach a customer by phone so the sale earns loyalty points.
   const [phone, setPhone] = useState('');
+  // A scanned mini-app member (from their bank app's member QR).
+  const [member, setMember] = useState<{ name: string | null; phone: string; points: number } | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const onMemberToken = async (token: string) => {
+    setScanning(false); setErr('');
+    try {
+      const m = await api<{ phone: string; name: string | null; points: number; is_new_here: boolean }>(
+        `/dashboard/stores/${storeId}/pos/resolve-member`,
+        { method: 'POST', body: { member_token: token } },
+      );
+      setMember({ name: m.name, phone: m.phone, points: m.points });
+      setPhone(m.phone); // the charge attaches to this customer → loyalty accrues
+    } catch (e) { setErr((e as Error).message); }
+  };
 
   const start = async () => {
     if (!amount || Number(amount) <= 0) return;
@@ -183,6 +198,16 @@ function ChargeTab({ storeId }: { storeId: string }) {
           <button key={k} onClick={() => press(k)} className="rounded-xl bg-slate-50 py-4 text-xl font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200">{k}</button>
         ))}
       </div>
+      {member ? (
+        <div className="mb-3 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <span>👤 <span className="font-medium">{member.name || member.phone}</span> · {member.points.toLocaleString()} pts</span>
+          <button onClick={() => { setMember(null); setPhone(''); }} className="text-emerald-500 hover:text-emerald-700">✕</button>
+        </div>
+      ) : (
+        <button onClick={() => setScanning(true)} className="mb-3 w-full rounded-lg border border-dashed border-slate-300 py-2 text-sm text-slate-500 hover:border-brand-400 hover:text-brand-600">
+          📷 Scan member QR (earns loyalty)
+        </button>
+      )}
       <input
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
@@ -194,7 +219,61 @@ function ChargeTab({ storeId }: { storeId: string }) {
         {busy ? 'Generating QR…' : 'Charge'}
       </button>
       {err && <p className="mt-3 text-center text-sm text-red-600">{err}</p>}
+      {scanning && <MemberScanner onToken={onMemberToken} onClose={() => setScanning(false)} />}
     </Card>
+  );
+}
+
+/** Scans the customer's mini-app member QR — native BarcodeDetector when
+ *  available (Android/Chrome webviews), with a paste-the-code fallback. */
+function MemberScanner({ onToken, onClose }: { onToken: (t: string) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [manual, setManual] = useState('');
+  const [supported] = useState(() => typeof window !== 'undefined' && 'BarcodeDetector' in window);
+
+  useEffect(() => {
+    if (!supported) return;
+    let stream: MediaStream | null = null;
+    let raf = 0;
+    let stopped = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+        const scan = async () => {
+          if (stopped) return;
+          try {
+            const codes = await detector.detect(videoRef.current);
+            if (codes[0]?.rawValue) { onToken(codes[0].rawValue); return; }
+          } catch { /* keep scanning */ }
+          raf = requestAnimationFrame(scan);
+        };
+        scan();
+      } catch { /* camera denied → manual fallback */ }
+    })();
+    return () => { stopped = true; cancelAnimationFrame(raf); stream?.getTracks().forEach((t) => t.stop()); };
+  }, [supported, onToken]);
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">Scan member QR</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+        {supported ? (
+          <video ref={videoRef} className="aspect-square w-full rounded-xl bg-black object-cover" muted playsInline />
+        ) : (
+          <p className="text-sm text-slate-500">Camera scanning isn’t available here — paste the member code below.</p>
+        )}
+        <div className="mt-3 flex gap-2">
+          <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="or paste member code" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          <button onClick={() => manual.trim() && onToken(manual.trim())} className="rounded-lg bg-brand-500 px-3 text-sm font-medium text-white">Use</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
