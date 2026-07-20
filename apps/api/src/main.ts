@@ -38,9 +38,9 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // CORS: dashboard + checkout front-ends.
+  // CORS: dashboard + checkout + the mini-app (mobile.*) front-ends.
   app.enableCors({
-    origin: [config.dashboardBaseUrl, config.checkoutBaseUrl],
+    origin: [config.dashboardBaseUrl, config.checkoutBaseUrl, config.miniAppBaseUrl],
     credentials: true,
     exposedHeaders: ['x-request-id'],
   });
