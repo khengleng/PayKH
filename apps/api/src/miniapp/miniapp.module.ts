@@ -101,7 +101,7 @@ export class MiniAppService {
     const account = await this.prisma.consumerAccount.findUnique({ where: { id: accountId } });
     if (!account) throw new UnauthorizedException();
     const token = await this.jwt.signAsync(
-      { sub: accountId, typ: 'member', phone: account.phone },
+      { sub: accountId, typ: 'member', phone: account.phone, name: account.name },
       { expiresIn: '5m' },
     );
     return { member_token: token, qr_png_data_url: await QRCode.toDataURL(token, { margin: 2, width: 240 }), expires_in: 300 };

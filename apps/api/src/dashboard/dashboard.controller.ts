@@ -15,6 +15,10 @@ class ConfirmPaymentDto {
   @IsOptional() @IsString() note?: string;
 }
 
+class ResolveMemberDto {
+  @IsString() member_token!: string;
+}
+
 /** Merchant dashboard read APIs (JWT-authenticated). */
 @ApiTags('dashboard')
 @ApiBearerAuth()
@@ -69,6 +73,12 @@ export class DashboardController {
   @ApiOperation({ summary: 'POS: charge an amount and get a KHQR to display' })
   posCharge(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: { amount: string; currency?: 'USD' | 'KHR'; reference?: string; customer_phone?: string; customer_email?: string; customer_name?: string }) {
     return this.dashboard.posCharge(user, storeId, dto);
+  }
+
+  @Post('stores/:storeId/pos/resolve-member')
+  @ApiOperation({ summary: 'POS: resolve a scanned mini-app member QR to a customer' })
+  resolveMember(@CurrentUser() user: AuthUser, @Param('storeId') storeId: string, @Body() dto: ResolveMemberDto) {
+    return this.dashboard.resolveMember(user, storeId, dto.member_token);
   }
 
   @Get('stores/:storeId/pos/counter-qr')
