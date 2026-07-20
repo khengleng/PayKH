@@ -1,0 +1,44 @@
+/* Native-app feel for the loyalty mini-app (embedded in a bank webview or
+   installed standalone). Scoped to .miniapp-root so it never leaks to the rest
+   of the checkout app. */
+.miniapp-root {
+  min-height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain; /* no rubber-band on the whole page */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation; /* remove 300ms tap delay, block double-tap zoom */
+  -webkit-overflow-scrolling: touch; /* momentum scroll */
+  overflow-x: hidden;
+}
+
+.miniapp-root input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Safe areas (notch / home indicator) */
+.miniapp-safe-top { padding-top: max(env(safe-area-inset-top), 0.5rem); }
+.miniapp-safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 1.5rem); }
+
+/* App-like screen transition — replays whenever the view key changes. */
+.miniapp-view { animation: miniapp-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes miniapp-in {
+  from { opacity: 0; transform: translate3d(10px, 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Tactile press feedback on tappable surfaces. */
+.miniapp-root .tap { transition: transform 0.08s ease, background-color 0.15s ease; }
+.miniapp-root .tap:active { transform: scale(0.97); }
+
+/* Skeleton shimmer for loading states. */
+.miniapp-skel { position: relative; overflow: hidden; background: #e2e8f0; border-radius: 0.75rem; }
+.miniapp-skel::after {
+  content: ''; position: absolute; inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: miniapp-shimmer 1.2s infinite;
+}
+@keyframes miniapp-shimmer { to { transform: translateX(100%); } }
