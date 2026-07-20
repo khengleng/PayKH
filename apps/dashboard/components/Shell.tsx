@@ -128,6 +128,25 @@ export function Shell({ children }: { children: (ctx: ShellContext) => React.Rea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Inactivity timeout: auto sign-out after 30 minutes with no interaction, so
+  // an unattended portal returns to the login screen. Complements the server's
+  // 12h JWT expiry (which the api helper turns into a login redirect on 401).
+  useEffect(() => {
+    const IDLE_MS = 30 * 60 * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+    const signOut = () => {
+      tokenStore.clear();
+      // Full navigation (not router.replace) so all in-memory session state is
+      // dropped; ?expired=1 tells the login page to explain why.
+      window.location.href = '/login?expired=1';
+    };
+    const reset = () => { clearTimeout(timer); timer = setTimeout(signOut, IDLE_MS); };
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'] as const;
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => { clearTimeout(timer); events.forEach((e) => window.removeEventListener(e, reset)); };
+  }, []);
+
   // A transient failure keeps the session and offers a retry, rather than
   // bouncing to /login and making a working login look expired.
   if (loadError) {
