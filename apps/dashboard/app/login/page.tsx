@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError, tokenStore, orgStore } from '@/lib/api';
 import { Logo, LogoMark } from '@/components/Logo';
@@ -27,6 +27,13 @@ export default function LoginPage() {
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [resendMsg, setResendMsg] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('expired')) {
+      setExpired(true);
+    }
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,6 +150,12 @@ export default function LoginPage() {
           <>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{mode === 'login' ? t('welcome_back') : 'Enroll for demo access'}</h1>
           <p className="mt-1 text-sm text-slate-500">{mode === 'login' ? t('signin_sub') : 'Sign up to test PayKH — confirm your email to activate.'}</p>
+
+          {expired && mode === 'login' && (
+            <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-600/10">
+              Your session timed out for security. Please sign in again.
+            </p>
+          )}
 
           <form onSubmit={submit} className="mt-6 space-y-3.5">
             {mode === 'register' && (

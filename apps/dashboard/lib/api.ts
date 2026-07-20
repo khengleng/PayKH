@@ -50,6 +50,16 @@ export async function api<T = unknown>(
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const err = data as { error?: string; message?: string };
+    // An authenticated request rejected as 401 means the session expired (JWT
+    // past its 12h TTL) or was invalidated (password change → token epoch bump).
+    // Clear it and bounce to the login screen instead of surfacing a raw error.
+    if (res.status === 401 && auth && typeof window !== 'undefined') {
+      tokenStore.clear();
+      if (!window.location.pathname.startsWith('/login')) {
+        const here = window.location.pathname + window.location.search;
+        window.location.href = `/login?expired=1&next=${encodeURIComponent(here)}`;
+      }
+    }
     throw new ApiError(err?.error ?? 'error', err?.message ?? `HTTP ${res.status}`, res.status);
   }
   return data as T;
