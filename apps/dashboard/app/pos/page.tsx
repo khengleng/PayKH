@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import jsQR from 'jsqr';
 import { Shell } from '@/components/Shell';
 import { Button, Card, PageTitle } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -224,37 +225,50 @@ function ChargeTab({ storeId }: { storeId: string }) {
   );
 }
 
-/** Scans the customer's mini-app member QR — native BarcodeDetector when
- *  available (Android/Chrome webviews), with a paste-the-code fallback. */
+/** Scans the customer's mini-app member QR. Cross-platform: native
+ *  BarcodeDetector fast-path (Android/Chrome), jsQR fallback (iOS/Safari and
+ *  everywhere else), plus a paste-the-code fallback if the camera is unavailable. */
 function MemberScanner({ onToken, onClose }: { onToken: (t: string) => void; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [manual, setManual] = useState('');
-  const [supported] = useState(() => typeof window !== 'undefined' && 'BarcodeDetector' in window);
+  const [camError, setCamError] = useState(false);
 
   useEffect(() => {
-    if (!supported) return;
     let stream: MediaStream | null = null;
     let raf = 0;
     let stopped = false;
+    const hasNative = typeof window !== 'undefined' && 'BarcodeDetector' in window;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+    const detector = hasNative ? new (window as any).BarcodeDetector({ formats: ['qr_code'] }) : null;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
     (async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+        const v = videoRef.current;
+        if (v) { v.srcObject = stream; await v.play(); }
         const scan = async () => {
-          if (stopped) return;
+          if (stopped || !v) return;
           try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes[0]?.rawValue) { onToken(codes[0].rawValue); return; }
+            if (detector) {
+              const codes = await detector.detect(v);
+              if (codes[0]?.rawValue) { onToken(codes[0].rawValue); return; }
+            } else if (ctx && v.videoWidth) {
+              canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+              ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+              const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const code = jsQR(img.data, img.width, img.height);
+              if (code?.data) { onToken(code.data); return; }
+            }
           } catch { /* keep scanning */ }
           raf = requestAnimationFrame(scan);
         };
         scan();
-      } catch { /* camera denied → manual fallback */ }
+      } catch { setCamError(true); }
     })();
     return () => { stopped = true; cancelAnimationFrame(raf); stream?.getTracks().forEach((t) => t.stop()); };
-  }, [supported, onToken]);
+  }, [onToken]);
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
@@ -263,10 +277,10 @@ function MemberScanner({ onToken, onClose }: { onToken: (t: string) => void; onC
           <h3 className="font-semibold text-slate-800">Scan member QR</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
         </div>
-        {supported ? (
-          <video ref={videoRef} className="aspect-square w-full rounded-xl bg-black object-cover" muted playsInline />
+        {camError ? (
+          <p className="text-sm text-slate-500">Camera unavailable — paste the member code below.</p>
         ) : (
-          <p className="text-sm text-slate-500">Camera scanning isn’t available here — paste the member code below.</p>
+          <video ref={videoRef} className="aspect-square w-full rounded-xl bg-black object-cover" muted playsInline />
         )}
         <div className="mt-3 flex gap-2">
           <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="or paste member code" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
