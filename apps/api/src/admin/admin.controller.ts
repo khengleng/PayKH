@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { IsString, MaxLength, MinLength } from 'class-validator';
 import { Request } from 'express';
 import { AdminService, UpsertPlanDto } from './admin.service';
 import { VerificationService } from '../verification/verification.service';
@@ -9,6 +10,12 @@ import { AuthUser, CurrentUser } from '../auth/current-user';
 import { AuditService } from '../audit/audit.service';
 import { getRequestId } from '../common/request-context';
 import { AlertService } from '../observability/alert.service';
+
+class CreatePartnerDto {
+  @IsString() @MinLength(2) @MaxLength(80) name!: string;
+  @IsString() @MaxLength(2000) public_key_pem!: string;
+  @IsString() @MaxLength(120) key_id!: string;
+}
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -48,6 +55,28 @@ export class AdminController {
       actorUserId: user.userId,
       action: 'admin.enrollment.verify',
       entity: `user:${userId}`,
+      ipAddress: req.ip,
+      userAgent: req.header('user-agent'),
+      requestId: getRequestId(req),
+    });
+    return result;
+  }
+
+  @Get('partners')
+  @ApiOperation({ summary: 'List mini-app bank partners' })
+  partners(@CurrentUser() user: AuthUser) {
+    return this.admin.listPartners(user);
+  }
+
+  @Post('partners')
+  @ApiOperation({ summary: 'Register a bank partner (Ed25519 public key verifies its handoff tokens)' })
+  async createPartner(@CurrentUser() user: AuthUser, @Body() dto: CreatePartnerDto, @Req() req: Request) {
+    const result = await this.admin.createPartner(user, dto);
+    await this.audit.record({
+      actorUserId: user.userId,
+      action: 'admin.partner.create',
+      entity: `partner:${result.id}`,
+      afterValue: { name: dto.name, key_id: dto.key_id },
       ipAddress: req.ip,
       userAgent: req.header('user-agent'),
       requestId: getRequestId(req),

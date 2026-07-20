@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { createPublicKey } from 'crypto';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PayoutMethod } from '@prisma/client';
@@ -130,6 +131,30 @@ export class AdminService {
       this.prisma.emailVerificationToken.deleteMany({ where: { userId, usedAt: null } }),
     ]);
     return { user_id: userId, verified: true };
+  }
+
+  /** Register a bank/partner that embeds the loyalty mini-app (its Ed25519 key
+   *  verifies the signed handoff tokens it mints for its users). */
+  async createPartner(user: AuthUser, dto: { name: string; public_key_pem: string; key_id: string }) {
+    await this.assertAdmin(user.userId);
+    // Reject a key that isn't a loadable Ed25519 public key up front, rather than
+    // failing every handoff later.
+    try {
+      const key = createPublicKey(dto.public_key_pem);
+      if (key.asymmetricKeyType !== 'ed25519') throw new Error('not ed25519');
+    } catch {
+      throw ApiError.invalidRequest('public_key_pem must be a valid Ed25519 public key (SPKI PEM)');
+    }
+    const p = await this.prisma.partner.create({
+      data: { name: dto.name, publicKeyPem: dto.public_key_pem, keyId: dto.key_id },
+    });
+    return { id: p.id, name: p.name, key_id: p.keyId, active: p.active };
+  }
+
+  async listPartners(user: AuthUser) {
+    await this.assertAdmin(user.userId);
+    const rows = await this.prisma.partner.findMany({ orderBy: { createdAt: 'desc' } });
+    return rows.map((p) => ({ id: p.id, name: p.name, key_id: p.keyId, active: p.active, created_at: p.createdAt.toISOString() }));
   }
 
   async listOrgs(user: AuthUser, search?: string) {

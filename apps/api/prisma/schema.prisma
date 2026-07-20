@@ -341,12 +341,52 @@ model EmailVerificationToken {
   @@index([userId])
 }
 
+/// A bank/partner that embeds the PayKH loyalty mini-app in its app. It vouches
+/// for its already-authenticated users by minting an EdDSA-signed handoff token;
+/// PayKH verifies that token against this registered Ed25519 public key.
+model Partner {
+  id           String   @id @default(cuid())
+  name         String
+  publicKeyPem String   @db.Text // Ed25519 SPKI PEM — verifies the partner's handoff tokens
+  keyId        String // matches the handoff token's `kid`
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  consumerAccounts ConsumerAccount[]
+
+  @@index([keyId])
+}
+
+/// A unified consumer identity for the mini-app: one row per (partner, bank user
+/// id). `phone` links this consumer to their per-merchant `Customer` loyalty
+/// records so the mini-app can show points across every merchant they shop at.
+model ConsumerAccount {
+  id         String   @id @default(cuid())
+  partnerId  String
+  bankUserId String // the bank's stable, opaque user id
+  phone      String? // links to per-merchant Customer loyalty
+  name       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, bankUserId])
+  @@index([phone])
+}
+
 model Organization {
   id         String    @id
   name       String
   status     OrgStatus @default(ACTIVE)
   planId     String?
   graceUntil DateTime? // dunning grace window before suspension
+  // The trustee bank that holds the reserve backing this issuer's stablecoin.
+  // Set ONLY when the org is a genuine, live trustee-backed stablecoin issuer —
+  // null (the default, everyone today) means the mini-app shows plain "loyalty
+  // points", never a backing claim. Surfaced to customers for transparency.
+  stablecoinTrusteeBank String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
