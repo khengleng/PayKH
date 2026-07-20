@@ -25,6 +25,7 @@ function MiniApp() {
   const [session, setSession] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [noEntry, setNoEntry] = useState(false);
   const [view, setView] = useState<'home' | 'qr' | 'history'>('home');
   const [detail, setDetail] = useState<Merchant | null>(null);
 
@@ -32,7 +33,7 @@ function MiniApp() {
   useEffect(() => {
     const partner = params.get('partner');
     const token = params.get('token');
-    if (!partner || !token) { setError('Missing partner or handoff token.'); return; }
+    if (!partner || !token) { setNoEntry(true); return; }
     (async () => {
       try {
         const r = await fetch(`${API_BASE}/miniapp/session`, {
@@ -52,6 +53,15 @@ function MiniApp() {
   }, []);
   useEffect(() => { if (session) loadMe(session); }, [session, loadMe]);
 
+  if (noEntry) return (
+    <Screen>
+      <div className="flex flex-1 flex-col items-center justify-center text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-2xl font-extrabold text-white">KH</div>
+        <h1 className="mt-4 text-xl font-bold text-slate-900">PayKH Rewards</h1>
+        <p className="mt-2 max-w-xs text-sm text-slate-500">Open PayKH Rewards from your bank app to see your points and rewards across every merchant.</p>
+      </div>
+    </Screen>
+  );
   if (error) return <Screen><div className="mt-24"><Card><p className="text-center text-sm text-red-600">{error}</p></Card></div></Screen>;
   if (!session || !me) return <Screen><HomeSkeleton /></Screen>;
   if (detail && session) return <MerchantView merchant={detail} token={session} onBack={() => { setDetail(null); loadMe(session); }} />;
