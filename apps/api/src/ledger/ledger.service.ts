@@ -23,6 +23,15 @@ export const CHART_OF_ACCOUNTS: { code: string; name: string; type: LedgerAccoun
 /** The ledger currency for loyalty points. Points are whole units, not money. */
 export const POINTS_CURRENCY = 'PTS';
 
+/**
+ * The `PointsTransaction.reason` written when a redemption is cancelled. Lives
+ * here, not in the loyalty service, because the points backfill has to
+ * reconstruct the SAME journal the live path posts — a cancelled redemption is
+ * a REDEEM_REVERSAL, not a plain adjust-up, and the two would post under
+ * different idempotency keys if this string ever drifted between them.
+ */
+export const REDEMPTION_CANCELLED_REASON = 'redemption cancelled';
+
 type Line = { accountCode: string; direction: 'DEBIT' | 'CREDIT'; amount: Prisma.Decimal; customerId?: string };
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -159,13 +168,20 @@ export class LedgerService implements OnModuleInit {
    *   earn / adjust-up   DR points_expense    CR points_liability
    *   redeem             DR points_liability  CR points_settled    (obligation discharged for a reward)
    *   expire / adjust-dn DR points_liability  CR points_breakage   (obligation released unredeemed)
+   *   redeem_reversal    DR points_settled    CR points_liability  (a cancelled redemption, unwound)
+   *
+   * REDEEM_REVERSAL exists because a cancelled redemption is not a fresh earn:
+   * booking it to points_expense would leave points_settled claiming a
+   * redemption that was handed back, permanently overstating both. It unwinds
+   * the original posting instead. It describes the ledger movement only — the
+   * sub-ledger row stays an ADJUST.
    *
    * Only the points_liability line carries `customerId`; the contra lines are
    * store-level. That keeps `pointsBalanceFor` a single-account filter and makes
    * the per-customer balances sum to the account balance by construction.
    */
   async postPointsMovement(
-    type: 'EARN' | 'REDEEM' | 'ADJUST' | 'EXPIRE',
+    type: 'EARN' | 'REDEEM' | 'ADJUST' | 'EXPIRE' | 'REDEEM_REVERSAL',
     pointsTxnId: string,
     storeId: string,
     customerId: string,
@@ -179,7 +195,9 @@ export class LedgerService implements OnModuleInit {
     // An ADJUST can go either way, so pick the contra account from the sign
     // rather than the type. EXPIRE and REDEEM both reduce, but for different
     // reasons, and conflating them would misstate breakage.
-    const contra = increasesBalance ? 'points_expense' : type === 'REDEEM' ? 'points_settled' : 'points_breakage';
+    const contra = increasesBalance
+      ? type === 'REDEEM_REVERSAL' ? 'points_settled' : 'points_expense'
+      : type === 'REDEEM' ? 'points_settled' : 'points_breakage';
 
     const liabilityLine: Line = {
       accountCode: 'points_liability',

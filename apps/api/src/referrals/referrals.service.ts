@@ -212,13 +212,21 @@ export class ReferralsService {
       const fresh = await tx.referral.findUnique({ where: { id: referral.id } });
       if (!fresh || fresh.status === 'REWARDED') return;
 
+      // The journal shares this transaction: the sub-ledger row, the
+      // denormalised balance and the points_liability posting commit together
+      // or not at all. Without it the balance moves and the ledger never hears
+      // about it — which is exactly the drift the points reconciler alerts on.
       if (referrerPts > 0) {
-        await tx.pointsTransaction.create({ data: { id: prefixedId('pts'), storeId: payment.storeId, customerId: referral.referrerCustomerId, type: 'EARN', points: referrerPts, reason: 'referral (referrer)' } });
+        const txnId = prefixedId('pts');
+        await tx.pointsTransaction.create({ data: { id: txnId, storeId: payment.storeId, customerId: referral.referrerCustomerId, type: 'EARN', points: referrerPts, reason: 'referral (referrer)' } });
         await tx.customer.update({ where: { id: referral.referrerCustomerId }, data: { pointsBalance: { increment: referrerPts }, lifetimePoints: { increment: referrerPts } } });
+        await this.ledger.postPointsMovement('EARN', txnId, payment.storeId, referral.referrerCustomerId, referrerPts, tx);
       }
       if (refereePts > 0) {
-        await tx.pointsTransaction.create({ data: { id: prefixedId('pts'), storeId: payment.storeId, customerId: referral.refereeCustomerId, type: 'EARN', points: refereePts, paymentId: payment.id, reason: 'referral (referee)' } });
+        const txnId = prefixedId('pts');
+        await tx.pointsTransaction.create({ data: { id: txnId, storeId: payment.storeId, customerId: referral.refereeCustomerId, type: 'EARN', points: refereePts, paymentId: payment.id, reason: 'referral (referee)' } });
         await tx.customer.update({ where: { id: referral.refereeCustomerId }, data: { pointsBalance: { increment: refereePts }, lifetimePoints: { increment: refereePts } } });
+        await this.ledger.postPointsMovement('EARN', txnId, payment.storeId, referral.refereeCustomerId, refereePts, tx);
       }
       await tx.referral.update({ where: { id: referral.id }, data: { status: 'REWARDED', rewardedAt: new Date(), rewardPointsReferrer: referrerPts, rewardPointsReferee: refereePts } });
     });

@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
-import { LedgerService, POINTS_CURRENCY } from './ledger.service';
+import { LedgerService, POINTS_CURRENCY, REDEMPTION_CANCELLED_REASON } from './ledger.service';
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 const TOL = 0.005; // rounding tolerance for tie-outs
@@ -236,6 +236,69 @@ export class ReconciliationService {
       drifted: drifted.slice(0, 50), // cap the payload; `drift_count` carries the truth
       drift_count: drifted.length,
     };
+  }
+
+  /**
+   * Rebuild the points ledger from the `PointsTransaction` sub-ledger, which is
+   * the record every points path has always written even when it skipped the
+   * journal. Platform admin only.
+   *
+   * Idempotent: `postPointsMovement` keys on (event, pointsTxnId), so a row that
+   * already has its journal is a no-op and only the missing ones post. That is
+   * what makes this safe to re-run, and it is the repair for drift that accrued
+   * before the referral / promo / game / redemption paths posted journals.
+   *
+   * The type mapping MUST match what the live paths post today, or a row would
+   * be posted twice under two different idempotency keys — hence the shared
+   * `REDEMPTION_CANCELLED_REASON` rather than a literal here.
+   *
+   * Only CONFIRMED rows are replayed: per the schema, those are the ones that
+   * count toward a spendable balance, so they are exactly the set the
+   * `pointsBalance` column reflects.
+   */
+  async backfillPoints(user: AuthUser) {
+    await this.assertAdmin(user.userId);
+    await this.ledger.ensureAccounts();
+
+    const BATCH = 500;
+    let cursor: string | undefined;
+    let scanned = 0, posted = 0, skipped = 0;
+
+    for (;;) {
+      const rows = await this.prisma.pointsTransaction.findMany({
+        where: { status: 'CONFIRMED' },
+        select: { id: true, storeId: true, customerId: true, type: true, points: true, reason: true },
+        orderBy: { id: 'asc' },
+        take: BATCH,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      });
+      if (rows.length === 0) break;
+
+      for (const r of rows) {
+        scanned++;
+        if (r.points === 0) { skipped++; continue; }
+        const type = r.points > 0 && r.type === 'ADJUST' && r.reason === REDEMPTION_CANCELLED_REASON
+          ? 'REDEEM_REVERSAL'
+          : r.type;
+        // Best-effort per row: one bad row must not abort the whole repair.
+        try {
+          await this.ledger.postPointsMovement(type, r.id, r.storeId, r.customerId, r.points);
+          posted++;
+        } catch (e) {
+          skipped++;
+          this.logger.error(`points backfill failed for ${r.id}: ${e}`);
+        }
+      }
+      cursor = rows[rows.length - 1].id;
+      if (rows.length < BATCH) break;
+    }
+
+    // `posted` counts rows processed, not journals created — the idempotent
+    // no-op path is indistinguishable from a fresh write, by design. The drift
+    // figure is the honest measure of whether the repair worked.
+    const drift = await this.pointsDrift();
+    this.logger.log(`points backfill: ${scanned} scanned, ${posted} posted, ${skipped} skipped; drift now ${drift.drift_count}`);
+    return { scanned, posted, skipped, drift_after: { ok: drift.ok, drift_count: drift.drift_count, liability_delta: drift.liability_delta } };
   }
 
   async storePointsDrift(user: AuthUser, storeId: string) {

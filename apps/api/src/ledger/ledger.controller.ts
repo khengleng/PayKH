@@ -64,4 +64,10 @@ export class LedgerController {
   backfill(@CurrentUser() user: AuthUser) {
     return this.recon.backfill(user);
   }
+
+  @Post('admin/ledger/backfill-points')
+  @ApiOperation({ summary: 'Rebuild the points ledger from the points sub-ledger (admin, idempotent)' })
+  backfillPoints(@CurrentUser() user: AuthUser) {
+    return this.recon.backfillPoints(user);
+  }
 }

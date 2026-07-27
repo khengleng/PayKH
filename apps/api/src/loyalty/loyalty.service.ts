@@ -7,7 +7,7 @@ import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
 import { CampaignsService } from '../campaigns/campaigns.service';
-import { LedgerService } from '../ledger/ledger.service';
+import { LedgerService, REDEMPTION_CANCELLED_REASON } from '../ledger/ledger.service';
 import { IdempotencyService } from '../idempotency/idempotency.module';
 import { EmailService } from '../email/email.service';
 import { PayChainIntegrationService } from '../paychain/paychain-integration.module';
@@ -676,11 +676,14 @@ export class LoyaltyService {
       if (!customer || customer.storeId !== storeId) throw ApiError.invalidRequest('Unknown customer for this store');
       if (customer.pointsBalance < reward.pointsCost) throw ApiError.invalidRequest('Insufficient points balance');
 
-      // Deduct points.
+      // Deduct points. The ledger posting shares this transaction so the
+      // obligation is discharged in the same breath the balance falls.
+      const txnId = prefixedId('pts');
       await tx.pointsTransaction.create({
-        data: { id: prefixedId('pts'), storeId, customerId, type: 'REDEEM', points: -reward.pointsCost, reason: `reward:${reward.name}` },
+        data: { id: txnId, storeId, customerId, type: 'REDEEM', points: -reward.pointsCost, reason: `reward:${reward.name}` },
       });
       await tx.customer.update({ where: { id: customerId }, data: { pointsBalance: customer.pointsBalance - reward.pointsCost } });
+      await this.ledgerService.postPointsMovement('REDEEM', txnId, storeId, customerId, -reward.pointsCost, tx);
       // Decrement stock (unless unlimited).
       if (reward.stock > 0) await tx.reward.update({ where: { id: rewardId }, data: { stock: reward.stock - 1 } });
 
@@ -747,8 +750,12 @@ export class LoyaltyService {
     await this.assertStore(user, r.storeId, 'store:write');
     if (r.status !== 'ISSUED') throw ApiError.invalidRequest(`Cannot cancel a ${r.status.toLowerCase()} redemption`);
     await this.prisma.$transaction(async (tx) => {
-      await tx.pointsTransaction.create({ data: { id: prefixedId('pts'), storeId: r.storeId, customerId: r.customerId, type: 'ADJUST', points: r.pointsSpent, reason: 'redemption cancelled' } });
+      const txnId = prefixedId('pts');
+      await tx.pointsTransaction.create({ data: { id: txnId, storeId: r.storeId, customerId: r.customerId, type: 'ADJUST', points: r.pointsSpent, reason: REDEMPTION_CANCELLED_REASON } });
       await tx.customer.update({ where: { id: r.customerId }, data: { pointsBalance: { increment: r.pointsSpent } } });
+      // REDEEM_REVERSAL, not a plain adjust-up: this unwinds the original
+      // redemption's points_settled rather than booking a new expense.
+      await this.ledgerService.postPointsMovement('REDEEM_REVERSAL', txnId, r.storeId, r.customerId, r.pointsSpent, tx);
       await tx.reward.updateMany({ where: { id: r.rewardId, stock: { gte: 0 } }, data: { stock: { increment: 1 } } });
       await tx.redemption.update({ where: { id }, data: { status: 'CANCELLED' } });
     });
