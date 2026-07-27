@@ -25,6 +25,7 @@ type AppEnv = {
   signalFrom: string;
   alertTelegramChatId: string;
   alertEmail: string;
+  alertChannels: string;
   bakongDisbursementToken: string;
   trusteeBaseUrl: string;
   trusteeRequestSigningPrivateKey: string;
@@ -47,6 +48,7 @@ const DEFS: Def[] = [
   { key: 'signal_from', env: 'signalFrom', label: 'Signal from number', secret: false, group: 'Messaging' },
   { key: 'alert_telegram_chat_id', env: 'alertTelegramChatId', label: 'Ops alert Telegram chat id', secret: false, group: 'Alerts' },
   { key: 'alert_email', env: 'alertEmail', label: 'Ops alert email address', secret: false, group: 'Alerts' },
+  { key: 'alert_channels', env: 'alertChannels', label: 'Ops alert channels (comma-separated: telegram, email)', secret: false, group: 'Alerts' },
   { key: 'bakong_disbursement_token', env: 'bakongDisbursementToken', label: 'Bakong disbursement token (automated payouts)', secret: true, group: 'Payouts' },
   { key: 'trustee_base_url', env: 'trusteeBaseUrl', label: 'Trustee base URL', secret: false, group: 'Trustee' },
   { key: 'trustee_request_signing_private_key', env: 'trusteeRequestSigningPrivateKey', label: 'Trustee request-signing private key', secret: true, group: 'Trustee' },
