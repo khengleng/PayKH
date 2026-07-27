@@ -238,7 +238,9 @@ function MemberScanner({ onToken, onClose }: { onToken: (t: string) => void; onC
     let raf = 0;
     let stopped = false;
     const hasNative = typeof window !== 'undefined' && 'BarcodeDetector' in window;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // BarcodeDetector is not in lib.dom yet, hence the cast. (No disable comment
+    // here: this workspace extends next/core-web-vitals only, which never
+    // registers @typescript-eslint rules — naming one is itself a lint error.)
     const detector = hasNative ? new (window as any).BarcodeDetector({ formats: ['qr_code'] }) : null;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });

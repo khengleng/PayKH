@@ -7,6 +7,7 @@ import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
 import { SegmentsService } from '../segments/segments.service';
+import { LedgerService } from '../ledger/ledger.service';
 
 interface PromoConfig {
   multiplier?: number; // for POINTS_MULTIPLIER (e.g. 2 = +100% of base)
@@ -39,6 +40,7 @@ export class CampaignsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly segments: SegmentsService,
+    private readonly ledger: LedgerService,
   ) {}
 
   private async assertStore(user: AuthUser, storeId: string, perm: 'payment:read' | 'store:write' | 'billing:manage') {
@@ -205,6 +207,8 @@ export class CampaignsService {
    */
   async applyToPayment(payment: Payment, basePoints: number): Promise<number> {
     if (!payment.customerId) return 0;
+    // Narrowed above, but re-bound so it stays non-null inside the closures.
+    const customerId = payment.customerId;
     const now = new Date();
     const promos = await this.prisma.promotion.findMany({
       where: {
@@ -219,7 +223,7 @@ export class CampaignsService {
     for (const promo of promos) {
       const config = (promo.config as PromoConfig) ?? {};
       if (config.minAmount != null && payment.amount.lessThan(config.minAmount)) continue;
-      if (promo.segmentId && !(await this.segments.customerMatches(promo.segmentId, payment.customerId))) continue;
+      if (promo.segmentId && !(await this.segments.customerMatches(promo.segmentId, customerId))) continue;
 
       let bonus = 0;
       if (promo.type === 'POINTS_MULTIPLIER') bonus = Math.floor(basePoints * ((config.multiplier ?? 1) - 1));
@@ -233,13 +237,19 @@ export class CampaignsService {
         bonus = Math.min(bonus, remaining);
       }
 
-      await this.prisma.$transaction([
-        this.prisma.pointsTransaction.create({
-          data: { id: prefixedId('pts'), storeId: payment.storeId, customerId: payment.customerId, type: 'EARN', points: bonus, paymentId: payment.id, reason: `promo:${promo.name}` },
-        }),
-        this.prisma.customer.update({ where: { id: payment.customerId }, data: { pointsBalance: { increment: bonus }, lifetimePoints: { increment: bonus } } }),
-        this.prisma.promotion.update({ where: { id: promo.id }, data: { spentPoints: { increment: bonus }, ...(promo.budgetPoints != null && promo.spentPoints + bonus >= promo.budgetPoints ? { status: 'ENDED' } : {}) } }),
-      ]);
+      // Callback form (not the array form) so the ledger posting can share the
+      // same transaction: the bonus, the balance and the points_liability
+      // journal commit together or not at all.
+      const txnId = prefixedId('pts');
+      const awarded = bonus;
+      await this.prisma.$transaction(async (tx) => {
+        await tx.pointsTransaction.create({
+          data: { id: txnId, storeId: payment.storeId, customerId, type: 'EARN', points: awarded, paymentId: payment.id, reason: `promo:${promo.name}` },
+        });
+        await tx.customer.update({ where: { id: customerId }, data: { pointsBalance: { increment: awarded }, lifetimePoints: { increment: awarded } } });
+        await tx.promotion.update({ where: { id: promo.id }, data: { spentPoints: { increment: awarded }, ...(promo.budgetPoints != null && promo.spentPoints + awarded >= promo.budgetPoints ? { status: 'ENDED' } : {}) } });
+        await this.ledger.postPointsMovement('EARN', txnId, payment.storeId, customerId, awarded, tx);
+      });
       totalBonus += bonus;
       this.logger.log(`promo ${promo.name} awarded ${bonus} bonus pts to ${payment.customerId}`);
     }

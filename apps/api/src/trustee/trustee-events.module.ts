@@ -22,7 +22,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.module';
 import { RateLimit, RateLimitGuard } from '../ratelimit/rate-limit';
 
-const DEFAULT_KEY_ID = 'webhook-v1';
 const RECEIVER_PATH = '/api/v1/trustee/events';
 
 /**

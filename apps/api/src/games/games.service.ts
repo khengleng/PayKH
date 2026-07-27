@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApiError } from '../common/api-error';
 import { AuthUser } from '../auth/current-user';
 import { requirePermission } from '../auth/rbac';
+import { LedgerService } from '../ledger/ledger.service';
 
 export class CreateGameDto {
   @IsString() @MaxLength(120) name!: string;
@@ -35,7 +36,7 @@ export class PrizeDto {
 export class GamesService {
   private readonly logger = new Logger('Games');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly ledger: LedgerService) {}
 
   private async assertStore(user: AuthUser, storeId: string, perm: 'payment:read' | 'store:write') {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
@@ -208,10 +209,17 @@ export class GamesService {
   /** Credit loyalty points for a POINTS prize (best-effort; no-op otherwise). */
   private async creditPrize(storeId: string, customerId: string | null, prize: Prize | null) {
     if (!prize || prize.type !== 'POINTS' || prize.pointsValue <= 0 || !customerId) return;
-    await this.prisma.$transaction([
-      this.prisma.pointsTransaction.create({ data: { id: prefixedId('pts'), storeId, customerId, type: 'EARN', points: prize.pointsValue, reason: `game prize: ${prize.label}` } }),
-      this.prisma.customer.update({ where: { id: customerId }, data: { pointsBalance: { increment: prize.pointsValue }, lifetimePoints: { increment: prize.pointsValue } } }),
-    ]);
+    // Callback form (not the array form) so the ledger posting shares the same
+    // transaction. A prize is a real obligation to the customer, so it has to
+    // reach points_liability like any other earn — otherwise the balance moves
+    // without a journal and the points reconciler flags the customer forever.
+    const txnId = prefixedId('pts');
+    const points = prize.pointsValue;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.pointsTransaction.create({ data: { id: txnId, storeId, customerId, type: 'EARN', points, reason: `game prize: ${prize.label}` } });
+      await tx.customer.update({ where: { id: customerId }, data: { pointsBalance: { increment: points }, lifetimePoints: { increment: points } } });
+      await this.ledger.postPointsMovement('EARN', txnId, storeId, customerId, points, tx);
+    });
   }
 
   // -------------------------------------------------- scratch-card lifecycle

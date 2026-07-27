@@ -207,7 +207,7 @@ export class TrusteeService {
     };
   }
 
-  private async mintPolicyPayload(user: AuthUser) {
+  private async mintPolicyPayload(_user: AuthUser) {
     const [enabled, integrations] = await Promise.all([
       this.prisma.featureFlag.count({ where: { key: 'paychain.enabled', enabled: true } }),
       this.prisma.payChainIntegration.findMany({ select: { organizationId: true, loyaltyAssetId: true, webhookId: true, lastTestOk: true } }),

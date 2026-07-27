@@ -32,6 +32,7 @@ export interface AppConfig {
   aiModel: string;
   alertTelegramChatId?: string;
   alertEmail?: string;
+  alertChannels?: string;
   bakongDisbursementToken?: string;
   trusteeBaseUrl?: string;
   trusteeRequestSigningPrivateKey?: string;
@@ -83,6 +84,7 @@ export function loadConfig(): AppConfig {
     aiModel: process.env.AI_MODEL ?? 'claude-haiku-4-5-20251001',
     alertTelegramChatId: process.env.ALERT_TELEGRAM_CHAT_ID,
     alertEmail: process.env.ALERT_EMAIL,
+    alertChannels: process.env.ALERT_CHANNELS,
     bakongDisbursementToken: process.env.BAKONG_DISBURSEMENT_TOKEN,
     trusteeBaseUrl: process.env.TRUSTEE_BASE_URL,
     trusteeRequestSigningPrivateKey: process.env.TRUSTEE_REQUEST_SIGNING_PRIVATE_KEY,
