@@ -10,14 +10,13 @@ import {
   Module,
   Param,
   Post,
-  Req,
   UnauthorizedException,
   UseGuards,
   createParamDecorator,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
-import { IsOptional, IsString } from 'class-validator';
+import { IsString } from 'class-validator';
 import { Request } from 'express';
 import * as QRCode from 'qrcode';
 import { verifyEd25519 } from '@paykh/security';
