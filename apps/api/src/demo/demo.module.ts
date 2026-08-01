@@ -61,6 +61,23 @@ export class DemoService {
     return { payment_id: paid.id, receipt_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/r/${paid.id}`, ...(await this.snapshot()) };
   }
 
+  async merchant() {
+    await this.ensure();
+    const [payments, customer, redemptions] = await Promise.all([
+      this.prisma.payment.findMany({ where: { storeId: DEMO.store, metadata: { path: ['demo'], equals: true } }, orderBy: { createdAt: 'desc' }, take: 8 }),
+      this.wallet.wallet(DEMO.customer),
+      this.prisma.redemption.count({ where: { storeId: DEMO.store, status: 'ISSUED' } }),
+    ]);
+    const paid = payments.filter(p => p.status === PaymentStatus.PAID);
+    const volume = paid.reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
+    return {
+      merchant: { name: 'Malis Coffee · BKK1', city: 'Phnom Penh', status: 'test_mode' },
+      metrics: { paid_count: paid.length, paid_volume_khr: volume.toFixed(0), active_vouchers: redemptions, loyalty_members: 1 },
+      customer: { id: DEMO.customer, name: customer.name, points_balance: customer.points_balance, tier: customer.tier?.name ?? 'Member', wallet_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/wallet/${DEMO.customer}` },
+      payments: paid.map(p => ({ id: p.id, amount: p.amount.toFixed(0), currency: p.currency, reference: p.referenceId, paid_at: p.paidAt?.toISOString() ?? p.createdAt.toISOString(), receipt_url: `${process.env.CHECKOUT_BASE_URL ?? ''}/r/${p.id}` })),
+    };
+  }
+
   private async ensure() {
     await this.prisma.organization.upsert({ where: { id: DEMO.org }, create: { id: DEMO.org, name: 'PayKH Demo Merchant' }, update: { name: 'PayKH Demo Merchant' } });
     await this.prisma.store.upsert({ where: { id: DEMO.store }, create: { id: DEMO.store, organizationId: DEMO.org, name: 'Malis Coffee · BKK1', liveMode: false }, update: { name: 'Malis Coffee · BKK1', liveMode: false } });
@@ -100,6 +117,10 @@ export class DemoController {
   @Post('pay')
   @ApiOperation({ summary: 'Run a test-mode KHQR payment through the PayKH demo scenario' })
   pay() { return this.demo.pay(); }
+
+  @Get('merchant')
+  @ApiOperation({ summary: 'Get the merchant view for the isolated PayKH mobile demo' })
+  merchant() { return this.demo.merchant(); }
 }
 
 @Module({ imports: [WalletModule, PaymentsModule, LedgerModule], controllers: [DemoController], providers: [DemoService] })
