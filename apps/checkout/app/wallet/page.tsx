@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import './wallet.css';
 import './figma-entry.css';
+import './figma-reference.css';
 
 type View = 'home' | 'scan' | 'confirm' | 'success' | 'rewards' | 'pass' | 'merchant' | 'profile';
 type Entry = 'onboarding' | 'signin' | 'app';
@@ -26,7 +27,7 @@ export default function PaykhMobileDemo() {
   const pay = async () => { setBusy(true); setError(''); try { const r = await fetch(`${API_BASE}/demo/mobile/pay`, { method: 'POST' }); if (!r.ok) throw new Error(); apply(await r.json()); setEarned(true); setView('success'); } catch { setError('Could not complete the demo payment.'); } finally { setBusy(false); } };
   const redeem = async () => { if (!customerId || !rewardId) return setError('Demo wallet is loading.'); setBusy(true); setError(''); try { const r = await fetch(`${API_BASE}/wallet/${customerId}/redeem`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reward_id: rewardId }) }); const data = await r.json(); if (!r.ok) throw new Error(data.message); setVoucher({ title: '15% off your next order', code: data.code, status: 'Ready' }); apply(await fetch(`${API_BASE}/demo/mobile`).then(x => x.json())); setView('pass'); } catch (e) { setError(e instanceof Error ? e.message : 'Could not redeem this reward.'); } finally { setBusy(false); } };
 
-  return <main className={dark ? 'paykh-demo dark' : 'paykh-demo'}>
+  return <main className={`${dark ? 'paykh-demo dark' : 'paykh-demo'}${entry !== 'app' ? ' figma-reference-mode' : ''}`}>
     <div className="demo-stage"><aside className="demo-brief"><div className="demo-brand"><i>◆</i> PayKH <span>Interactive demo</span></div><p>MERCHANT PAYMENT + LOYALTY</p><h1>One journey.<br />More reasons<br />to return.</h1><div className="demo-flow"><b>1</b><span>Discover</span><i /> <b>2</b><span>Pay with KHQR</span><i /> <b>3</b><span>Earn & redeem</span></div><div className="demo-scope"><strong>What this demonstrates</strong><span>KHQR checkout</span><span>Loyalty points & tiers</span><span>Rewards & vouchers</span><span>Scratch cards & referral</span><span>Merchant campaign insight</span></div></aside>
       <section className="demo-phone" aria-label="PayKH mobile product demo"><div className="device-status"><b>9:41</b><i /><span>▮▮▮ ᴡɪꜰɪ ▰</span></div>{entry !== 'app' ? <EntryFlow entry={entry} setEntry={setEntry} /> : <><div className="demo-app">
         {error && <button className="demo-error" onClick={() => setError('')}>{error}<b>×</b></button>}
