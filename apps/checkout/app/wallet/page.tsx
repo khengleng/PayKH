@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import './wallet.css';
+import './figma-entry.css';
 
 type View = 'home' | 'scan' | 'confirm' | 'success' | 'rewards' | 'pass' | 'merchant' | 'profile';
+type Entry = 'onboarding' | 'signin' | 'app';
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 const vouchers = [{ title: 'Iced latte on us', code: 'PKH-CAFE-7W2', status: 'Ready' }];
 
 export default function PaykhMobileDemo() {
   const [view, setView] = useState<View>('home');
+  const [entry, setEntry] = useState<Entry>('onboarding');
   const [points, setPoints] = useState(2480);
   const [voucher, setVoucher] = useState(vouchers[0]);
   const [dark, setDark] = useState(false);
@@ -25,7 +28,7 @@ export default function PaykhMobileDemo() {
 
   return <main className={dark ? 'paykh-demo dark' : 'paykh-demo'}>
     <div className="demo-stage"><aside className="demo-brief"><div className="demo-brand"><i>◆</i> PayKH <span>Interactive demo</span></div><p>MERCHANT PAYMENT + LOYALTY</p><h1>One journey.<br />More reasons<br />to return.</h1><div className="demo-flow"><b>1</b><span>Discover</span><i /> <b>2</b><span>Pay with KHQR</span><i /> <b>3</b><span>Earn & redeem</span></div><div className="demo-scope"><strong>What this demonstrates</strong><span>KHQR checkout</span><span>Loyalty points & tiers</span><span>Rewards & vouchers</span><span>Scratch cards & referral</span><span>Merchant campaign insight</span></div></aside>
-      <section className="demo-phone" aria-label="PayKH mobile product demo"><div className="device-status"><b>9:41</b><i /><span>▮▮▮ ᴡɪꜰɪ ▰</span></div><div className="demo-app">
+      <section className="demo-phone" aria-label="PayKH mobile product demo"><div className="device-status"><b>9:41</b><i /><span>▮▮▮ ᴡɪꜰɪ ▰</span></div>{entry !== 'app' ? <EntryFlow entry={entry} setEntry={setEntry} /> : <><div className="demo-app">
         {error && <button className="demo-error" onClick={() => setError('')}>{error}<b>×</b></button>}
         {view === 'home' && <Home points={points} earned={earned} go={setView} />}
         {view === 'scan' && <Scan back={() => setView('home')} next={() => setView('confirm')} />}
@@ -35,8 +38,20 @@ export default function PaykhMobileDemo() {
         {view === 'pass' && <Pass points={points} voucher={voucher} go={setView} walletUrl={walletUrl} />}
         {view === 'merchant' && <Merchant back={() => setView('home')} />}
         {view === 'profile' && <Profile dark={dark} setDark={setDark} />}
-      </div>{!['scan', 'confirm', 'success', 'merchant'].includes(view) && <Nav view={view} go={setView} />}</section></div>
+      </div>{!['scan', 'confirm', 'success', 'merchant'].includes(view) && <Nav view={view} go={setView} />}</>}</section></div>
   </main>;
+}
+
+function EntryFlow({ entry, setEntry }: { entry: Entry; setEntry: (entry: Entry) => void }) {
+  const [slide, setSlide] = useState(0);
+  const slides = [
+    { tone: 'blue', visual: <div className="money-float"><b>៛ 12,500</b><span>Payment confirmed</span><small>MC · Malis Coffee</small></div>, title: "Cambodia's KHQR Wallet", body: 'Pay with KHQR at participating merchants and collect PayKH rewards in seconds.' },
+    { tone: 'green', visual: <div className="khqr-art"><i>▪▪▪</i><i>▪ ▪</i><i>▪▪▪</i><b>KHQR</b></div>, title: 'Scan Any KHQR Code', body: "Pay at merchants across Cambodia with KHQR — the National Bank's certified payment standard." },
+    { tone: 'blue', visual: <div className="wheel-art"><b>+500 pts</b><i>✦</i><span>Try again</span><span>Gift</span></div>, title: 'Earn Rewards Every Day', body: 'Collect points on every transaction. Unlock scratch cards and Cambodian merchant deals.' },
+  ];
+  if (entry === 'signin') return <div className="figma-signin"><div className="signin-hero"><div className="signin-logo">P<em>•</em></div><h1>PayKH</h1><p>Welcome back</p></div><section><h2>Sign In</h2><p>Enter your phone number to continue</p><label>PHONE NUMBER<div><span>🇰🇭 +855</span><input aria-label="Phone number" placeholder="12 345 678" inputMode="tel" /></div></label><button className="bio" onClick={() => setEntry('app')}><span>◉</span><div><b>Face ID / Fingerprint</b><small>Quick biometric login</small></div><i>›</i></button><button className="signin-continue" onClick={() => setEntry('app')}>Continue</button><div className="or"><i />or<i /></div><button className="create-account" onClick={() => setEntry('app')}>Create New Account</button></section></div>;
+  const item = slides[slide];
+  return <div className={`figma-onboarding ${item.tone}`}><button className="skip" onClick={() => setEntry('signin')}>Skip</button><div className="onboarding-visual">{item.visual}</div><section><h1>{item.title}</h1><p>{item.body}</p><div className="intro-bottom"><div className="dots">{slides.map((_, i) => <i className={i === slide ? 'on' : ''} key={i} />)}</div><button onClick={() => slide < slides.length - 1 ? setSlide(slide + 1) : setEntry('signin')}>{slide === slides.length - 1 ? 'Get Started' : 'Next'} <b>→</b></button></div></section></div>;
 }
 
 function Home({ points, earned, go }: { points:number; earned:boolean; go:(v:View)=>void }) { return <><header className="app-top"><div className="logo"><i>◆</i> PayKH</div><button aria-label="Notifications">♢<em /></button></header><div className="demo-label">DEMO EXPERIENCE</div><section className="hello"><p>Good morning, Serey</p><h1>Your rewards, ready to go.</h1></section><button className="loyalty-card" onClick={() => go('pass')}><div><span>MALIS COFFEE</span><b>{points.toLocaleString()} <small>points</small></b><p>Gold member · 520 points to next reward</p></div><i>✦</i><strong>View my pass →</strong></button>{earned && <div className="earned-toast"><span>✓</span><div><b>Points added</b><small>+125 from your Malis Coffee payment</small></div><button onClick={() => go('pass')}>View</button></div>}<section className="action-grid"><button onClick={() => go('scan')}><span>⌁</span><b>Pay</b><small>Scan a KHQR</small></button><button onClick={() => go('pass')}><span>▦</span><b>My pass</b><small>Rewards & vouchers</small></button><button onClick={() => go('rewards')}><span>✦</span><b>Rewards</b><small>Use your points</small></button></section><section className="section-block"><div className="section-head"><h2>For you</h2><button onClick={() => go('rewards')}>See rewards</button></div><button className="offer-card" onClick={() => go('rewards')}><span>2×</span><div><b>Double points Friday</b><small>Earn more at selected coffee partners</small></div><i>›</i></button></section><section className="section-block"><div className="section-head"><h2>Explore nearby</h2><button onClick={() => go('merchant')}>View all</button></div><button className="nearby-card" onClick={() => go('merchant')}><span className="store-avatar">M</span><div><b>Malis Coffee · BKK1</b><small>0.4 km · KHQR & rewards available</small></div><i>›</i></button></section></> }
